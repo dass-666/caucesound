@@ -4,6 +4,64 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Pulido 0.3.0 (2026-11-12, misión «Ultimate Polish», misma rama)
+
+Auditoría, rediseño visual y refinamiento sobre la fase 1.2. Categorías usadas abajo: **Implementado** (código en la
+rama), **Probado** (prueba automática que lo cubre), **Render JVM** (imagen dibujada con Robolectric y revisada),
+**Físico** (probado en un teléfono: hoy, nada).
+
+| Conjunto | Resultado |
+|---|---|
+| Motor `cs_core_tests` x86-64 Release | **80/80** (78 anteriores + 2 nuevas) |
+| ASan + UBSan / TSan | **80/80** / **80/80** |
+| ARM64 emulado (QEMU, Linux) | **80/80** (portabilidad, no rendimiento) |
+| JVM de la app (`testDebugUnitTest`) | **38/38**: 5 de modelos, 10 del modelo musical, 23 de interfaz |
+| `lintDebug` | 0 errores |
+| APK `0.3.0-polish-preview`, versionCode 3 | Compila. SHA-256 `9ebfc8dcd590a88acb8e232351c5100c014b9938da920d194a5bfbe33181b6ed`. Certificado `56b4de46…61ab2e`, el mismo que la Preview 0.2.0 (comprobado con `apksigner`): se instala encima. Actualización real en teléfono: pendiente |
+
+## Errores reales encontrados y corregidos
+
+| Error | Gravedad | Corrección | Prueba |
+|---|---|---|---|
+| 25 WAV residuales (137 MB) en la raíz del repo: los escribió el fuzzing con rutas relativas y se subieron con `git add -A` | Media (repo inflado; ningún efecto en la app) | Borrados, `.gitignore`, y la API ahora rechaza rutas no absolutas | `fuzz_command_api…` |
+| Perillas y faders: tras deshacer o cargar un preset, la perilla seguía mostrando su último valor local y el siguiente gesto partía de ese valor antiguo | Alta (lo que se ve ≠ lo que suena) | `DragValue`: el valor del motor manda en cuanto cambia | `knob_follows_the_engine_value_after_a_drag_and_an_undo` (JVM) |
+| Fader, rejilla de batería, piano roll y línea de tiempo dibujados en píxeles en vez de dp: tamaños distintos según la densidad de pantalla | Media | Todo el dibujo en dp | Render JVM a xhdpi y xxhdpi |
+| En teléfonos de 360 dp de ancho la posición del transporte se partía en cinco líneas | Media | Botones algo más pequeños (≥ 40 dp) y texto en una línea | `studio_fits_a_small_phone` + render |
+| En horizontal, el fader del mezclador quedaba aplastado y el botón REC cortado | Alta en horizontal | Tira ancha con las perillas junto al fader | Render `16_mixer_land` |
+| En horizontal, el piano roll solo mostraba 4 filas (dos barras de herramientas) | Media | Una sola fila de herramientas y carril de intensidad más bajo | Render `17_piano_land` |
+| Importar `.caucesound`: un `project.json` o un índice ZIP enormes se leían enteros en memoria | Media (cierre por memoria con un archivo malicioso) | Límites de 64 MB y 16 MB antes de extraer | `project_archive_rejects_malicious…` (14 casos) |
+| Parar durante una cuenta previa habría mostrado «no se recibió audio del micrófono» | Baja (función nueva) | Se trata como cancelación limpia | `count_in_clicks_then_records…` |
+
+## Cambios por área
+
+| Área | Implementado | Probado | Render JVM |
+|---|---|---|---|
+| Sistema de diseño | Paleta carbón/violeta/azul/cian, espaciados, radios, zonas táctiles ≥ 44 dp, `Knob`, `VerticalFader`, `LevelMeter`, `CauceButton`, `ToolButton`, `PanelHeader`, `EmptyState`, `CauceDialog` (ver DESIGN_SYSTEM.md) | Gestos de perilla (arrastre, doble toque, valor externo) | Todas las pantallas |
+| Inicio | Crear canción en un toque (nombre automático), plantillas, «Continuar», estado vacío | `home_*` (2) | `01_home` |
+| Arreglo | Cabeceras con icono por tipo y acceso directo al editor, menú con pulsación larga, clips con marco y selección, pista de 80 dp | `studio_arrangement_*` | `08`, `09`, `12` |
+| Batería | Escucha del kit al cambiarlo, variaciones (dinámica, remate, hats ×2, hats ÷2) deterministas y deshacibles, minimapa de pasos, restablecer carril | `drumVariationsAreDeterministicAndKeepTheGrid` | `02`, `10`, `13` |
+| Piano roll | Carril de intensidad por nota, resaltado de escala (mayor, menor, pentatónica, armónica), «Repetir ×2», «+1 compás», notas con borde y relleno según fuerza | `pianoRollRepeatAndVelocityLaneHelpers`, `scalesHighlightTheRightKeys` | `03`, `15`, `17` |
+| Synth (motor) | Caída de tono (808), fuerza → filtro, presets reafinados con categoría. Parámetros nuevos al final y a 0 por defecto: los proyectos guardados suenan idénticos | `synth_pitch_envelope_and_velocity_filter…` (bit a bit; 0,00 cents tras la caída) | — |
+| Synth (interfaz) | Categorías, favoritos (por dispositivo), restablecer preset, perillas nuevas | `synth_panel_*` (2) | `04`, `18` |
+| Mezclador / FX | Tiras con el nuevo fader y medidor, formato ancho en horizontal | `mixer_*` (3), `effects_panel_*` | `05`, `05b`, `07`, `14`, `16` |
+| Cuenta previa | 0, 1 o 2 compases antes de grabar: suenan clics, el transporte no avanza y la toma empieza en la posición exacta | `count_in_clicks_then_records_from_the_exact_start_position` (0 muestras erróneas) | — |
+| Tap tempo | Botón «Tocar» en el diálogo de tempo (mediana de los últimos 8 intervalos) | `tapTempoUsesTheMedianAndResetsAfterAPause`, `tempo_form_*` | `11_tempo_form` |
+
+## Límites de esta entrega
+
+- **Nada validado físicamente.** Latencia de la cuenta previa, tacto de las perillas, tamaño real de los botones y
+  rendimiento solo se sabrán en el teléfono (pruebas 22-28 de TESTING_ON_DEVICE.md).
+- La cuenta previa no compensa la latencia de salida del teléfono: los clics se oyen con ese retraso, igual que el
+  metrónomo. La compensación de grabación existente (Ajustes → latencia) sigue aplicándose a la toma.
+- «Repetir ×2» son dos pasos de deshacer (alargar el clip y copiar las notas).
+- Favoritos y cuenta previa son preferencias del dispositivo: no viajan en el `.caucesound`.
+- Los diálogos con campos de texto no se pueden renderizar en Robolectric dentro de su ventana (no llega a reposo);
+  se prueba su contenido fuera de la ventana. No verificado si ocurre algo parecido en un teléfono (antes del cambio
+  ya había campos de texto en diálogos, así que no es una regresión conocida).
+- No implementado (propuesto): congelar pista, notas fantasma, duración de nota por defecto configurable,
+  indicador de carga DSP permanente en el transporte (hoy está en Ajustes de audio, con datos medidos).
+- VocalShift sigue sin integrar: la PDC no compensa latencia dentro de buses.
+
 # Fase 1.2 / 1.3 (2026-11-12, rama `claude/project-thread-w0xy20`)
 
 ## Resumen de evidencias

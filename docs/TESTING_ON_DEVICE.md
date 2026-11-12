@@ -67,6 +67,19 @@ envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga
 | 20 | Bus de reverb | Mezclador → «+ Bus de reverb». Sube la perilla Send de Melodía y de la caja/batería mientras suena; mute en Melodía; exporta | ¿Se oye la reverb solo en las pistas con Send? ¿Al silenciar Melodía desaparece también su reverb? ¿La exportación incluye la cola? Repite la prueba 16 con un bus en lugar de una reverb por pista y compara la Carga DSP |
 | 21 | Perillas | Arrastra hacia arriba/derecha cualquier perilla (Pan, Send, synth) y haz doble toque sobre ella | ¿Gira con el dedo? ¿El doble toque la devuelve al valor por defecto? ¿Es cómodo el recorrido con el dedo? (Las pruebas JVM simulan el gesto, pero no la ergonomía) |
 
+### Pruebas nuevas de la versión 0.3.0 (pulido)
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 22 | Actualización | Instala `caucesound-0.3.0-polish-preview.apk` encima de la Preview 0.2.0 (sin desinstalar) | ¿Se instala sin error? ¿Siguen tus proyectos de la Preview? |
+| 23 | Cuenta previa | Toca el BPM → «Cuenta previa: 1 compás». Arma la pista de voz y graba | ¿Suenan 4 clics antes de empezar? ¿La posición se queda quieta durante la cuenta? ¿La toma queda alineada con la batería? Para durante la cuenta: ¿se cancela sin mensaje de error? |
+| 24 | Tap tempo | Toca el BPM → pulsa «Tocar» 5 o 6 veces siguiendo una canción | ¿El BPM se parece al de la canción? |
+| 25 | Perillas tras deshacer | En el synth mueve «Corte», pulsa deshacer y vuelve a moverla | ¿La perilla vuelve a su sitio al deshacer? ¿El segundo gesto empieza desde ahí, sin saltos? |
+| 26 | Batería | Cambia de kit (¿suena bombo y caja de muestra?), varita → «Remate al final», deshacer | ¿Se oye el redoble? ¿Deshacer lo quita? |
+| 27 | Piano roll | Elige escala «La menor», dibuja notas, arrastra las barras de intensidad de abajo, «Repetir ×2» | ¿Las filas fuera de escala se ven más oscuras? ¿Cambia la fuerza al oído? ¿Se duplica el clip? |
+| 28 | Tamaños | Gira el teléfono en Arreglo, Mezclador y Piano roll | ¿Algún botón cortado, texto partido o control demasiado pequeño para el dedo? |
+| 29 | 808 | Synth → Bajos → «808 Bass», toca notas graves | ¿Se oye el golpe inicial y la nota queda afinada? |
+
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de

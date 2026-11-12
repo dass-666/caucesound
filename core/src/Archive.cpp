@@ -21,6 +21,8 @@ constexpr uint32_t kLocalSig = 0x04034b50, kCentralSig = 0x02014b50, kEndSig = 0
 constexpr long long kMaxEntry = 0xFFFFFFFFll;     // sin ZIP64
 constexpr long long kMaxTotal = 8ll << 30;        // 8 GB extraídos como máximo
 constexpr int kMaxEntries = 4096;
+constexpr long long kMaxProjectJson = 64ll << 20; // project.json se lee entero en memoria: 64 MB como máximo
+constexpr long long kMaxCentralDir = 16ll << 20;  // el índice del ZIP también: 4096 entradas caben de sobra
 constexpr size_t kChunk = 1 << 16;
 
 uint32_t crcTable[256];
@@ -171,7 +173,7 @@ ArchiveResult importProjectArchive (const std::string& archivePath, const std::s
     if (eocd < 0) return fail ("no es un ZIP válido");
     const uint8_t* e = &t[(size_t) eocd];
     const uint32_t entries = get16 (e + 10), cdSize = get32 (e + 12), cdOffset = get32 (e + 16);
-    if (entries == 0 || entries > (uint32_t) kMaxEntries || (long long) cdOffset + cdSize > fileSize) return fail ("ZIP dañado o no admitido");
+    if (entries == 0 || entries > (uint32_t) kMaxEntries || cdSize > kMaxCentralDir || (long long) cdOffset + cdSize > fileSize) return fail ("ZIP dañado o no admitido");
 
     struct Entry { std::string name; uint32_t crc, size, offset; };
     std::vector<Entry> list;
@@ -195,6 +197,7 @@ ArchiveResult importProjectArchive (const std::string& archivePath, const std::s
             return fail ("el archivo está comprimido (" + name + "): solo se admiten los .caucesound exportados por la app");
         if (flags & 0x1) return fail ("ZIP cifrado: no admitido");
         if (! allowedName (name)) return fail ("contenido no permitido en el archivo: " + name);
+        if (name == "project.json" && usize > kMaxProjectJson) return fail ("project.json demasiado grande");
         if (! names.insert (name).second) return fail ("archivo duplicado en el ZIP: " + name);
         total += usize;
         if (total > kMaxTotal) return fail ("el proyecto es demasiado grande");

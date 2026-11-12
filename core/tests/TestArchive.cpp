@@ -152,6 +152,8 @@ TEST (project_archive_rejects_malicious_or_damaged_files_and_leaves_nothing)
         { "project.json inválido", { { "project.json", "{no es json" } } },
         { "falta el audio", { { "project.json", pjMissing } } },
         { "entrada duplicada", { { "project.json", pj }, { "project.json", pj } } },
+        // Un project.json enorme agotaría la memoria al leerlo: se rechaza por tamaño antes de extraer nada.
+        { "project.json de 65 MB", { { "project.json", std::string ((size_t) 65 << 20, ' ') } } },
     };
     int n = 0;
     for (const auto& c : cases)

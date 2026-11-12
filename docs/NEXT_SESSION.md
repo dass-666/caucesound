@@ -1,27 +1,30 @@
-# Para retomar el trabajo (actualizado 2026-11-12 ~09:45 UTC, fin de la sesión nocturna)
+# Para retomar el trabajo (actualizado 2026-11-12, fin de la misión «Ultimate Polish»)
 
 ## Estado
 
-- **Rama**: `claude/project-thread-w0xy20` (el entorno exige este nombre; la propuesta original era
-  `feat/fase-1-2-beatmaker-ui-midi`). Pull request abierto contra `main`, **sin fusionar** (requiere autorización).
-- **Base**: `main` en `dbdd93b` (fase 1). Ver `git log main..claude/project-thread-w0xy20` para los commits.
-- **APK de prueba**: `caucesound-0.2.0-fase1.2-preview.apk` en la carpeta del proyecto (`/mnt/project-files/caucesound/`),
-  `com.caucesound.app.preview`, versionCode 2, SHA-256 `aa9224be868168a1830c1bc28b8be7effae56a7c66b5bd513652586cb207951e`
-  (compilado ~09:38 UTC, incluye PDC, deshacer por gesto, .caucesound, desnormales, presets corregidos, argumentos estrictos,
-  medidor de carga DSP y bus de reverb con envíos). Mismo certificado que la Preview anterior: se instala encima. Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
+- **Rama**: `claude/project-thread-w0xy20`. Pull request #1 contra `main`, **sin fusionar** (requiere autorización de
+  Diego). Al fusionar conviene «squash merge»: así los 25 WAV residuales que estuvieron en la rama (ya borrados) no
+  entran en la historia de `main`.
+- **APK de prueba**: `caucesound-0.3.0-polish-preview.apk` en `/mnt/project-files/caucesound/`,
+  `com.caucesound.app.preview`, versionCode 3. SHA-256 en STATUS.md y en el informe de la misión. Mismo certificado que
+  la 0.2.0: se instala encima sin perder proyectos (comprobado por certificado y versionCode; **no** probado en teléfono).
 - **Clave de prueba**: `/mnt/project-files/caucesound/signing/` (`caucesound-preview.jks` + `keystore.properties`).
-  Fuera de git. Si se pierde, la Preview instalada tampoco podrá actualizarse (igual que pasó con la fase 1).
+  Fuera de git. No regenerar: si se pierde, la Preview instalada no podrá actualizarse.
+- **Capturas**: renders JVM en `/mnt/project-files/caucesound/capturas-0.3.0/` (no son de teléfono).
 - **Validación física**: ninguna. Todo lo «probado» es automático (ver STATUS.md).
+- **Diseño**: reglas y componentes en DESIGN_SYSTEM.md.
+- **AI Choir Studio**: Diego aclaró que **no** es Spatial Echo Studio (repo `3D`); son proyectos distintos. El repo de
+  AI Choir Studio no está localizado: preguntar a Diego antes de integrarlo.
 
 ## Pruebas (último resultado)
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 78/78 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 78/78 |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 78/78 |
-| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 78/78 |
-| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 24/24 |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 80/80 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 80/80 |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 80/80 |
+| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 80/80 |
+| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 38/38 |
 | Lint | `./gradlew lintDebug` | 0 errores |
 | Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 1,8-4,4 % (Xeon compartido, varía; no es un teléfono) |
 | Carga | `./build/cs_core_tests stress` (`CS_STRESS_PASSES`, `CS_STRESS_EDITS` para alargar) | 32 pistas: p99 17-26 % |
@@ -53,19 +56,23 @@ Datos de prueba de la interfaz: JSON real del motor, se regeneran con
    compartido (~45-50 % menos que una reverb por pista en 8 synths); falta congelar pista. Ver STATUS.md.
 4c. Buses: la PDC no compensa latencia de efectos dentro de un bus (ningún efecto propio la tiene hoy; importará con
    VocalShift). La app solo muestra la perilla Send del primer bus (el motor admite 4).
-5. Nombres de carril largos recortados en vertical; diálogos y ajustes sin captura.
+5. Diálogos con campos de texto y Ajustes siguen sin captura dentro de su ventana (Robolectric no llega a reposo);
+   el contenido del diálogo de tempo sí se prueba y se captura.
+5b. «Repetir ×2» del piano roll son dos pasos de deshacer. Favoritos y cuenta previa no viajan con el proyecto.
 6. CI de GitHub: ahora ejecuta también las pruebas Robolectric (descargan `android-all` ~ 100-200 MB la primera vez).
    Gratis dentro de la cuota; verificar que el primer run pasa.
 
 ## Próximas tareas sugeridas (en este orden)
 
-1. **Probar en el Samsung** con el protocolo de TESTING_ON_DEVICE.md y corregir lo que salga (prioridad absoluta:
-   latencia de pads, notas colgadas, CPU).
-2. Congelar pista (renderizar a audio un synth terminado). Los envíos a un bus ya están hechos.
-3. Integrar VocalShift como `cs::AudioProcessor` (requiere decidir licencia y forma de dependencia).
-4. Sobremuestreo x2 de sierra/cuadrada solo si se oye aliasing en notas agudas sin filtro.
-5. Automatización básica (volumen y corte del filtro) y pitch bend en el piano roll.
-6. Servicio en primer plano para grabar con la pantalla apagada.
+1. **Probar la 0.3.0 en el Samsung** con el protocolo de TESTING_ON_DEVICE.md (pruebas 1-29) y corregir lo que salga.
+   Prioridad: latencia de pads, cuenta previa alineada, tamaño táctil real, CPU.
+2. Congelar pista (renderizar a audio un synth terminado) para proyectos grandes; pensar antes cómo se deshace y
+   cómo se guarda (cambio de formato: habría que versionarlo).
+3. Integrar VocalShift como `cs::AudioProcessor`: requiere PDC dentro de buses o impedirlo en buses, licencia y forma
+   de dependencia decididas por Diego.
+4. Indicador de carga DSP y XRuns a la vista en el transporte (los datos medidos ya existen en Ajustes de audio).
+5. Piano roll: notas fantasma de otras pistas y duración por defecto de la nota.
+6. Automatización básica (volumen y corte del filtro) y servicio en primer plano para grabar con la pantalla apagada.
 
 ## Decisiones que necesitan autorización del propietario
 
