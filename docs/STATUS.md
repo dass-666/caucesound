@@ -10,10 +10,10 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 
 | Conjunto | Resultado |
 |---|---|
-| Pruebas del motor `cs_core_tests` (x86-64 Release) | **75/75** (28 de la fase 1 + 47 nuevas) |
-| Mismas pruebas con ASan + UBSan / con TSan | **75/75** / **75/75** |
-| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **75/75**: portabilidad y resultados numéricos, no rendimiento |
-| Pruebas JVM de la app (`testDebugUnitTest`) | **22/22**: 5 de modelos (fase 1), 6 del modelo musical, 11 de interfaz con Robolectric |
+| Pruebas del motor `cs_core_tests` (x86-64 Release) | **78/78** (28 de la fase 1 + 50 nuevas) |
+| Mismas pruebas con ASan + UBSan / con TSan | **78/78** / **78/78** |
+| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **ARM64_RESULT**: portabilidad y resultados numéricos, no rendimiento |
+| Pruebas JVM de la app (`testDebugUnitTest`) | **24/24**: 5 de modelos (fase 1), 6 del modelo musical, 13 de interfaz con Robolectric |
 | `lintDebug` | 0 errores (avisos: versiones nuevas de dependencias, plurales, icono monocromo) |
 | APK `0.2.0-fase1.2-preview` (`assemblePreview`) | Compila, firmado con clave de prueba persistente, `com.caucesound.app.preview` |
 | Bench x86-64 (Xeon 2,1 GHz), proyecto trap + pad 8 voces + 5 efectos | p99 entre 73 y 176 µs por bloque de 4 ms = **1,8-4,4 %** de un núcleo (la máquina es compartida y el tiempo varía; ver el recuento de instrucciones abajo). **No representa un teléfono**: estimación sin medir 3-6 veces más en gama media |
@@ -36,6 +36,9 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 | Fuzzing | 4000 comandos JSON al azar (tipos equivocados, ids reales y falsos, extremos, texto que no es JSON) con el audio sonando: 0 fallos, toda respuesta válida, proyecto final válido y reabre igual. 400 project.json dañados al azar: cada uno se rechaza con error o se abre válido y suena. **Error real corregido**: un argumento de tipo equivocado se sustituía en silencio por el valor por defecto (`{"bpm":"rápido"}` ponía el tempo a 120) y números enormes se convertían a entero con comportamiento indefinido; ahora se rechazan | `fuzz_command_api_never_crashes_and_leaves_a_valid_project`, `fuzz_damaged_project_json_is_rejected_or_opened_safely` |
 | Medidor de carga DSP | El motor mide cada callback (tiempo / duración del bloque): media de ~1 s, pico desde la última lectura y bloques fuera de tiempo. Se ve en Ajustes → estado del audio. Sirve para medir el límite real en el Samsung (prueba 16) | `dsp_load_meter_reports_sane_values` (0 reservas) |
 | Rendimiento | Seno polinómico en el oscilador (error 5,6e-8), reverb sin división por muestra | `fast_sine_matches_std_sin` + todas las de salida idéntica |
+| Buses de efectos | Pista de tipo bus (máx. 4) con envíos post-fader de 0 a 1 desde cualquier pista. Enrutado exacto a la muestra (0,313391 medido = esperado), mute de la pista corta su envío, el solo no silencia el bus, exportar = reproducir e incluye la cola de la reverb del bus. Se guarda, se deshace al borrar el bus y se valida al abrir. 8 synths con una reverb compartida: ~45-50 % menos tiempo por bloque que con una reverb cada uno (Xeon). En la app: Mezclador → «+ Bus de reverb» y perilla Send en cada pista. **Límite**: la PDC no compensa la latencia de efectos dentro del bus (hoy ningún efecto propio tiene latencia) | `bus_*` (2), `shared_reverb_bus_costs_less_than_one_reverb_per_track`, `mixer_*bus*` (JVM, 2; incluye girar la perilla Send) |
+| Revisión de pruebas de interfaz | Las pruebas de perillas apuntaban al nodo fusionado de la tira (clicable), así que el toque caía en el centro de la tira, sobre el fader, y no en la perilla. Ahora se usa el árbol sin fusionar: arrastre y doble toque en Pan y Send comprobados. No era un fallo de la app | `mixer_panel_toggles_mute`, `mixer_shows_engine_sends_to_the_bus` |
+| Rutas en la API | **Error real corregido** (lo encontró el fuzzing): una ruta relativa (p. ej. un id usado como `path`) escribía un WAV en el directorio actual del proceso. Ahora folder/path/out/archive/dest/root deben ser absolutas | final de `fuzz_command_api…` |
 
 ### Rendimiento con proyectos grandes (inferencia, sin medir en teléfono)
 
@@ -44,7 +47,7 @@ Samsung de gama media rinde de 3 a 6 veces menos en este código, quedaría entr
 límite o fuera de tiempo real. El perfil muestra dónde está el coste: el synth (~30 %, voces con dos osciladores y
 filtro por muestra) y la reverb (~20 %, una instancia por pista). Lo más rentable, por orden:
 1. **Envíos a un bus de reverb compartido** en lugar de una reverb por pista (lo normal en mezcla; quita la mayor
-   parte del 20 %).
+   parte del 20 %). **Hecho** esta noche: ver «Buses de efectos» arriba.
 2. **Congelar pista** (renderizar a audio una pista de synth terminada).
 3. Sobremuestreo o SIMD solo si las mediciones en el teléfono lo piden.
 La prueba 16 de TESTING_ON_DEVICE.md (carga) dirá dónde está el límite real.

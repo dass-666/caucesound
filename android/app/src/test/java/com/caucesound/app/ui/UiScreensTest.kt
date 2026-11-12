@@ -8,6 +8,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -59,6 +62,9 @@ class UiScreensTest {
         override fun play() { calls += "play" }
         override fun addPattern(trackId: String, copyFrom: String?) { calls += "addPattern:$copyFrom" }
         override fun addReverbBus() { calls += "addReverbBus" }
+        override fun setSendLive(trackId: String, busId: String, level: Float) { calls += "send:$trackId:$busId" }
+        override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
+        override fun commitMixer() { calls += "commit" }
             }
 
     /** Igual que en la app: fondo y color de texto del Scaffold del estudio. */
@@ -130,6 +136,14 @@ class UiScreensTest {
         shot("05_mixer")
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("M"))[0].performClick()
         assertEquals("mute:${state.tracks[0].id}:true", rec.calls.last())
+        // Perilla de panorámica: arrastrar cambia el valor en vivo y al soltar se cierra el gesto; doble toque = centro.
+        val pan = compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Pan", substring = true), useUnmergedTree = true)[0]
+        pan.performTouchInput { swipeUp() }
+        assertTrue(rec.calls.contains("pan:${state.tracks[0].id}"))
+        assertEquals("commit", rec.calls.last())
+        rec.calls.clear()
+        pan.performTouchInput { doubleClick() }
+        assertTrue(rec.calls.contains("pan:${state.tracks[0].id}"))
     }
 
     @Test fun mixer_offers_reverb_bus_when_there_is_none() {
@@ -153,9 +167,12 @@ class UiScreensTest {
         shot("05b_mixer_bus")
         compose.onNodeWithContentDescription("Send 25%").assertExists()
         // Una perilla visible por pista que no es bus (la del bus es un hueco invisible sin semántica).
-        assertEquals(st.tracks.count { !it.isBus }, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Send", substring = true)).fetchSemanticsNodes().size)
-        // El giro de la perilla no se comprueba aquí: en Robolectric los gestos de arrastre y doble toque no llegan
-        // a ninguna Knob (también la de Pan, ya existente); queda para la prueba en el teléfono.
+        assertEquals(st.tracks.count { !it.isBus }, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Send", substring = true), useUnmergedTree = true).fetchSemanticsNodes().size)
+        // La tira es clicable y fusiona la semántica de sus hijos: el gesto se dirige a la perilla en el árbol sin fusionar
+        // (en el fusionado, el «nodo» es la tira entera y el toque caería en su centro, sobre el fader).
+        compose.onNodeWithContentDescription("Send 25%", useUnmergedTree = true).performScrollTo().performTouchInput { swipeUp() }
+        assertTrue(rec.calls.contains("send:${synth.id}:${bus.id}"))
+        assertEquals("commit", rec.calls.last())
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Bus de reverb")).fetchSemanticsNodes().isEmpty())
     }
 

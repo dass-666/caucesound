@@ -64,6 +64,8 @@ envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga
 | 17 | Interrupciones | Durante la reproducción: llamada, alarma, desconectar auriculares | ¿Se detiene limpio? ¿Notas colgadas al volver? |
 | 18 | Deshacer perillas | Gira el corte del synth varias veces y pulsa Deshacer | ¿Vuelve al valor anterior a cada giro (no paso a paso)? |
 | 19 | Exportar/importar proyecto | Inicio → ⋮ de un proyecto → Exportar (.caucesound), guárdalo en Descargas; luego Importar ese archivo | ¿Aparece la copia y suena igual? ¿Se abre el archivo en Windows como ZIP? |
+| 20 | Bus de reverb | Mezclador → «+ Bus de reverb». Sube la perilla Send de Melodía y de la caja/batería mientras suena; mute en Melodía; exporta | ¿Se oye la reverb solo en las pistas con Send? ¿Al silenciar Melodía desaparece también su reverb? ¿La exportación incluye la cola? Repite la prueba 16 con un bus en lugar de una reverb por pista y compara la Carga DSP |
+| 21 | Perillas | Arrastra hacia arriba/derecha cualquier perilla (Pan, Send, synth) y haz doble toque sobre ella | ¿Gira con el dedo? ¿El doble toque la devuelve al valor por defecto? ¿Es cómodo el recorrido con el dedo? (Las pruebas JVM simulan el gesto, pero no la ergonomía) |
 
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 

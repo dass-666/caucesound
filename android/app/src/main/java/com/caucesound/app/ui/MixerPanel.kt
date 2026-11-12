@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -94,8 +93,12 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: Tra
             Knob("Send", send, 0f, 1f, 0f, { send = it; actions.setSendLive(t.id, bus.id, it) }, onEnd = actions::commitMixer, size = 40.dp,
                 color = Palette.Violet, format = { "${(it * 100).toInt()}%" })
         } else if (bus != null) {
-            // Hueco invisible e inerte del mismo tamaño que la perilla.
-            Box(Modifier.alpha(0f).clearAndSetSemantics {}) { Knob("Send", 0f, 0f, 1f, 0f, {}, size = 40.dp) }
+            // Hueco del mismo alto que la perilla (círculo + dos líneas de texto de 11 sp), sin semántica ni gestos.
+            Column(Modifier.clearAndSetSemantics {}) {
+                Spacer(Modifier.height(40.dp))
+                Text("", fontSize = 11.sp, maxLines = 1)
+                Text("", fontSize = 11.sp, maxLines = 1)
+            }
         }
         Row(Modifier.weight(1f).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             VerticalFader(vol, { vol = it; actions.setVolumeLive(t.id, it) }, actions::commitMixer, Modifier.width(40.dp).fillMaxHeight(), color = color)
