@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.Shadows.shadowOf
 
 /**
@@ -19,6 +20,8 @@ import org.robolectric.Shadows.shadowOf
  * el mismo objeto (mismo oyente = mismo dueño del foco, sin pérdida) y la pérdida real sí detiene.
  */
 @RunWith(RobolectricTestRunner::class)
+// SDK fijo como en UiScreensTest: el SDK 36 de Robolectric exige Java 21 y la CI usa Java 17.
+@Config(sdk = [35])
 class AudioGuardTest {
     private val ctx: Context = ApplicationProvider.getApplicationContext()
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
