@@ -175,6 +175,8 @@ std::string AudioIO::statusJson()
     s << "{\"running\":" << (running.load() ? "true" : "false");
     s << ",\"reopenCount\":" << reopenCount.load() << ",\"inputShortReads\":" << inputShortReads.load();
     s << ",\"callbacks\":" << callbacks.load();
+    s << ",\"dspLoadAvg\":" << engine.dspLoadAverage() << ",\"dspLoadPeak\":" << engine.takeDspLoadPeak()
+      << ",\"dspOverBudget\":" << engine.blocksOverBudget();
     if (out)
     {
         auto lat = out->calculateLatencyMillis();

@@ -54,8 +54,15 @@ JNIEXPORT jstring JNICALL Java_com_caucesound_app_audio_NativeEngine_command (JN
 }
 
 JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_position (JNIEnv*, jobject) { return (jlong) native().engine.position(); }
+JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_countInRemaining (JNIEnv*, jobject) { return (jlong) native().engine.countInRemaining(); }
 JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_isPlaying (JNIEnv*, jobject) { return native().engine.isPlaying(); }
 JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_recordedFrames (JNIEnv*, jobject) { return (jlong) native().session.recordingFrames(); }
+
+JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_liveMidi (JNIEnv*, jobject, jint slot, jint status, jint d1, jint d2)
+{
+    if (slot < 0 || slot >= cs::kMaxTracks) return false;
+    return native().engine.sendLive ((int) slot, (uint8_t) status, (uint8_t) (d1 & 0x7F), (uint8_t) (d2 & 0x7F));
+}
 
 // [master, pista0, pista1, ...] picos lineales del último bloque
 JNIEXPORT jfloatArray JNICALL Java_com_caucesound_app_audio_NativeEngine_meters (JNIEnv* env, jobject, jint numTracks)

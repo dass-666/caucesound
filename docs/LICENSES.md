@@ -9,8 +9,30 @@
 | libc++ (NDK) | r27c | Apache 2.0 con excepción LLVM | Runtime C++ | Sí |
 | JUnit | 4.13.2 | EPL 1.0 | Solo pruebas | No |
 | org.json (pruebas JVM) | 20240303 | Dominio público / JSON License según versión — verificar | Solo pruebas | No |
+| Robolectric | 4.16.1 | MIT | Solo pruebas de interfaz en la JVM | No |
+| Roborazzi (+ compose) | 1.70.0 | Apache 2.0 | Solo pruebas: capturas renderizadas en la JVM | No |
+| Compose UI Test (junit4, manifest) | BOM 2025.12.01 | Apache 2.0 | Solo pruebas (el manifest de prueba va solo en `debug`) | No |
 
 No se incluye JUCE, ni samples, fuentes, imágenes o modelos de IA de terceros.
+
+## Contenido musical de la fase 1.2
+
+| Elemento | Origen | Derechos |
+|---|---|---|
+| Sonidos de Cauce Drums (4 kits, 8 carriles) | **Síntesis propia** en `core/src/Drums.cpp` (osciladores, ruido, envolventes), generados al cargar el kit | Propios del proyecto. Ningún sample grabado ni descargado |
+| Cauce Synth y sus 7 presets | Síntesis sustractiva propia (`core/src/Synth.cpp`) | Propios. Los nombres describen el carácter («808 Bass» es un nombre genérico de estilo, no reproduce grabaciones de ninguna caja de ritmos) |
+| Cauce FX (filtro, EQ, saturación, compresor, delay, reverb) | Implementación propia (`core/src/Effects.cpp`), algoritmos clásicos de dominio público (SVF TPT, biquads RBJ, red de combs/all-pass) | Propios. Sin código de terceros |
+| Patrones y progresiones de las plantillas | Patrones rítmicos y progresiones de 4 acordes genéricos escritos para el proyecto (`core/src/SessionMusic.cpp`) | Ritmos y progresiones genéricas no protegibles; no citan ninguna obra |
+
+Si en el futuro se añaden samples grabados, cada paquete necesitará su licencia documentada aquí (origen, autor,
+licencia que permita redistribuir dentro de una app comercial) antes de incluirlo.
+
+## Clave de firma de prueba
+
+`caucesound-preview.jks` (RSA 3072, válida 25 años, SHA-256 del certificado `56:B4:DE:46:…:AB:2E`) firma solo los
+APK de prueba «Preview». No está en git: vive en la carpeta del proyecto junto a `keystore.properties`. **No sirve
+para publicar**: para Google Play hay que crear una clave de subida propia y usar Play App Signing (decisión
+pendiente del propietario).
 
 ## Pendiente de decidir (propietario)
 

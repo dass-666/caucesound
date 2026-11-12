@@ -20,6 +20,25 @@ data class ClipState(
     val end: Long get() = start + length
 }
 
+const val PPQ = 960
+const val STEP_TICKS = PPQ / 4
+const val DRUM_BASE_NOTE = 36
+
+/** Nota MIDI de un clip (ticks relativos al inicio del clip). */
+data class NoteState(val key: Int, val velocity: Int, val channel: Int, val start: Long, val length: Long) {
+    val end: Long get() = start + length
+}
+
+data class PatternState(val id: String, val name: String, val steps: Int, val swing: Float, val lanes: List<List<Int>>)
+
+data class MidiClipState(val id: String, val name: String, val patternId: String, val start: Long, val length: Long, val notes: List<NoteState>) {
+    val end: Long get() = start + length
+    val isPattern: Boolean get() = patternId.isNotEmpty()
+}
+
+/** Efecto de inserción (Cauce FX). params: valores actuales leídos del estado JSON del motor. */
+data class InsertState(val id: String, val type: String, val params: Map<String, Float>, val bypass: Boolean)
+
 data class TrackState(
     val id: String,
     val name: String,
@@ -30,7 +49,22 @@ data class TrackState(
     val armed: Boolean,
     val color: Long,
     val clips: List<ClipState>,
-)
+    val kind: String = "audio",
+    val instrumentType: String = "",
+    val params: Map<String, Float> = emptyMap(),
+    val preset: String = "",
+    val patterns: List<PatternState> = emptyList(),
+    val midiClips: List<MidiClipState> = emptyList(),
+    val inserts: List<InsertState> = emptyList(),
+    /** Envíos post-fader: id del bus → nivel 0..1. */
+    val sends: Map<String, Float> = emptyMap(),
+) {
+    val isAudio: Boolean get() = kind == "audio"
+    val isBus: Boolean get() = kind == "bus"
+    val isDrums: Boolean get() = kind == "drums"
+    val isSynth: Boolean get() = kind == "synth"
+    fun pattern(id: String): PatternState? = patterns.firstOrNull { it.id == id }
+}
 
 data class SourceState(val id: String, val frames: Long, val channels: Int, val origin: String)
 
@@ -50,14 +84,30 @@ data class ProjectState(
     val canRedo: Boolean,
     val recording: Boolean,
     val contentEnd: Long,
+    val loopEnabled: Boolean = false,
+    val loopStart: Long = 0,
+    val loopEnd: Long = 16L * PPQ,
+    val templateId: String = "",
 ) {
     fun clip(id: String): Pair<TrackState, ClipState>? {
         for (t in tracks) for (c in t.clips) if (c.id == id) return t to c
         return null
     }
+    fun midiClip(id: String): Pair<TrackState, MidiClipState>? {
+        for (t in tracks) for (c in t.midiClips) if (c.id == id) return t to c
+        return null
+    }
+    fun trackIndex(id: String): Int = tracks.indexOfFirst { it.id == id }
+    fun ticksToFrames(t: Long): Long = MusicTime.ticksToFrames(t, bpm)
+    fun framesToTicks(f: Long): Long = MusicTime.framesToTicks(f, bpm)
 }
 
-data class ProjectSummary(val folder: String, val name: String, val modifiedAt: Long, val tracks: Int, val error: String?)
+data class ThumbTrack(val color: Long, val kind: String, val spans: List<Pair<Float, Float>>)
+
+data class ProjectSummary(
+    val folder: String, val name: String, val modifiedAt: Long, val tracks: Int, val error: String?,
+    val bpm: Double = 120.0, val templateId: String = "", val thumb: List<ThumbTrack> = emptyList(),
+)
 
 data class CommandResult(val ok: Boolean, val id: String?, val error: String?, val raw: JSONObject)
 
@@ -76,9 +126,19 @@ object StateParser {
         val arr = JSONObject(json).optJSONArray("projects") ?: JSONArray()
         return (0 until arr.length()).map {
             val p = arr.getJSONObject(it)
+            val thumb = mutableListOf<ThumbTrack>()
+            p.optJSONArray("thumb")?.let { ta ->
+                for (i in 0 until ta.length()) {
+                    val t = ta.getJSONObject(i)
+                    val sp = t.optJSONArray("spans") ?: JSONArray()
+                    thumb += ThumbTrack(t.optLong("color"), t.optString("kind", "audio"),
+                        (0 until sp.length()).map { k -> sp.getJSONArray(k).let { it.getDouble(0).toFloat() to it.getDouble(1).toFloat() } })
+                }
+            }
             ProjectSummary(
                 p.getString("folder"), p.optString("name"), p.optLong("modifiedAt"), p.optInt("tracks"),
                 if (p.has("error")) p.getString("error") else null,
+                p.optDouble("bpm", 120.0), p.optString("template"), thumb,
             )
         }.sortedByDescending { it.modifiedAt }
     }
@@ -109,10 +169,45 @@ object StateParser {
                     c.optDouble("gainDb", 0.0).toFloat(), c.getString("id") in missing,
                 )
             }.sortedBy { it.start }
+            val inst = t.optJSONObject("instrument")
+            val params = mutableMapOf<String, Float>()
+            inst?.optString("state")?.takeIf { it.isNotEmpty() }?.let { st ->
+                runCatching { JSONObject(st) }.getOrNull()?.let { o -> for (k in o.keys()) o.optDouble(k).takeIf { !it.isNaN() }?.let { params[k] = it.toFloat() } }
+            }
+            val patterns = mutableListOf<PatternState>()
+            t.optJSONArray("patterns")?.let { pa ->
+                for (k in 0 until pa.length()) {
+                    val po = pa.getJSONObject(k)
+                    val la = po.getJSONArray("lanes")
+                    patterns += PatternState(po.getString("id"), po.optString("name"), po.optInt("steps", 16), po.optDouble("swing", 0.0).toFloat(),
+                        (0 until la.length()).map { l -> la.getJSONArray(l).let { a -> (0 until a.length()).map { a.getInt(it) } } })
+                }
+            }
+            val midi = mutableListOf<MidiClipState>()
+            t.optJSONArray("midiClips")?.let { ma ->
+                for (k in 0 until ma.length()) {
+                    val mo = ma.getJSONObject(k)
+                    val na = mo.optJSONArray("notes") ?: JSONArray()
+                    val notes = (0 until na.length()).map { n -> na.getJSONArray(n).let { NoteState(it.getInt(0), it.getInt(1), it.getInt(2), it.getLong(3), it.getLong(4)) } }
+                    midi += MidiClipState(mo.getString("id"), mo.optString("name"), mo.optString("patternId"), mo.getLong("start"), mo.getLong("length"), notes)
+                }
+            }
+            val inserts = mutableListOf<InsertState>()
+            t.optJSONArray("inserts")?.let { ia ->
+                for (k in 0 until ia.length()) {
+                    val io = ia.getJSONObject(k)
+                    val st = runCatching { JSONObject(io.optString("state", "{}")) }.getOrDefault(JSONObject())
+                    val ps = st.keys().asSequence().associateWith { st.optDouble(it, 0.0).toFloat() }
+                    inserts += InsertState(io.getString("id"), io.optString("type"), ps, io.optBoolean("bypass"))
+                }
+            }
             tracks += TrackState(
                 t.getString("id"), t.optString("name"), t.optDouble("volumeDb", 0.0).toFloat(),
                 t.optDouble("pan", 0.0).toFloat(), t.optBoolean("mute"), t.optBoolean("solo"), t.optBoolean("armed"),
-                t.optLong("color", 0xFF4FC3F7), clips,
+                t.optLong("color", 0xFF4FC3F7), clips, t.optString("kind", "audio"), inst?.optString("type") ?: "", params,
+                inst?.optString("preset") ?: "", patterns, midi.sortedBy { it.start }, inserts,
+                t.optJSONObject("sends")?.let { js -> js.keys().asSequence().associateWith { js.optDouble(it, 0.0).toFloat() } }
+                    ?: emptyMap(),
             )
         }
         return ProjectState(
@@ -120,6 +215,10 @@ object StateParser {
             p.optInt("beatsPerBar", 4), p.optBoolean("metronome"), p.optDouble("masterDb", 0.0).toFloat(),
             p.optLong("recordLatencyOffset"), tracks, sources, o.optBoolean("dirty"), o.optBoolean("canUndo"),
             o.optBoolean("canRedo"), o.optBoolean("recording"), o.optLong("contentEnd"),
+            p.optJSONObject("loop")?.optBoolean("enabled") ?: false,
+            p.optJSONObject("loop")?.optLong("start") ?: 0L,
+            p.optJSONObject("loop")?.optLong("end", 16L * PPQ) ?: 16L * PPQ,
+            p.optString("template"),
         )
     }
 }
@@ -127,6 +226,9 @@ object StateParser {
 /** Utilidades de tiempo musical (puras, probadas en test/). */
 object MusicTime {
     fun framesPerBeat(bpm: Double): Double = 60.0 * SAMPLE_RATE / bpm
+
+    /** Tiempos de cuenta previa que faltan (4, 3, 2, 1) para 'frames' restantes. */
+    fun countInBeatsLeft(frames: Long, bpm: Double): Int = kotlin.math.ceil(frames / framesPerBeat(bpm)).toInt().coerceAtLeast(1)
 
     /** "compás.tiempo" empezando en 1.1 */
     fun barsBeats(frame: Long, bpm: Double, beatsPerBar: Int): String {
@@ -149,5 +251,43 @@ object MusicTime {
     }
 
     fun msToFrames(ms: Double): Long = Math.round(ms * SAMPLE_RATE / 1000.0)
+
+    // Mismo redondeo que cs::ticksToFrames (núcleo C++): la interfaz y el motor coinciden en la muestra.
+    fun ticksToFrames(t: Long, bpm: Double): Long = Math.round(t * 60.0 * SAMPLE_RATE / (bpm * PPQ))
+    fun framesToTicks(f: Long, bpm: Double): Long = Math.round(f * bpm * PPQ / (60.0 * SAMPLE_RATE))
+    fun snapTicks(t: Long, grid: Long): Long = if (grid <= 0) t else (Math.round(t.toDouble() / grid) * grid).coerceAtLeast(0)
+    fun floorTicks(t: Long, grid: Long): Long = if (grid <= 0) t else Math.floorDiv(t, grid) * grid
+
+    /** Paso del patrón que suena en 'frame' para un clip de patrón (o -1 si el cursor no está en el clip). */
+    fun activeStep(frame: Long, bpm: Double, clipStart: Long, clipLength: Long, steps: Int): Int {
+        val tick = framesToTicks(frame, bpm)
+        if (tick < clipStart || tick >= clipStart + clipLength) return -1
+        return (((tick - clipStart) / STEP_TICKS) % steps).toInt()
+    }
+
+    private val NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+    fun noteName(key: Int): String = NAMES[key % 12] + (key / 12 - 1)
+    fun isBlack(key: Int): Boolean = (key % 12) in intArrayOf(1, 3, 6, 8, 10)
     fun framesToMs(f: Long): Double = f * 1000.0 / SAMPLE_RATE
+}
+
+
+/**
+ * Tap tempo: BPM a partir de los toques del usuario. Usa la mediana de los últimos intervalos (hasta 8) para que
+ * un toque impreciso no desvíe el resultado, y empieza de cero si pasan más de 2 s entre toques.
+ */
+class TapTempo {
+    private val taps = ArrayList<Long>()
+    /** Registra un toque (tiempo monotónico en ms). Devuelve el BPM estimado o null si aún no hay 2 toques. */
+    fun tap(nowMs: Long): Double? {
+        if (taps.isNotEmpty() && nowMs - taps.last() > 2000) taps.clear()
+        taps += nowMs
+        while (taps.size > 9) taps.removeAt(0)
+        if (taps.size < 2) return null
+        val gaps = taps.zipWithNext { a, b -> (b - a).toDouble() }.sorted()
+        val median = if (gaps.size % 2 == 1) gaps[gaps.size / 2] else (gaps[gaps.size / 2 - 1] + gaps[gaps.size / 2]) / 2
+        if (median <= 0) return null
+        return (60000.0 / median).coerceIn(20.0, 400.0)
+    }
+    val count: Int get() = taps.size
 }

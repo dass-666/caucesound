@@ -12,6 +12,11 @@ import com.caucesound.app.data.CommandResult
 import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.ProjectSummary
 import com.caucesound.app.data.StateParser
+import com.caucesound.app.data.Catalog
+import com.caucesound.app.data.NoteState
+import com.caucesound.app.ui.tr
+import com.caucesound.app.ui.Panel
+import com.caucesound.app.ui.StudioActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -32,7 +37,7 @@ import java.io.File
 @OptIn(ExperimentalCoroutinesApi::class)
 const val WAVE_BLOCK = 256L
 
-class DawViewModel(app: Application) : AndroidViewModel(app) {
+class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val control = Dispatchers.IO.limitedParallelism(1)
     val projectsRoot = File(app.filesDir, "projects").apply { mkdirs() }
 
@@ -42,6 +47,12 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<ProjectState?> = _state.asStateFlow()
     private val _selectedClip = MutableStateFlow<String?>(null)
     val selectedClip: StateFlow<String?> = _selectedClip.asStateFlow()
+    private val _catalog = MutableStateFlow(Catalog.EMPTY)
+    val catalog: StateFlow<Catalog> = _catalog.asStateFlow()
+    private val _selectedTrack = MutableStateFlow<String?>(null)
+    val selectedTrack: StateFlow<String?> = _selectedTrack.asStateFlow()
+    private val _panel = MutableStateFlow(Panel.ARRANGE)
+    val panel: StateFlow<Panel> = _panel.asStateFlow()
     private val _messages = MutableStateFlow<String?>(null)
     val messages: StateFlow<String?> = _messages.asStateFlow()
     private val _busy = MutableStateFlow<String?>(null)
@@ -71,6 +82,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
         _route.value = currentRoute()
         startAudio()
         refreshProjects()
+        viewModelScope.launch { _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) } }
     }
 
     private fun currentRoute(): AudioGuard.Route = runCatching { guard.outputRoute() }.getOrDefault(AudioGuard.Route.SPEAKER)
@@ -131,15 +143,70 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createProject(name: String, defaultTrackName: (Int) -> String) {
+    /** template: "trap", "reggaeton", "hiphop", "pop", "electronic" o "empty" (definidas en el motor). */
+    fun createProject(name: String, template: String, defaultTrackName: (Int) -> String) {
         viewModelScope.launch {
             val safe = name.trim().ifEmpty { "Proyecto" }
             val folder = File(projectsRoot, "p_" + System.currentTimeMillis())
-            val r = call(Cmd.createProject(folder.absolutePath, safe))
+            val r = call(Cmd.createProject(folder.absolutePath, safe, template))
             if (!r.ok) { toast(r.error ?: ""); return@launch }
-            for (i in 1..4) call(Cmd.addTrack(defaultTrackName(i)))
+            if (template == "empty") for (i in 1..4) call(Cmd.addTrack(defaultTrackName(i)))
             call(Cmd.save())
             onProjectOpened()
+        }
+    }
+
+    fun renameProject(folder: String, name: String) {
+        viewModelScope.launch {
+            val r = call(Cmd.renameProject(projectsRoot.absolutePath, folder, name.trim().ifEmpty { "Proyecto" }))
+            if (!r.ok) toast(r.error ?: "")
+            refreshProjects()
+        }
+    }
+
+    fun duplicateProject(folder: String, name: String) {
+        viewModelScope.launch {
+            val dest = File(projectsRoot, "p_" + System.currentTimeMillis()).absolutePath
+            val r = call(Cmd.duplicateProject(projectsRoot.absolutePath, folder, dest, name))
+            if (!r.ok) toast(r.error ?: "")
+            refreshProjects()
+        }
+    }
+
+    /**
+     * Proyecto completo a un archivo .caucesound (ZIP) elegido por el usuario con el selector del sistema: el motor lo
+     * escribe en la caché de la app y aquí se copia al destino. Nada sale del dispositivo salvo a donde el usuario elija.
+     */
+    fun exportProjectArchive(folder: String, target: android.net.Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tmp = File(app.cacheDir, "export_${System.currentTimeMillis()}.caucesound")
+            val r = call(Cmd.exportProjectArchive(projectsRoot.absolutePath, folder, tmp.absolutePath))
+            if (!r.ok) { tmp.delete(); toast(r.error ?: ""); return@launch }
+            val copied = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.contentResolver.openOutputStream(target, "w")!!.use { out -> tmp.inputStream().use { it.copyTo(out, 1 shl 16) } }
+                }.isSuccess.also { tmp.delete() }
+            }
+            toast(if (copied) tr("Proyecto exportado (${r.raw.optInt("files")} archivos)", "Project exported (${r.raw.optInt("files")} files)")
+                  else tr("No se pudo escribir el archivo elegido", "Could not write the chosen file"))
+        }
+    }
+
+    /** Importa un .caucesound como proyecto nuevo (id nuevo; no sustituye a ninguno existente). */
+    fun importProjectArchive(source: android.net.Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tmp = File(app.cacheDir, "import_${System.currentTimeMillis()}.caucesound")
+            val copied = withContext(Dispatchers.IO) {
+                runCatching { app.contentResolver.openInputStream(source)!!.use { inp -> tmp.outputStream().use { inp.copyTo(it, 1 shl 16) } } }.isSuccess
+            }
+            if (!copied) { tmp.delete(); toast(tr("No se pudo leer el archivo", "Could not read the file")); return@launch }
+            val dest = File(projectsRoot, "p_" + System.currentTimeMillis()).absolutePath
+            val r = call(Cmd.importProjectArchive(projectsRoot.absolutePath, tmp.absolutePath, dest))
+            withContext(Dispatchers.IO) { tmp.delete() }
+            toast(if (r.ok) tr("Proyecto importado: ", "Project imported: ") + r.raw.optString("name") else (r.error ?: ""))
+            refreshProjects()
         }
     }
 
@@ -161,7 +228,9 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun onProjectOpened() {
         _waveforms.value = emptyMap()
         _selectedClip.value = null
+        _panel.value = Panel.ARRANGE
         refresh()
+        _selectedTrack.value = _state.value?.tracks?.firstOrNull { !it.isAudio }?.id ?: _state.value?.tracks?.firstOrNull()?.id
         autosave?.cancel()
         autosave = viewModelScope.launch {
             while (isActive) {
@@ -171,7 +240,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun closeProject() {
+    override fun closeProject() {
         autosave?.cancel()
         viewModelScope.launch {
             call(Cmd.closeProject()) // guarda si hay cambios y detiene grabación/transporte
@@ -193,61 +262,134 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveIfDirty() { if (_state.value?.dirty == true) viewModelScope.launch { call(Cmd.save()); refresh() } }
 
-    fun saveNow() = edit(Cmd.save()) { toast(str(R.string.msg_saved)) }
+    override fun saveNow() = edit(Cmd.save()) { toast(str(R.string.msg_saved)) }
 
     // --- Transporte ---------------------------------------------------------------------------------------------
-    fun play() {
+    override fun play() {
         guard.requestFocus()
         edit(Cmd.play())
     }
 
-    fun stop() {
+    override fun stop() {
         val wasRecording = _state.value?.recording == true
         edit(Cmd.stop()) { if (wasRecording) toast(str(R.string.msg_recording_saved)) }
     }
 
-    fun seek(frame: Long) { viewModelScope.launch { call(Cmd.seek(frame.coerceAtLeast(0))) } }
+    override fun seek(frame: Long) { viewModelScope.launch { call(Cmd.seek(frame.coerceAtLeast(0))) } }
 
     /** Requiere el permiso RECORD_AUDIO (lo pide la Activity) y una pista armada. */
-    fun record() {
+    override fun record() {
         viewModelScope.launch {
             val s = _state.value ?: return@launch
             val armed = s.tracks.firstOrNull { it.armed } ?: run { toast(str(R.string.msg_arm_track)); return@launch }
             if (!withContext(control) { NativeEngine.setInputEnabled(true) }) { toast(str(R.string.msg_mic_failed)); return@launch }
             guard.requestFocus()
-            val r = call(Cmd.startRecording(armed.id))
+            val r = call(Cmd.startRecording(armed.id, _countInBars.value))
             if (!r.ok) toast(r.error ?: "")
             refresh()
             refreshAudioStatus()
         }
     }
 
-    fun setTempo(bpm: Double, beatsPerBar: Int) = edit(Cmd.setTempo(bpm, beatsPerBar))
-    fun setMetronome(on: Boolean) = edit(Cmd.setMetronome(on))
+    override fun setTempo(bpm: Double, beatsPerBar: Int) = edit(Cmd.setTempo(bpm, beatsPerBar))
+    override fun setMetronome(on: Boolean) = edit(Cmd.setMetronome(on))
     fun setLatencyOffsetMs(ms: Double) = edit(Cmd.setLatencyOffset(Math.round(ms * 48.0)))
-    fun undo() = edit(Cmd.undo())
-    fun redo() = edit(Cmd.redo())
+    override fun undo() = edit(Cmd.undo())
+    override fun redo() = edit(Cmd.redo())
 
     // --- Pistas -------------------------------------------------------------------------------------------------
     fun addTrack(name: String) = edit(Cmd.addTrack(name))
+    override fun addTrack(name: String, kind: String) = edit(Cmd.addTrack(name, kind)) { r -> r.id?.let { _selectedTrack.value = it } }
+    override fun selectTrack(id: String) { _selectedTrack.value = id }
+    override fun openPanel(panel: Panel) { _panel.value = panel }
+    override fun setMasterLive(db: Float) { viewModelScope.launch { call(Cmd.setMaster(db)) } }
+    override fun setLoop(on: Boolean, startTick: Long, endTick: Long) = edit(Cmd.setLoop(on, startTick, endTick))
+
+    // --- MIDI y batería ---------------------------------------------------------------------------------------
+    override fun addMidiClip(trackId: String, startTick: Long, lengthTick: Long, patternId: String?) =
+        edit(Cmd.addMidiClip(trackId, startTick, lengthTick, patternId)) { r -> _selectedClip.value = r.id }
+    override fun moveMidiClip(id: String, startTick: Long, trackId: String?) = edit(Cmd.moveMidiClip(id, startTick, trackId))
+    override fun resizeMidiClip(id: String, startTick: Long, lengthTick: Long) = edit(Cmd.resizeMidiClip(id, startTick, lengthTick))
+    override fun deleteMidiClip(id: String) = edit(Cmd.deleteMidiClip(id)) { if (_selectedClip.value == id) _selectedClip.value = null }
+    override fun duplicateMidiClip(id: String) = edit(Cmd.duplicateMidiClip(id)) { r -> _selectedClip.value = r.id }
+    override fun setClipPattern(id: String, patternId: String) = edit(Cmd.setClipPattern(id, patternId))
+    override fun setClipNotes(clipId: String, notes: List<NoteState>) = edit(Cmd.setClipNotes(clipId, notes))
+    override fun quantizeClip(clipId: String, gridTicks: Long) = edit(Cmd.quantizeClip(clipId, gridTicks))
+    override fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) = edit(Cmd.setStep(trackId, patternId, lane, step, velocity))
+    override fun addPattern(trackId: String, copyFrom: String?) = edit(Cmd.addPattern(trackId, copyFrom))
+    override fun setPatternLength(trackId: String, patternId: String, steps: Int) = edit(Cmd.setPatternLength(trackId, patternId, steps))
+    override fun setSwing(trackId: String, patternId: String, swing: Float) = edit(Cmd.setSwing(trackId, patternId, swing))
+    override fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) = edit(Cmd.setPatternLanes(trackId, patternId, lanes))
+
+    /** Parámetros de instrumento: se aplican al instante; el estado (y la interfaz) se refresca al terminar. */
+    override fun setParam(trackId: String, param: String, value: Float) {
+        viewModelScope.launch {
+            val r = call(Cmd.setInstrumentParam(trackId, param, value))
+            if (!r.ok && r.error != null) toast(r.error)
+            // Botones (kit, mute, solo de carril): cada pulsación es su propia entrada de deshacer.
+            if (param == "kit" || param.startsWith("mute") || param.startsWith("solo")) { call(Cmd.endParamGesture()); refresh() }
+        }
+    }
+    override fun addInsert(trackId: String, type: String) = edit(Cmd.addInsert(trackId, type))
+    override fun removeInsert(insertId: String) = edit(Cmd.removeInsert(insertId))
+    override fun setInsertParam(insertId: String, param: String, value: Float) {
+        viewModelScope.launch { val r = call(Cmd.setInsertParam(insertId, param, value)); if (!r.ok && r.error != null) toast(r.error) }
+    }
+    override fun setInsertBypass(insertId: String, bypass: Boolean) = edit(Cmd.setInsertBypass(insertId, bypass))
+    override fun moveInsert(insertId: String, index: Int) = edit(Cmd.moveInsert(insertId, index))
+    fun commitParams() { viewModelScope.launch { refresh() } }
+    override fun loadPreset(trackId: String, presetId: String) = edit(Cmd.loadPreset(trackId, presetId))
+
+    // Favoritos de presets: preferencia del usuario en este dispositivo (no viaja con el proyecto ni cambia los presets).
+    private val prefs = app.getSharedPreferences("cauce_prefs", android.content.Context.MODE_PRIVATE)
+    private val _favoritePresets = MutableStateFlow(prefs.getStringSet("favoritePresets", emptySet())!!.toSet())
+    val favoritePresets: StateFlow<Set<String>> = _favoritePresets
+    // Cuenta previa antes de grabar (0, 1 o 2 compases): preferencia del dispositivo, no del proyecto.
+    private val _countInBars = MutableStateFlow(prefs.getInt("countInBars", 1).coerceIn(0, 2))
+    val countInBars: StateFlow<Int> = _countInBars
+    fun setCountInBars(bars: Int) { _countInBars.value = bars.coerceIn(0, 2); prefs.edit().putInt("countInBars", _countInBars.value).apply() }
+    override fun toggleFavoritePreset(presetId: String) {
+        val next = _favoritePresets.value.let { if (presetId in it) it - presetId else it + presetId }
+        _favoritePresets.value = next
+        prefs.edit().putStringSet("favoritePresets", next).apply()
+    }
+
+    /** Directo al motor (sin pasar por el hilo de control): la latencia de los pads es la del búfer de audio. */
+    override fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {
+        NativeEngine.liveMidi(slot, if (on) 0x90 else 0x80, key, if (on) velocity.coerceIn(1, 127) else 0)
+    }
     fun removeTrack(id: String) = edit(Cmd.removeTrack(id))
     fun renameTrack(id: String, name: String) = edit(Cmd.renameTrack(id, name))
-    fun setMute(id: String, on: Boolean) = edit(Cmd.setMute(id, on))
-    fun setSolo(id: String, on: Boolean) = edit(Cmd.setSolo(id, on))
-    fun setArmed(id: String, on: Boolean) = edit(Cmd.setArmed(id, on))
+    override fun setMute(id: String, on: Boolean) = edit(Cmd.setMute(id, on))
+    override fun setSolo(id: String, on: Boolean) = edit(Cmd.setSolo(id, on))
+    override fun setArmed(id: String, on: Boolean) = edit(Cmd.setArmed(id, on))
 
     /** Deslizadores: se aplican al instante; el estado se refresca al soltar. */
-    fun setVolumeLive(id: String, db: Float) { viewModelScope.launch { call(Cmd.setVolume(id, db)) } }
-    fun setPanLive(id: String, pan: Float) { viewModelScope.launch { call(Cmd.setPan(id, pan)) } }
-    fun commitMixer() { viewModelScope.launch { refresh() } }
+    override fun setVolumeLive(id: String, db: Float) { viewModelScope.launch { call(Cmd.setVolume(id, db)) } }
+    override fun setPanLive(id: String, pan: Float) { viewModelScope.launch { call(Cmd.setPan(id, pan)) } }
+    override fun setSendLive(trackId: String, busId: String, level: Float) {
+        viewModelScope.launch { call(Cmd.setSend(trackId, busId, level)) }
+    }
+    override fun addReverbBus() {
+        viewModelScope.launch {
+            val bus = call(Cmd.addTrack(str(R.string.bus_reverb_name), "bus"))
+            if (!bus.ok || bus.id == null) { toast(bus.error ?: ""); refresh(); return@launch }
+            val rev = call(Cmd.addInsert(bus.id, "cs.reverb"))
+            if (rev.ok && rev.id != null) call(Cmd.setInsertParam(rev.id, "mix", 1f))
+            call(Cmd.endParamGesture())
+            refresh()
+        }
+    }
+    /** Al soltar una perilla o deslizador: cierra el gesto (una entrada de deshacer por giro) y refresca. */
+    override fun commitMixer() { viewModelScope.launch { call(Cmd.endParamGesture()); refresh() } }
 
     // --- Clips --------------------------------------------------------------------------------------------------
-    fun selectClip(id: String?) { _selectedClip.value = id }
-    fun moveClip(id: String, start: Long, trackId: String?) = edit(Cmd.moveClip(id, start, trackId))
-    fun trimClip(id: String, start: Long, length: Long) = edit(Cmd.trimClip(id, start, length))
-    fun splitSelectedAt(frame: Long) { _selectedClip.value?.let { id -> edit(Cmd.splitClip(id, frame)) { r -> _selectedClip.value = r.id } } }
-    fun deleteSelected() { _selectedClip.value?.let { id -> edit(Cmd.deleteClip(id)) { _selectedClip.value = null } } }
-    fun duplicateSelected() { _selectedClip.value?.let { id -> edit(Cmd.duplicateClip(id)) { r -> _selectedClip.value = r.id } } }
+    override fun selectClip(id: String?) { _selectedClip.value = id }
+    override fun moveClip(id: String, start: Long, trackId: String?) = edit(Cmd.moveClip(id, start, trackId))
+    override fun trimClip(id: String, start: Long, length: Long) = edit(Cmd.trimClip(id, start, length))
+    override fun splitSelectedAt(frame: Long) { _selectedClip.value?.let { id -> edit(Cmd.splitClip(id, frame)) { r -> _selectedClip.value = r.id } } }
+    override fun deleteSelected() { _selectedClip.value?.let { id -> edit(Cmd.deleteClip(id)) { _selectedClip.value = null } } }
+    override fun duplicateSelected() { _selectedClip.value?.let { id -> edit(Cmd.duplicateClip(id)) { r -> _selectedClip.value = r.id } } }
     fun setFades(id: String, fadeIn: Long, fadeOut: Long) = edit(Cmd.setFades(id, fadeIn, fadeOut))
     fun setClipGain(id: String, db: Float) = edit(Cmd.setClipGain(id, db))
 

@@ -32,6 +32,17 @@ struct LoadReport
 
 class Recorder;
 
+// Plantillas de proyecto (definidas en SessionMusic.cpp). La interfaz las muestra tal cual: lo que se anuncia es
+// exactamente lo que se crea.
+struct TemplateInfo
+{
+    std::string id;
+    double bpm = 120;
+    std::string kitId;
+    std::vector<std::string> tracks; // nombres de pista en orden
+};
+std::vector<TemplateInfo> projectTemplates();
+
 class Session
 {
 public:
@@ -39,7 +50,8 @@ public:
     ~Session();
 
     // --- Proyecto -------------------------------------------------------------------------------------------------
-    OpResult createProject (const std::string& folder, const std::string& name, int sampleRate = 48000);
+    // templateId: "" o "empty" (vacío), "trap", "reggaeton", "hiphop", "pop", "electronic" (ver Templates.cpp).
+    OpResult createProject (const std::string& folder, const std::string& name, int sampleRate = 48000, const std::string& templateId = {});
     OpResult openProject (const std::string& folder, LoadReport* report = nullptr);
     OpResult save();
     void close();
@@ -50,7 +62,8 @@ public:
     std::string stateJson() const;   // modelo + datos derivados para la interfaz
 
     // --- Pistas ---------------------------------------------------------------------------------------------------
-    OpResult addTrack (const std::string& name = {});
+    // kind: "audio" (por defecto), "synth" (Cauce Synth + clip MIDI vacío) o "drums" (Cauce Drums + patrón + clip).
+    OpResult addTrack (const std::string& name = {}, const std::string& kind = "audio");
     OpResult removeTrack (const std::string& trackId);
     OpResult renameTrack (const std::string& trackId, const std::string& name);
     // Mezcla: no entra en deshacer (se aplica al instante por atómicos), sí marca el proyecto como modificado.
@@ -59,6 +72,8 @@ public:
     OpResult setTrackMute (const std::string& trackId, bool on);
     OpResult setTrackSolo (const std::string& trackId, bool on);
     OpResult setTrackArmed (const std::string& trackId, bool on);
+    // Envío post-fader de una pista hacia una pista bus (0..1). Como la mezcla: al instante y sin deshacer.
+    OpResult setTrackSend (const std::string& trackId, const std::string& busId, float level);
     OpResult setMasterDb (float db);
 
     // --- Clips (con deshacer) ------------------------------------------------------------------------------------
@@ -78,6 +93,43 @@ public:
     OpResult undo();
     OpResult redo();
 
+    // --- Instrumentos y parámetros de efectos: se aplican al instante y entran en deshacer agrupados por gesto ----
+    // Llamadas seguidas al mismo parámetro (un giro de perilla) forman una sola entrada de deshacer. endParamGesture()
+    // cierra el gesto (la interfaz lo llama al soltar la perilla): el siguiente cambio abre una entrada nueva.
+    OpResult setInstrumentParam (const std::string& trackId, const std::string& paramId, float value);
+    void endParamGesture();
+    OpResult loadSynthPreset (const std::string& trackId, const std::string& presetId);
+    int activeVoices (const std::string& trackId) const; // para pruebas e indicadores
+
+    // --- Patrones de batería (con deshacer) -----------------------------------------------------------------
+    OpResult addPattern (const std::string& trackId, const std::string& copyFromId = {});
+    OpResult setPatternStep (const std::string& trackId, const std::string& patternId, int lane, int step, int velocity);
+    OpResult setPatternLength (const std::string& trackId, const std::string& patternId, int steps); // 16 <-> 32
+    OpResult setPatternSwing (const std::string& trackId, const std::string& patternId, float swing);
+    OpResult setPatternLanes (const std::string& trackId, const std::string& patternId, const std::vector<std::vector<int>>& lanes);
+    OpResult renamePattern (const std::string& trackId, const std::string& patternId, const std::string& name);
+
+    // --- Clips MIDI (con deshacer). Posiciones en ticks (kPpq por negra) ------------------------------------
+    OpResult addMidiClip (const std::string& trackId, Tick start, Tick length, const std::string& patternId = {});
+    OpResult moveMidiClip (const std::string& clipId, Tick start, const std::string& newTrackId = {});
+    OpResult resizeMidiClip (const std::string& clipId, Tick start, Tick length);
+    OpResult deleteMidiClip (const std::string& clipId);
+    OpResult duplicateMidiClip (const std::string& clipId);
+    OpResult setMidiClipPattern (const std::string& clipId, const std::string& patternId);
+    OpResult setClipNotes (const std::string& clipId, std::vector<MidiNote> notes);
+    OpResult quantizeClip (const std::string& clipId, Tick grid, float strength, bool lengthsToo);
+
+    // --- Bucle --------------------------------------------------------------------------------------------------
+    OpResult setLoop (bool on, Tick start, Tick end);
+
+    // --- Efectos de inserción (Cauce FX), máx. 8 por pista, en serie tras el instrumento o el audio ------------
+    OpResult addInsert (const std::string& trackId, const std::string& type);   // r.id = id de la inserción
+    OpResult removeInsert (const std::string& insertId);
+    OpResult setInsertParam (const std::string& insertId, const std::string& paramId, float value); // sin deshacer
+    OpResult setInsertBypass (const std::string& insertId, bool bypass);
+    OpResult moveInsert (const std::string& insertId, int newIndex);
+    float insertMeter (const std::string& insertId) const; // reducción de ganancia del compresor (dB), si aplica
+
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
     OpResult setMetronome (bool on);
@@ -86,7 +138,8 @@ public:
     // --- Grabación -----------------------------------------------------------------------------------------------
     // Empieza a grabar en la pista armada (o trackId). El transporte debe ponerse en marcha (play) aparte o con
     // startTransport = true. channels: 1 (mono) o 2.
-    OpResult startRecording (const std::string& trackId, int channels, bool startTransport);
+    // countInBars: compases de cuenta previa (0..4) antes de que el transporte y la toma empiecen.
+    OpResult startRecording (const std::string& trackId, int channels, bool startTransport, int countInBars = 0);
     // Detiene la grabación (y el transporte) y crea el clip. Devuelve el id del clip.
     OpResult stopRecording();
     bool isRecording() const;
@@ -113,7 +166,16 @@ private:
     static constexpr int kPeakBlock = 256;
 
     void pushUndo();
+    int busIndexOf (const std::string& trackId) const;
+    void applySendsTo (TrackParams& p, const TrackModel& t) const;
+    void paramUndoLocked (const std::string& key); // entrada de deshacer al empezar un gesto (ver endParamGesture)
+    void syncInstancesLocked();                   // tras deshacer/rehacer: instancias vivas = estado del modelo
     void rebuildGraph();
+    TrackRT makeTrackRT (const TrackModel& t, int slot, bool offline, RenderGraph& g);
+    std::shared_ptr<Instrument> instrumentFor (const TrackModel& t);
+    void applyLoopLocked();
+    void applyTemplateLocked (const std::string& templateId);
+    TrackModel* instrumentTrack (const std::string& trackId, const char* kind, OpResult& err);
     void applyMixerParams();
     OpResult loadSourceLocked (const SourceRef& ref, bool* ok);
     std::shared_ptr<Source> makeSource (std::shared_ptr<const AudioData> audio) const;
@@ -129,8 +191,11 @@ private:
     ProjectModel proj;
     std::map<std::string, std::shared_ptr<Source>> pool;
     std::map<std::string, ProcessorPtr> insertInstances;
+    std::map<std::string, std::shared_ptr<Instrument>> instrumentInstances; // por id de pista
     std::vector<ProjectModel> undoStack, redoStack;
+    std::string paramGestureKey; // parámetro del gesto abierto ("" = ninguno)
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
+    bool recordingCountIn = false; // la toma en curso empezó con cuenta previa
 };
 } // namespace cs

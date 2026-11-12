@@ -1,0 +1,66 @@
+{
+ "ok": true,
+ "projects": [
+  {
+   "bpm": 120.0,
+   "folder": "/tmp/cs_test_ui_fixtures/vacio",
+   "id": "prj_1e6664a6a395",
+   "modifiedAt": 1794488335802,
+   "name": "Idea vacía",
+   "template": "empty",
+   "thumb": [],
+   "tracks": 0
+  },
+  {
+   "bpm": 140.0,
+   "folder": "/tmp/cs_test_ui_fixtures/beat",
+   "id": "prj_3c32289ac14d",
+   "modifiedAt": 1794488335799,
+   "name": "Beat trap 140",
+   "template": "trap",
+   "thumb": [
+    {
+     "color": 4287323382,
+     "kind": "drums",
+     "spans": [
+      [
+       0.0,
+       1.0
+      ]
+     ]
+    },
+    {
+     "color": 4282090230,
+     "kind": "synth",
+     "spans": [
+      [
+       0.0,
+       1.0
+      ]
+     ]
+    },
+    {
+     "color": 4280472558,
+     "kind": "synth",
+     "spans": [
+      [
+       0.0,
+       1.0
+      ]
+     ]
+    },
+    {
+     "color": 4294286859,
+     "kind": "audio",
+     "spans": []
+    },
+    {
+     "color": 4281652121,
+     "kind": "bus",
+     "spans": []
+    }
+   ],
+   "tracks": 5
+  }
+ ]
+}

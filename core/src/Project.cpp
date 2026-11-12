@@ -43,10 +43,31 @@ ClipModel* ProjectModel::findClip (const std::string& cid, TrackModel** owner)
             if (c.id == cid) { if (owner) *owner = &t; return &c; }
     return nullptr;
 }
+MidiClipModel* ProjectModel::findMidiClip (const std::string& cid, TrackModel** owner)
+{
+    for (auto& t : tracks)
+        for (auto& c : t.midiClips)
+            if (c.id == cid) { if (owner) *owner = &t; return &c; }
+    return nullptr;
+}
+const DrumPattern* TrackModel::findPattern (const std::string& pid) const
+{
+    for (const auto& p : patterns) if (p.id == pid) return &p;
+    return nullptr;
+}
+DrumPattern* TrackModel::findPattern (const std::string& pid)
+{
+    for (auto& p : patterns) if (p.id == pid) return &p;
+    return nullptr;
+}
 Frame ProjectModel::contentEnd() const
 {
     Frame e = 0;
-    for (const auto& t : tracks) for (const auto& c : t.clips) e = std::max (e, c.start + c.length);
+    for (const auto& t : tracks)
+    {
+        for (const auto& c : t.clips) e = std::max (e, c.start + c.length);
+        for (const auto& c : t.midiClips) e = std::max (e, ticksToFrames (c.start + c.length));
+    }
     return e;
 }
 
@@ -79,6 +100,9 @@ std::string toJson (const ProjectModel& p, bool pretty)
     j["recordLatencyOffset"] = p.recordLatencyOffset;
     j["createdAt"] = p.createdAt;
     j["modifiedAt"] = p.modifiedAt;
+    j["template"] = p.templateId;
+    j["loop"] = { { "enabled", p.loopEnabled }, { "start", p.loopStart }, { "end", p.loopEnd } };
+    j["ppq"] = kPpq;
     j["sources"] = json::array();
     for (const auto& s : p.sources)
         j["sources"].push_back ({ { "id", s.id }, { "file", s.file }, { "origin", s.origin }, { "channels", s.channels }, { "frames", s.frames } });
@@ -95,6 +119,22 @@ std::string toJson (const ProjectModel& p, bool pretty)
         jt["inserts"] = json::array();
         for (const auto& i : t.inserts)
             jt["inserts"].push_back ({ { "id", i.id }, { "type", i.type }, { "state", i.state }, { "bypass", i.bypass } });
+        jt["kind"] = t.kind;
+        if (! t.sends.empty()) jt["sends"] = t.sends;
+        if (! t.instrument.type.empty())
+            jt["instrument"] = { { "type", t.instrument.type }, { "state", t.instrument.state }, { "preset", t.instrument.preset } };
+        jt["patterns"] = json::array();
+        for (const auto& pt : t.patterns)
+            jt["patterns"].push_back ({ { "id", pt.id }, { "name", pt.name }, { "steps", pt.steps }, { "swing", pt.swing }, { "lanes", pt.lanes } });
+        jt["midiClips"] = json::array();
+        for (const auto& c : t.midiClips)
+        {
+            json jc = { { "id", c.id }, { "name", c.name }, { "patternId", c.patternId }, { "start", c.start }, { "length", c.length } };
+            json notes = json::array();
+            for (const auto& n : c.notes) notes.push_back ({ n.key, n.velocity, n.channel, n.start, n.length });
+            jc["notes"] = notes; // [tecla, velocidad, canal, inicio, duración] (compacto: un clip puede tener miles)
+            jt["midiClips"].push_back (jc);
+        }
         j["tracks"].push_back (jt);
     }
     return j.dump (pretty ? 2 : -1);
@@ -121,6 +161,13 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
         p.recordLatencyOffset = j.value ("recordLatencyOffset", (Frame) 0);
         p.createdAt = j.value ("createdAt", (int64_t) 0);
         p.modifiedAt = j.value ("modifiedAt", (int64_t) 0);
+        p.templateId = j.value ("template", std::string());
+        if (j.contains ("loop") && j["loop"].is_object())
+        {
+            p.loopEnabled = j["loop"].value ("enabled", false);
+            p.loopStart = j["loop"].value ("start", (Tick) 0);
+            p.loopEnd = j["loop"].value ("end", (Tick) 16 * kPpq);
+        }
         for (const auto& s : j.at ("sources"))
         {
             SourceRef r;
@@ -166,6 +213,44 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                     i.bypass = ji.value ("bypass", false);
                     t.inserts.push_back (i);
                 }
+            t.kind = jt.value ("kind", std::string ("audio"));
+            if (jt.contains ("sends") && jt["sends"].is_object())
+                for (const auto& [busId, level] : jt["sends"].items()) t.sends[busId] = level.get<float>();
+            if (jt.contains ("instrument") && jt["instrument"].is_object())
+            {
+                t.instrument.type = jt["instrument"].at ("type").get<std::string>();
+                t.instrument.state = jt["instrument"].value ("state", std::string());
+                t.instrument.preset = jt["instrument"].value ("preset", std::string());
+            }
+            if (jt.contains ("patterns"))
+                for (const auto& jp : jt.at ("patterns"))
+                {
+                    DrumPattern pt;
+                    pt.id = jp.at ("id").get<std::string>();
+                    pt.name = jp.value ("name", std::string());
+                    pt.steps = jp.at ("steps").get<int>();
+                    pt.swing = jp.value ("swing", 0.0f);
+                    pt.lanes = jp.at ("lanes").get<std::vector<std::vector<int>>>();
+                    t.patterns.push_back (pt);
+                }
+            if (jt.contains ("midiClips"))
+                for (const auto& jc : jt.at ("midiClips"))
+                {
+                    MidiClipModel c;
+                    c.id = jc.at ("id").get<std::string>();
+                    c.name = jc.value ("name", std::string());
+                    c.patternId = jc.value ("patternId", std::string());
+                    c.start = jc.at ("start").get<Tick>();
+                    c.length = jc.at ("length").get<Tick>();
+                    for (const auto& jn : jc.at ("notes"))
+                    {
+                        MidiNote n;
+                        n.key = jn.at (0).get<int>(); n.velocity = jn.at (1).get<int>(); n.channel = jn.at (2).get<int>();
+                        n.start = jn.at (3).get<Tick>(); n.length = jn.at (4).get<Tick>();
+                        c.notes.push_back (n);
+                    }
+                    t.midiClips.push_back (c);
+                }
             p.tracks.push_back (t);
         }
         const std::string problem = validate (p);
@@ -182,6 +267,11 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
 
 std::string validate (const ProjectModel& p)
 {
+    {
+        int buses = 0;
+        for (const auto& t : p.tracks) buses += t.kind == "bus";
+        if (buses > 4) return "demasiados buses";
+    }
     if (p.sampleRate < 8000 || p.sampleRate > 192000) return "frecuencia de muestreo fuera de rango";
     if (! std::isfinite (p.bpm) || p.bpm < 20 || p.bpm > 400) return "tempo fuera de rango (20-400 BPM)";
     if (p.beatsPerBar < 1 || p.beatsPerBar > 16) return "compás no válido";
@@ -209,7 +299,35 @@ std::string validate (const ProjectModel& p)
         }
         for (const auto& i : t.inserts)
             if (i.id.empty() || ! ids.insert (i.id).second || i.type.empty()) return "inserción no válida";
+        if (t.kind != "audio" && t.kind != "synth" && t.kind != "drums" && t.kind != "bus") return "tipo de pista desconocido";
+        if (t.kind == "bus" && (! t.clips.empty() || ! t.midiClips.empty() || ! t.instrument.type.empty() || ! t.sends.empty()))
+            return "un bus no tiene clips, instrumento ni envíos";
+        for (const auto& [busId, level] : t.sends)
+        {
+            const TrackModel* b = p.findTrack (busId);
+            if (! b || b->kind != "bus") return "envío a un bus inexistente";
+            if (! std::isfinite (level) || level < 0 || level > 1) return "nivel de envío no válido";
+        }
+        if (t.kind == "synth" && t.instrument.type != "cs.synth") return "pista de sintetizador sin instrumento";
+        if (t.kind == "drums" && t.instrument.type != "cs.drums") return "pista de batería sin instrumento";
+        if (t.patterns.size() > 64) return "demasiados patrones";
+        for (const auto& pt : t.patterns)
+        {
+            if (! ids.insert (pt.id).second) return "id de patrón duplicado";
+            const std::string e = validatePattern (pt);
+            if (! e.empty()) return e;
+        }
+        if (t.midiClips.size() > 512) return "demasiados clips MIDI";
+        for (const auto& c : t.midiClips)
+        {
+            if (c.id.empty() || ! ids.insert (c.id).second) return "id de clip MIDI duplicado o vacío";
+            if (c.start < 0 || c.length <= 0 || c.length > (Tick) kPpq * 4 * 1000) return "clip MIDI fuera de rango";
+            if (! c.patternId.empty() && ! t.findPattern (c.patternId)) return "clip que referencia un patrón inexistente";
+            if (c.notes.size() > 20000) return "demasiadas notas en un clip";
+            for (const auto& n : c.notes) { const std::string e = validateNote (n); if (! e.empty()) return e; }
+        }
     }
+    if (p.loopStart < 0 || p.loopEnd < 0) return "bucle no válido";
     return {};
 }
 

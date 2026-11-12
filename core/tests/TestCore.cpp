@@ -362,7 +362,13 @@ TEST (engine_output_is_identical_for_any_block_size)
         e.trackParams (2).mute.store (true);
         e.play();
         auto out = runLive (e, 60000, block, 99);
-        if (first) { reference = out; first = false; continue; }
+        if (first)
+        {
+            float m = 0;
+            for (float x : out) m = std::max (m, std::fabs (x));
+            CHECK (m > 0.05f); // la referencia no es silencio (si lo fuera, la comparación no probaría nada)
+            reference = out; first = false; continue;
+        }
         CHECK_MSG (out == reference, "bloque " + std::to_string (block));
     }
 }
