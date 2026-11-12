@@ -54,8 +54,16 @@ fun partName(part: String): String = when (part) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun VariationsPanel(state: ProjectState, actions: StudioActions) {
+fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: Boolean = false) {
     val plan = state.music
+    if (plan == null && soloAvailable) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(tr("Las variaciones funcionan en canciones creadas desde un estilo con la versión 0.4 o posterior. Aquí puedes usar Solo AI.",
+                "Variations work on songs created from a style with version 0.4 or later. You can use Solo AI here."), color = Palette.TextDim, fontSize = 12.sp)
+            SoloAiSection(state, actions)
+        }
+        return
+    }
     if (plan == null) {
         EmptyState(Icons.Default.AutoAwesome, tr("Este proyecto no tiene variaciones", "This project has no variations"),
             tr("Las variaciones funcionan en canciones creadas desde un estilo con la versión 0.4 o posterior. Tus proyectos anteriores siguen igual.",
@@ -116,5 +124,47 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions) {
                 }
             }
         }
+        if (soloAvailable) SoloAiSection(state, actions)
+    }
+}
+
+/**
+ * Solo AI (plugin integrado como submódulo). Compone en el teléfono, sin red, y el resultado entra como pista nueva
+ * con un clip MIDI editable; deshacer la quita. Si la canción no tiene plan musical, la tonalidad no es fiable y se
+ * pide aquí (no se adivina).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SoloAiSection(state: ProjectState, actions: StudioActions) {
+    val needsKey = state.music == null
+    var type by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var proposal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var bars by remember { androidx.compose.runtime.mutableIntStateOf(1) }
+    var keyRoot by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    var minor by remember { androidx.compose.runtime.mutableStateOf(true) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(tr("Solo AI · Generar melodía o solo", "Solo AI · Generate melody or solo"), fontWeight = FontWeight.Bold)
+        Text(if (needsKey) tr("Esta canción no tiene tonalidad guardada: elígela para que la melodía encaje.", "This song has no saved key: pick it so the melody fits.")
+            else tr("Usa la tonalidad y los acordes de la canción. Se crea una pista nueva desde la sección A.", "Uses the song's key and chords. A new track is created from section A."),
+            color = Palette.TextDim, fontSize = 12.sp)
+        Segmented(listOf(tr("Estribillo", "Hook"), "Solo"), type, { type = it }, Modifier.fillMaxWidth())
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(tr("Sencilla", "Simple"), tr("Emotiva", "Emotional"), tr("Rítmica", "Rhythmic"), tr("Atrevida", "Bold")).forEachIndexed { i, label ->
+                PillToggle(label, proposal == i, { proposal = i }, color = Palette.Violet, height = 36.dp)
+            }
+        }
+        Segmented(listOf(tr("4 compases", "4 bars"), tr("8 compases", "8 bars"), tr("16 compases", "16 bars")), bars, { bars = it }, Modifier.fillMaxWidth())
+        if (needsKey) {
+            val names = listOf("Do", "Do#", "Re", "Mib", "Mi", "Fa", "Fa#", "Sol", "Lab", "La", "Sib", "Si")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                names.forEachIndexed { i, n -> PillToggle(n, keyRoot == i, { keyRoot = i }, color = Palette.Cyan, height = 36.dp, minWidth = 44.dp, modifier = Modifier.testTag("solo_key_$i")) }
+            }
+            Segmented(listOf(tr("Mayor", "Major"), tr("Menor", "Minor")), if (minor) 1 else 0, { minor = it == 1 }, Modifier.fillMaxWidth())
+        }
+        CauceButton(tr("Generar con Solo AI", "Generate with Solo AI"), {
+            val n = listOf(4, 8, 16)[bars]
+            actions.soloMelody(if (needsKey) 0 else 2, n, if (type == 1) "solo" else "chorus", proposal, Random.nextLong(1, 0xFFFFFFFFL),
+                if (needsKey) keyRoot else null, minor)
+        }, Modifier.fillMaxWidth().testTag("solo_generate"), kind = ButtonKind.Primary, enabled = !needsKey || keyRoot >= 0, icon = Icons.Default.AutoAwesome)
     }
 }

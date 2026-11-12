@@ -1,6 +1,6 @@
 # Contrato de plugins de CAUCESOUND (misión 0.4, etapa C)
 
-Estado: **diseño**. Este documento no integra todavía ningún plugin. Las secciones marcadas «Hecho» existen en el
+Estado: **Solo AI integrado** (submódulo fijado, decisión del propietario del 2026-11-12). El resto sigue en diseño. Las secciones marcadas «Hecho» existen en el
 motor y tienen pruebas; el resto es propuesta. No se ha copiado ni modificado código de los repositorios de plugins.
 
 ## 1. Qué ya ofrece el motor (hecho, con pruebas)
@@ -54,11 +54,44 @@ Reglas:
 | **Spatial Echo** (repo `3D`) | El núcleo usa `juce::` (buffers, hilos, JSON). JUCE no se incorpora sin decidir su licencia | Adaptador: portar `ses::` a tipos propios (sustituir `juce::AudioBuffer`, `juce::Thread`, `juce::var`) o mantenerlo fuera de la app | Trabajo de portado no estimado con precisión; decisión de licencia JUCE |
 | **AI Choir Studio** | No encontrado. No aparece entre los repositorios accesibles; los candidatos MONTAMBRE, RUN y ek-chuah no son legibles con el acceso actual | Mismo contrato que Solo AI (`OfflineJob` que produce MIDI o audio de armonías) | **Hace falta que el propietario diga dónde está** o dé acceso |
 
+## 3 bis. Solo AI: lo que está hecho
+
+- Submódulo `third_party/solo-ai-studio` fijado en `fe8445b` (rama `claude/solo-ai-studio-v4-beat-melody`). Solo se
+  compilan sus `core/src/*.cpp`: **no** se usa su CMakeLists raíz, que descargaría JUCE para su plugin.
+- Puente `core/src/SoloBridge.cpp` y comando `soloMelody`:
+  - La tonalidad y los acordes salen del plan de la canción (confirmados, no adivinados).
+  - Si la canción no tiene plan, el comando responde `key_required` y la interfaz pide la tonalidad.
+  - El resultado entra como pista nueva con un clip MIDI editable. Deshacer la quita.
+  - El catálogo del motor anuncia `plugins: [solo.ai]` solo si está compilado.
+- Medido en x86: unos 0,3 ms por melodía de 8 compases. Con ese tiempo no hacen falta barra de progreso ni cancelar.
+  Además, la composición corre sin el cerrojo de la sesión y fuera del hilo de audio, y un resultado que llega con
+  otro proyecto abierto se descarta.
+  **Pendiente:** medirlo en el teléfono.
+- **No incluido todavía:** analizar BPM y tonalidad de un audio importado (`BeatAnalyzer`), el sonido de guitarra
+  modelada y las variaciones A-D de una misma familia.
+
+## 3 ter. VocalShift: hallazgo que bloquea elegir el commit
+
+El repositorio tiene **cuatro ramas de funciones sin fusionar en `main`**, todas del 06-11-2026:
+- `feat/hybrid-engine` (la más reciente);
+- `feat/natural-voice`;
+- `feat/second-voice`;
+- `feat/urban-spatial`.
+
+`main` solo tiene el README. Hace falta que el propietario diga qué rama es la de referencia.
+
+Su `THIRD_PARTY_NOTICES.md` declara:
+- Signalsmith Stretch y Linear, con licencia **MIT**: compatibles con una app comercial.
+- JUCE 9, con licencia **AGPLv3 o EULA**: solo para su plugin, no para `vs_core`.
+
+`NeuralVoiceConverter.h` es solo una interfaz sin implementar. No hay ningún modelo neuronal que integrar.
+
 ## 4. Decisiones que necesita el propietario
 
 1. **Licencia de los núcleos propios** (Solo AI, VocalShift, Spatial Echo): ninguno declara licencia. Para
    distribuir la app hay que fijarla (aunque sea «propietaria, todos los derechos reservados»).
-2. **Mecanismo de dependencia**. Recomendación: **submódulo git fijado a un commit** concreto de cada repositorio
+2. ~~Mecanismo de dependencia~~ **Decidido: submódulo fijado.** Recomendación original: **submódulo git fijado a un commit** concreto de cada repositorio
    (no se copia código, la versión queda registrada y se actualiza a propósito). Alternativa: copia versionada en
    `third_party/` (más simple de compilar, pero duplica código y se desincroniza).
 3. Ubicación de **AI Choir Studio**.
+4. Rama de referencia de **VocalShift** (§3 ter).

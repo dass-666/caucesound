@@ -1,0 +1,3 @@
+[submodule "third_party/solo-ai-studio"]
+	path = third_party/solo-ai-studio
+	url = https://github.com/dass-666/solo-ai-studio.git

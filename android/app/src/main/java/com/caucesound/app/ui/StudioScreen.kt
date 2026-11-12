@@ -225,7 +225,7 @@ fun StudioLayout(
                     }
                 }
                 if (compact) transport(Modifier.width(440.dp))
-                if (state.music != null) ToolButton(Icons.Default.AutoAwesome, tr("Variaciones", "Variations"), { actions.openPanel(if (panel == Panel.VARY) Panel.ARRANGE else Panel.VARY) },
+                if (state.music != null || catalog.hasPlugin("solo.ai")) ToolButton(Icons.Default.AutoAwesome, tr("Variaciones", "Variations"), { actions.openPanel(if (panel == Panel.VARY) Panel.ARRANGE else Panel.VARY) },
                     active = panel == Panel.VARY, tint = Palette.Text, modifier = Modifier.testTag("open_variations"))
                 ToolButton(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo), actions::undo, enabled = state.canUndo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo), actions::redo, enabled = state.canRedo && !state.recording, tint = Palette.Text)
@@ -275,7 +275,7 @@ fun StudioLayout(
                         } else SynthPanel(state, t, catalog, actions, favorites)
                     }
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions)
-                    Panel.VARY -> VariationsPanel(state, actions)
+                    Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"))
                     Panel.FX -> {
                         val t = track ?: state.tracks.firstOrNull()
                         if (t == null) EmptyPanel(tr("No hay pistas.", "No tracks."), tr("Añadir pista de audio", "Add audio track")) { actions.addTrack("Audio 1", "audio") }

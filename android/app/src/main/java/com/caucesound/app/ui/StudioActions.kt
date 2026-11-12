@@ -73,6 +73,8 @@ interface StudioActions {
     /** Nueva versión de una parte (o de todas con "all"); seed 0 = recomponer con la semilla guardada. */
     fun varyPart(part: String, seed: Long, energy: Float? = null) {}
     fun setPartLocked(trackId: String, locked: Boolean) {}
+    /** Solo AI (plugin integrado): genera una melodía o un solo en una pista nueva, editable en el Piano roll. */
+    fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) {}
 
     // Instrumentos
     fun setParam(trackId: String, param: String, value: Float) {}

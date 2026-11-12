@@ -332,6 +332,10 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) = edit(Cmd.setRoll(trackId, patternId, lane, step, roll))
     override fun varyPart(part: String, seed: Long, energy: Float?) = edit(Cmd.varyPart(part, seed, energy))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
+    override fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) =
+        edit(Cmd.soloMelody(startBar, bars, type, proposal, seed, keyRoot, minor)) { r ->
+            toast(r.raw.optString("name") + " · " + r.raw.optInt("notes") + " notas")
+        }
 
     /** Parámetros de instrumento: se aplican al instante; el estado (y la interfaz) se refresca al terminar. */
     override fun setParam(trackId: String, param: String, value: Float) {

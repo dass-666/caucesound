@@ -1,4 +1,5 @@
 #include "cs/Api.h"
+#include "cs/SoloBridge.h"
 #include "cs/Archive.h"
 
 #include "cs/Instruments.h"
@@ -90,7 +91,9 @@ json catalog()
     json tpl = json::array();
     for (const auto& t : projectTemplates()) tpl.push_back ({ { "id", t.id }, { "bpm", t.bpm }, { "kit", t.kitId }, { "tracks", t.tracks } });
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
-             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl } };
+             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl },
+             // Plugins integrados: solo se anuncian los que están compilados (la interfaz no muestra los demás).
+             { "plugins", solo::available() ? json::array ({ { { "id", "solo.ai" }, { "version", solo::pinnedVersion() }, { "kind", "offline" } } }) : json::array() } };
 }
 
 // Entero desde JSON sin conversiones fuera de rango (1e30 -> int es comportamiento indefinido en C++).
@@ -242,6 +245,32 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         {
             const bool setE = q.contains ("energy");
             return result (s.varyPart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 0), setE ? (float) num ("energy") : 0.0f, setE)).dump();
+        }
+        if (cmd == "soloMelody")
+        {
+            // Solo AI: la petición se prepara con la sesión bloqueada, la composición se hace SIN el cerrojo (no frena
+            // otros comandos ni el audio) y el resultado entra como pista nueva, si el proyecto sigue siendo el mismo.
+            solo::MelodyRequest req;
+            const int startBar = (int) num ("startBar", 0), bars = (int) num ("bars", 8);
+            auto pr = s.soloRequest (startBar, bars, (int) num ("keyRoot", -1), flag ("minor"), req);
+            if (! pr.ok) return result (pr).dump();
+            req.type = q.value ("type", std::string ("chorus"));
+            req.freedom = num ("freedom", 35);
+            req.proposal = (int) num ("proposal", 0);
+            req.seed = (uint64_t) safeInt (q.value ("seed", json (1)));
+            const std::string projectId = s.model().id;
+            const auto mr = solo::generateMelody (req);
+            if (! mr.ok) return json { { "ok", false }, { "error", mr.error } }.dump();
+            const auto bar = (Tick) kPpq * s.model().beatsPerBar;
+            const std::string name = "Solo AI · " + mr.name;
+            auto r = s.addSoloTrack (projectId, (Tick) startBar * bar, name, mr.notes, q.value ("preset", std::string ("bright_lead")));
+            json j = result (r);
+            j["notes"] = mr.notes.size();
+            j["name"] = name;
+            j["inScale"] = mr.inScale;
+            j["strongChordTones"] = mr.strongChordTones;
+            j["millis"] = mr.millis;
+            return j.dump();
         }
         if (cmd == "setPartLocked") return result (s.setPartLocked (str ("trackId"), flag ("on"))).dump();
         if (cmd == "setRoll") return result (s.setPatternRoll (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("roll"))).dump();

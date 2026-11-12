@@ -29,6 +29,9 @@ object Cmd {
         c("setRoll", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "roll" to roll)
     /** Variación local con semilla (misión 0.4). part: all, drums, bass, chords, melody, pad. energy null = la actual. */
     fun varyPart(part: String, seed: Long, energy: Float?) = c("varyPart", "part" to part, "seed" to seed, "energy" to energy?.toDouble())
+    /** Solo AI: melodía o solo en una pista nueva. keyRoot null = usar la tonalidad del plan de la canción. */
+    fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) =
+        c("soloMelody", "startBar" to startBar, "bars" to bars, "type" to type, "proposal" to proposal, "seed" to seed, "keyRoot" to keyRoot, "minor" to minor)
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =

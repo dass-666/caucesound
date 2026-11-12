@@ -71,6 +71,9 @@ class UiScreensTest {
         override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
         override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
         override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
+        override fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) {
+            calls += "solo:$startBar:$bars:$type:$proposal:${seed != 0L}:$keyRoot:$minor"
+        }
         override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) { calls += "roll:$lane:$step:$roll" }
         override fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) { calls += "step:$lane:$step:$velocity" }
         override fun commitMixer() { calls += "commit" }
@@ -128,6 +131,28 @@ class UiScreensTest {
         assertEquals(listOf("vary:all:true:null", "vary:melody:true:null", "vary:all:false:0.6", "lock:$bass:true"), rec.calls)
         // El trap no tiene parte de acordes: no se ofrece un botón que no haría nada.
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("vary_chords")).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun solo_ai_uses_song_key_when_there_is_a_plan() {
+        assertTrue(catalog.hasPlugin("solo.ai"))
+        val rec = Recorder()
+        compose.setContent { Themed { VariationsPanel(state04, rec, soloAvailable = true) } }
+        compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
+        shot("14_solo_ai_plan")
+        assertEquals(listOf("solo:2:8:chorus:0:true:null:true"), rec.calls)
+    }
+
+    @Test fun solo_ai_asks_for_the_key_without_a_plan() {
+        val rec = Recorder()
+        compose.setContent { Themed { VariationsPanel(state, rec, soloAvailable = true) } }
+        shot("15_solo_ai_key")
+        compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
+        assertTrue("sin tonalidad elegida no debe generar", rec.calls.isEmpty())
+        compose.onNodeWithTag("solo_key_7").performScrollTo().performClick() // Sol
+        compose.onNodeWithText(tr("Mayor", "Major")).performScrollTo().performClick()
+        compose.onNodeWithText("Solo").performClick()
+        compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
+        assertEquals(listOf("solo:0:8:solo:0:true:7:false"), rec.calls)
     }
 
     @Test fun variations_panel_explains_when_the_project_has_no_plan() {

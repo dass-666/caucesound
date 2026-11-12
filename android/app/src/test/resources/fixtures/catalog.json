@@ -678,6 +678,13 @@
   }
  ],
  "ok": true,
+ "plugins": [
+  {
+   "id": "solo.ai",
+   "kind": "offline",
+   "version": "solo-ai-studio@fe8445b"
+  }
+ ],
  "ppq": 960,
  "synthParams": [
   {
