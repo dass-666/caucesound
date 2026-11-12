@@ -120,6 +120,7 @@ std::string toJson (const ProjectModel& p, bool pretty)
         for (const auto& i : t.inserts)
             jt["inserts"].push_back ({ { "id", i.id }, { "type", i.type }, { "state", i.state }, { "bypass", i.bypass } });
         jt["kind"] = t.kind;
+        if (! t.sends.empty()) jt["sends"] = t.sends;
         if (! t.instrument.type.empty())
             jt["instrument"] = { { "type", t.instrument.type }, { "state", t.instrument.state }, { "preset", t.instrument.preset } };
         jt["patterns"] = json::array();
@@ -213,6 +214,8 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                     t.inserts.push_back (i);
                 }
             t.kind = jt.value ("kind", std::string ("audio"));
+            if (jt.contains ("sends") && jt["sends"].is_object())
+                for (const auto& [busId, level] : jt["sends"].items()) t.sends[busId] = level.get<float>();
             if (jt.contains ("instrument") && jt["instrument"].is_object())
             {
                 t.instrument.type = jt["instrument"].at ("type").get<std::string>();
@@ -264,6 +267,11 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
 
 std::string validate (const ProjectModel& p)
 {
+    {
+        int buses = 0;
+        for (const auto& t : p.tracks) buses += t.kind == "bus";
+        if (buses > 4) return "demasiados buses";
+    }
     if (p.sampleRate < 8000 || p.sampleRate > 192000) return "frecuencia de muestreo fuera de rango";
     if (! std::isfinite (p.bpm) || p.bpm < 20 || p.bpm > 400) return "tempo fuera de rango (20-400 BPM)";
     if (p.beatsPerBar < 1 || p.beatsPerBar > 16) return "compás no válido";
@@ -291,7 +299,15 @@ std::string validate (const ProjectModel& p)
         }
         for (const auto& i : t.inserts)
             if (i.id.empty() || ! ids.insert (i.id).second || i.type.empty()) return "inserción no válida";
-        if (t.kind != "audio" && t.kind != "synth" && t.kind != "drums") return "tipo de pista desconocido";
+        if (t.kind != "audio" && t.kind != "synth" && t.kind != "drums" && t.kind != "bus") return "tipo de pista desconocido";
+        if (t.kind == "bus" && (! t.clips.empty() || ! t.midiClips.empty() || ! t.instrument.type.empty() || ! t.sends.empty()))
+            return "un bus no tiene clips, instrumento ni envíos";
+        for (const auto& [busId, level] : t.sends)
+        {
+            const TrackModel* b = p.findTrack (busId);
+            if (! b || b->kind != "bus") return "envío a un bus inexistente";
+            if (! std::isfinite (level) || level < 0 || level > 1) return "nivel de envío no válido";
+        }
         if (t.kind == "synth" && t.instrument.type != "cs.synth") return "pista de sintetizador sin instrumento";
         if (t.kind == "drums" && t.instrument.type != "cs.drums") return "pista de batería sin instrumento";
         if (t.patterns.size() > 64) return "demasiados patrones";

@@ -35,7 +35,10 @@ inline float approach (float current, float target, float step)
 }
 } // namespace
 
-Engine::Engine() : params ((size_t) kMaxTracks) {}
+Engine::Engine() : params ((size_t) kMaxTracks)
+{
+    for (auto& p : params) for (auto& v : p.send) v.store (0.0f);
+}
 
 Engine::~Engine()
 {
@@ -53,6 +56,9 @@ void Engine::prepare (int sampleRate, int maxBlockSize)
     recScratch.assign ((size_t) maxBlock * 2, 0.0f);
     smGainL.assign ((size_t) kMaxTracks, 0.0f);
     smGainR.assign ((size_t) kMaxTracks, 0.0f);
+    busL.assign ((size_t) (kMaxBuses * maxBlock), 0.0f);
+    busR.assign ((size_t) (kMaxBuses * maxBlock), 0.0f);
+    smSend.assign ((size_t) (kMaxTracks * kMaxBuses), 0.0f);
     smoothStep = (float) (1.0 / (0.010 * rate)); // de 0 a 1 en 10 ms
     makeClick (clickHi, rate, 1760.0, 0.9f);
     makeClick (clickLo, rate, 1175.0, 0.6f);
@@ -211,6 +217,30 @@ void Engine::snapSmoothersToTargets()
         const float pan = std::clamp (p.pan.load (std::memory_order_relaxed), -1.0f, 1.0f);
         smGainL[(size_t) t.slot] = gn * (pan > 0 ? 1.0f - pan : 1.0f);
         smGainR[(size_t) t.slot] = gn * (pan < 0 ? 1.0f + pan : 1.0f);
+        for (int b = 0; b < kMaxBuses; ++b)
+            smSend[(size_t) (t.slot * kMaxBuses + b)] = std::clamp (p.send[b].load (std::memory_order_relaxed), 0.0f, 1.0f);
+    }
+}
+
+// Suma la salida ya mezclada de una pista (post-fader) a los buses a los que envía.
+void Engine::addSends (const TrackRT& t, const float* l, const float* r, int n, bool smooth)
+{
+    if (t.busIndex >= 0) return; // un bus no envía a otros buses (sin realimentación)
+    const TrackParams& p = params[(size_t) t.slot];
+    for (int b = 0; b < kMaxBuses; ++b)
+    {
+        float& sm = smSend[(size_t) (t.slot * kMaxBuses + b)];
+        const float target = std::clamp (p.send[b].load (std::memory_order_relaxed), 0.0f, 1.0f);
+        if (sm == 0.0f && target == 0.0f) continue;
+        float* bl = busL.data() + (size_t) b * (size_t) maxBlock;
+        float* br = busR.data() + (size_t) b * (size_t) maxBlock;
+        for (int i = 0; i < n; ++i)
+        {
+            if (smooth) sm = approach (sm, target, smoothStep);
+            bl[i] += l[i] * sm;
+            br[i] += r[i] * sm;
+        }
+        if (! smooth) sm = target;
     }
 }
 
@@ -223,30 +253,48 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         snapSmoothersToTargets();
         wasRolling = false;
         if (! g) return;
-        // Parado: solo suenan los instrumentos (pads, teclado, colas de release), con la mezcla ya aplicada.
+        // Parado: solo suenan los instrumentos (pads, teclado, colas de release) y los buses (colas de la reverb
+        // compartida), con la mezcla ya aplicada.
         bool anySoloStopped = false;
-        for (const auto& t : g->tracks) anySoloStopped |= params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
-        for (const auto& t : g->tracks)
+        for (const auto& t : g->tracks) anySoloStopped |= t.busIndex < 0 && params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
+        for (int b = 0; b < kMaxBuses; ++b)
         {
-            if (! t.instrument) continue;
-            float* tl = trackL.data();
-            float* tr = trackR.data();
-            std::fill (tl, tl + n, 0.0f);
-            std::fill (tr, tr + n, 0.0f);
-            renderInstrument (t, position, false, tl, tr, n);
-            float* io[2] = { tl, tr };
-            for (const auto& fx : t.inserts) fx->process (io, 2, n);
-            const float gl = smGainL[(size_t) t.slot], gr = smGainR[(size_t) t.slot];
-            float peak = 0.0f;
-            for (int i = 0; i < n; ++i)
-            {
-                const float l = tl[i] * gl * smMaster, r = tr[i] * gr * smMaster;
-                L[i] += l;
-                R[i] += r;
-                peak = std::max (peak, std::max (std::fabs (l), std::fabs (r)));
-            }
-            params[(size_t) t.slot].peak.store (peak, std::memory_order_relaxed);
+            std::fill_n (busL.data() + (size_t) b * (size_t) maxBlock, n, 0.0f);
+            std::fill_n (busR.data() + (size_t) b * (size_t) maxBlock, n, 0.0f);
         }
+        for (int pass = 0; pass < 2; ++pass)
+            for (const auto& t : g->tracks)
+            {
+                const bool isBus = t.busIndex >= 0;
+                if (pass == 0 ? (isBus || ! t.instrument) : ! isBus) continue;
+                float* tl = trackL.data();
+                float* tr = trackR.data();
+                if (isBus)
+                {
+                    std::copy_n (busL.data() + (size_t) t.busIndex * (size_t) maxBlock, n, tl);
+                    std::copy_n (busR.data() + (size_t) t.busIndex * (size_t) maxBlock, n, tr);
+                }
+                else
+                {
+                    std::fill (tl, tl + n, 0.0f);
+                    std::fill (tr, tr + n, 0.0f);
+                    renderInstrument (t, position, false, tl, tr, n);
+                }
+                float* io[2] = { tl, tr };
+                for (const auto& fx : t.inserts) fx->process (io, 2, n);
+                const float gl = smGainL[(size_t) t.slot], gr = smGainR[(size_t) t.slot];
+                float peak = 0.0f;
+                for (int i = 0; i < n; ++i)
+                {
+                    tl[i] *= gl;
+                    tr[i] *= gr;
+                    L[i] += tl[i] * smMaster;
+                    R[i] += tr[i] * smMaster;
+                    peak = std::max (peak, std::max (std::fabs (tl[i] * smMaster), std::fabs (tr[i] * smMaster)));
+                }
+                addSends (t, tl, tr, n, false);
+                params[(size_t) t.slot].peak.store (peak, std::memory_order_relaxed);
+            }
         (void) anySoloStopped;
         return;
     }
@@ -254,16 +302,29 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
     if (! wasRolling) { snapSmoothersToTargets(); wasRolling = true; }
 
     bool anySolo = false;
-    for (const auto& t : g->tracks) anySolo |= params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
+    for (const auto& t : g->tracks) anySolo |= t.busIndex < 0 && params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
+    for (int b = 0; b < kMaxBuses; ++b)
+    {
+        std::fill_n (busL.data() + (size_t) b * (size_t) maxBlock, n, 0.0f);
+        std::fill_n (busR.data() + (size_t) b * (size_t) maxBlock, n, 0.0f);
+    }
 
-    const Frame blockEnd = position + n;
     float* tl = trackL.data();
     float* tr = trackR.data();
+    // Dos pasadas: primero las pistas normales (que envían a los buses), después los buses.
+    for (int pass = 0; pass < 2; ++pass)
     for (const auto& t : g->tracks)
     {
+        if ((t.busIndex >= 0) != (pass == 1)) continue;
         std::fill (tl, tl + n, 0.0f);
         std::fill (tr, tr + n, 0.0f);
         bool any = false;
+        if (t.busIndex >= 0)
+        {
+            std::copy_n (busL.data() + (size_t) t.busIndex * (size_t) maxBlock, n, tl);
+            std::copy_n (busR.data() + (size_t) t.busIndex * (size_t) maxBlock, n, tr);
+            any = true;
+        }
         // PDC: la pista con latencia L lee su contenido L frames por delante (ver TrackRT::latency). Con el bucle
         // activo, la lectura adelantada también da la vuelta (y suelta sus notas en su propio punto de reinicio).
         auto renderContent = [&] (Frame from, int count, int offset)
@@ -295,7 +356,8 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
             }
             if (t.instrument) { renderInstrument (t, from, true, tl + offset, tr + offset, count); any = true; }
         };
-        if (t.latency == 0 || ! blockLooping || position >= blockLoopEnd)
+        if (t.busIndex >= 0) {}
+        else if (t.latency == 0 || ! blockLooping || position >= blockLoopEnd)
             renderContent (position + t.latency, n, 0);
         else
         {
@@ -321,7 +383,9 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         for (const auto& fx : t.inserts) fx->process (io, 2, n);
 
         TrackParams& p = params[(size_t) t.slot];
-        const bool audible = ! p.mute.load (std::memory_order_relaxed) && (! anySolo || p.solo.load (std::memory_order_relaxed));
+        // Los buses no se silencian por el solo de otra pista (si no, el solo quitaría la reverb compartida).
+        const bool audible = ! p.mute.load (std::memory_order_relaxed)
+                             && (t.busIndex >= 0 || ! anySolo || p.solo.load (std::memory_order_relaxed));
         const float gn = audible ? p.gain.load (std::memory_order_relaxed) : 0.0f;
         const float pan = std::clamp (p.pan.load (std::memory_order_relaxed), -1.0f, 1.0f);
         const float targetL = gn * (pan > 0 ? 1.0f - pan : 1.0f);
@@ -333,6 +397,9 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         {
             // Sin audio: solo avanzamos el suavizado (mismo resultado que procesar ceros).
             for (int i = 0; i < n; ++i) { gl = approach (gl, targetL, smoothStep); gr = approach (gr, targetR, smoothStep); }
+            std::fill (tl, tl + n, 0.0f);
+            std::fill (tr, tr + n, 0.0f);
+            addSends (t, tl, tr, n, true); // avanza el suavizado de los envíos
         }
         else
         {
@@ -340,11 +407,13 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
             {
                 gl = approach (gl, targetL, smoothStep);
                 gr = approach (gr, targetR, smoothStep);
-                const float l = tl[i] * gl, r = tr[i] * gr;
-                L[i] += l;
-                R[i] += r;
-                peak = std::max (peak, std::max (std::fabs (l), std::fabs (r)));
+                tl[i] *= gl;
+                tr[i] *= gr;
+                L[i] += tl[i];
+                R[i] += tr[i];
+                peak = std::max (peak, std::max (std::fabs (tl[i]), std::fabs (tr[i])));
             }
+            addSends (t, tl, tr, n, true);
         }
         p.peak.store (peak, std::memory_order_relaxed);
     }

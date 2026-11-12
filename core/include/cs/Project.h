@@ -4,6 +4,7 @@
 #include "cs/AudioData.h"
 #include "cs/Midi.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -49,13 +50,14 @@ struct InstrumentModel
 struct TrackModel
 {
     std::string id, name;
-    std::string kind = "audio"; // "audio" | "synth" | "drums"
+    std::string kind = "audio"; // "audio" | "synth" | "drums" | "bus" (retorno de efectos: entrada = envíos)
     float volumeDb = 0.0f; // -inf se guarda como -144
     float pan = 0.0f;
     bool mute = false, solo = false, armed = false;
     uint32_t color = 0xFF4FC3F7;
     std::vector<ClipModel> clips;
     std::vector<InsertModel> inserts;
+    std::map<std::string, float> sends; // id de pista bus -> nivel lineal 0..1 (post-fader). Solo pistas no bus
     InstrumentModel instrument;
     std::vector<DrumPattern> patterns;     // solo pistas de batería
     std::vector<MidiClipModel> midiClips;  // pistas de instrumento

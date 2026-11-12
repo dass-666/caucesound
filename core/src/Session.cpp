@@ -228,10 +228,29 @@ std::shared_ptr<Instrument> Session::instrumentFor (const TrackModel& t)
 
 // Construye la pista de render. offline = true: instancias propias (clonadas por estado) para la exportación,
 // para no compartir procesadores con el hilo de audio.
+int Session::busIndexOf (const std::string& trackId) const
+{
+    int b = 0;
+    for (const auto& x : proj.tracks)
+        if (x.kind == "bus") { if (x.id == trackId) return b; ++b; }
+    return -1;
+}
+
+void Session::applySendsTo (TrackParams& p, const TrackModel& t) const
+{
+    for (auto& v : p.send) v.store (0.0f);
+    for (const auto& [busId, level] : t.sends)
+    {
+        const int b = busIndexOf (busId);
+        if (b >= 0 && b < kMaxBuses) p.send[b].store (std::clamp (level, 0.0f, 1.0f));
+    }
+}
+
 TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, RenderGraph& g)
 {
     TrackRT tr;
     tr.slot = slot;
+    if (t.kind == "bus") tr.busIndex = busIndexOf (t.id);
     for (const auto& c : t.clips)
     {
         ClipRT rc;
@@ -325,6 +344,7 @@ void Session::applyMixerParams()
         p.pan.store (t.pan);
         p.mute.store (t.mute);
         p.solo.store (t.solo);
+        applySendsTo (p, t);
     }
     engine.setMasterGain (dbToGain (proj.masterDb));
     engine.setMetronome (proj.metronome);
@@ -542,12 +562,18 @@ OpResult Session::addTrack (const std::string& name, const std::string& kind)
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     if (proj.tracks.size() >= (size_t) kMaxTracks) return OpResult::fail ("límite de pistas alcanzado");
-    if (kind != "audio" && kind != "synth" && kind != "drums") return OpResult::fail ("tipo de pista desconocido");
+    if (kind != "audio" && kind != "synth" && kind != "drums" && kind != "bus") return OpResult::fail ("tipo de pista desconocido");
+    if (kind == "bus")
+    {
+        int buses = 0;
+        for (const auto& x : proj.tracks) buses += x.kind == "bus";
+        if (buses >= kMaxBuses) return OpResult::fail ("límite de buses alcanzado");
+    }
     pushUndo();
     TrackModel t;
     t.id = newId ("trk");
     t.kind = kind;
-    t.name = name.empty() ? (kind == "drums" ? "Cauce Drums" : kind == "synth" ? "Cauce Synth" : "Track " + std::to_string (proj.tracks.size() + 1)) : name;
+    t.name = name.empty() ? (kind == "drums" ? "Cauce Drums" : kind == "synth" ? "Cauce Synth" : kind == "bus" ? "Bus FX" : "Track " + std::to_string (proj.tracks.size() + 1)) : name;
     // Paleta de pistas de la identidad visual: violeta, azul eléctrico, cian, ámbar, verde, rosa, lima, naranja.
     static const uint32_t palette[] = { 0xFF8B5CF6, 0xFF3B82F6, 0xFF22D3EE, 0xFFF59E0B, 0xFF34D399, 0xFFF472B6, 0xFFA3E635, 0xFFFB923C };
     t.color = palette[proj.tracks.size() % 8];
@@ -595,6 +621,7 @@ OpResult Session::removeTrack (const std::string& id)
     if (recorder) return OpResult::fail ("no se puede borrar una pista durante la grabación");
     pushUndo();
     proj.tracks.erase (it);
+    for (auto& t : proj.tracks) t.sends.erase (id); // envíos hacia un bus borrado
     return finishEditLocked();
 }
 
@@ -626,6 +653,21 @@ CS_MIXER_SETTER (setTrackMute, bool, mute, v)
 CS_MIXER_SETTER (setTrackSolo, bool, solo, v)
 #undef CS_MIXER_SETTER
 
+OpResult Session::setTrackSend (const std::string& id, const std::string& busId, float level)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    TrackModel* t = proj.findTrack (id);
+    const TrackModel* b = proj.findTrack (busId);
+    if (! t || ! b) return OpResult::fail ("pista no encontrada");
+    if (b->kind != "bus" || t->kind == "bus") return OpResult::fail ("los envíos van de una pista a un bus");
+    if (! std::isfinite (level)) return OpResult::fail ("valor no válido");
+    level = std::clamp (level, 0.0f, 1.0f);
+    if (level <= 0.0f) t->sends.erase (busId); else t->sends[busId] = level;
+    touchLocked();
+    applyMixerParams();
+    return {};
+}
+
 OpResult Session::setTrackArmed (const std::string& id, bool on)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
@@ -654,6 +696,7 @@ OpResult Session::importWav (const std::string& path, const std::string& trackId
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     TrackModel* t = trackId.empty() ? (proj.tracks.empty() ? nullptr : &proj.tracks.front()) : proj.findTrack (trackId);
     if (! t) return OpResult::fail ("pista no encontrada");
+    if (t->kind == "bus") return OpResult::fail ("un bus no admite clips: importa en una pista de audio");
     const std::string tid = t->id;
 
     AudioData a;
@@ -693,6 +736,7 @@ OpResult Session::moveClip (const std::string& clipId, Frame newStart, const std
     if (! c) return OpResult::fail ("clip no encontrado");
     TrackModel* dest = newTrackId.empty() ? owner : proj.findTrack (newTrackId);
     if (! dest) return OpResult::fail ("pista destino no encontrada");
+    if (dest->kind == "bus") return OpResult::fail ("un bus no admite clips");
     pushUndo();
     c = proj.findClip (clipId, &owner);
     ClipModel moved = *c;
@@ -882,6 +926,7 @@ OpResult Session::startRecording (const std::string& trackId, int channels, bool
     if (! trackId.empty()) t = proj.findTrack (trackId);
     else for (const auto& x : proj.tracks) if (x.armed) t = &x;
     if (! t) return OpResult::fail ("no hay pista armada para grabar");
+    if (t->kind == "bus") return OpResult::fail ("no se puede grabar en un bus");
 
     const std::string sid = newId ("rec");
     json meta = { { "sourceId", sid }, { "trackId", t->id }, { "channels", channels }, { "latencyOffset", proj.recordLatencyOffset },
@@ -973,19 +1018,22 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
     auto g = std::make_unique<RenderGraph>();
     g->sampleRate = proj.sampleRate; g->bpm = proj.bpm; g->beatsPerBar = proj.beatsPerBar;
     int slot = 0;
-    Frame instrumentTail = 0;
+    Frame instrumentTail = 0, busTail = 0;
     for (const auto& t : proj.tracks)
     {
         TrackParams& p = offline.trackParams (slot);
         p.gain.store (dbToGain (t.volumeDb)); p.pan.store (t.pan); p.mute.store (t.mute); p.solo.store (t.solo);
+        applySendsTo (p, t);
         TrackRT tr = makeTrackRT (t, slot++, true, *g);
         Frame trackTail = tr.instrument && ! tr.events.empty() ? tr.instrument->tailSamples() : 0;
         for (const auto& fx : tr.inserts) trackTail += fx->tailSamples(); // delay y reverb en serie suman su cola
-        instrumentTail = std::max<Frame> (instrumentTail, trackTail);
+        if (tr.busIndex >= 0) busTail = std::max<Frame> (busTail, trackTail);
+        else instrumentTail = std::max<Frame> (instrumentTail, trackTail);
         g->tracks.push_back (std::move (tr));
     }
     // Las colas de los instrumentos (release, platillos) se incluyen siempre: el archivo no corta notas.
-    const Frame total = proj.contentEnd() + std::max<Frame> (std::max<Frame> (0, tailFrames), instrumentTail);
+    // Un bus recibe la cola de las pistas y añade la suya (p. ej. la reverb compartida).
+    const Frame total = proj.contentEnd() + std::max<Frame> (std::max<Frame> (0, tailFrames), instrumentTail + busTail);
     offline.setMasterGain (dbToGain (proj.masterDb));
     offline.publish (std::move (g));
 

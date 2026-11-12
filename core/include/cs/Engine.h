@@ -21,6 +21,7 @@
 namespace cs
 {
 constexpr int kMaxTracks = 32;
+constexpr int kMaxBuses = 4; // buses de efectos (envíos), p. ej. una reverb compartida
 
 struct ClipRT
 {
@@ -41,6 +42,9 @@ struct TrackRT
     // Compensación de latencia (PDC): suma de latencySamples() de las inserciones. La calcula publish().
     // La pista lee su contenido (clips y eventos) adelantado esa cantidad, así su salida procesada queda alineada.
     Frame latency = 0;
+    // >= 0: pista bus (retorno de efectos). Su entrada es la suma de los envíos de las demás pistas; se procesa
+    // después de todas ellas. Los envíos son post-fader (TrackParams::send[busIndex]).
+    int busIndex = -1;
 };
 uint64_t hashEvents (const std::vector<SchedEvent>& ev);
 
@@ -60,6 +64,7 @@ struct TrackParams
     std::atomic<float> pan { 0.0f };   // -1 .. +1 (ley de balance: centro = 0 dB en ambos lados)
     std::atomic<bool> mute { false }, solo { false };
     std::atomic<float> peak { 0.0f };  // pico del último bloque (medidor), escrito por el hilo de audio
+    std::atomic<float> send[kMaxBuses] = {}; // nivel de envío lineal (0..1) hacia cada bus, post-fader
 };
 
 class Engine
@@ -126,6 +131,7 @@ private:
     void renderBlock (const RenderGraph* g, Frame pos, bool rolling, float* L, float* R, int n);
     void renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n);
     void notesOff (const RenderGraph* g, bool hard);
+    void addSends (const TrackRT& t, const float* l, const float* r, int n, bool smooth);
     void loopNotesOff (const RenderGraph* g);
     // Estado del bucle para el bloque en curso (solo hilo de audio; renderOffline lo deja desactivado).
     bool blockLooping = false;
@@ -143,6 +149,8 @@ private:
     // Estado del hilo de audio
     std::vector<float> trackL, trackR, mixL, mixR, inScratch, recScratch;
     std::vector<float> smGainL, smGainR; // suavizado por pista (ganancia efectiva incl. mute/solo/pan)
+    std::vector<float> busL, busR;       // entrada de cada bus (kMaxBuses x maxBlock)
+    std::vector<float> smSend;           // envío suavizado por pista y bus (kMaxTracks x kMaxBuses)
     float smMaster = 1.0f;
     float smoothStep = 0.0f;
     std::vector<float> clickHi, clickLo;  // clics del metrónomo precalculados (acento / tiempo)

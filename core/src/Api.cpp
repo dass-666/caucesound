@@ -247,6 +247,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "removeTrack") return result (s.removeTrack (str ("trackId"))).dump();
         if (cmd == "renameTrack") return result (s.renameTrack (str ("trackId"), str ("name"))).dump();
         if (cmd == "setVolume") return result (s.setTrackVolumeDb (str ("trackId"), (float) num ("db"))).dump();
+        if (cmd == "setSend") return result (s.setTrackSend (str ("trackId"), str ("busId"), (float) num ("level"))).dump();
         if (cmd == "setPan") return result (s.setTrackPan (str ("trackId"), (float) num ("pan"))).dump();
         if (cmd == "setMute") return result (s.setTrackMute (str ("trackId"), flag ("on"))).dump();
         if (cmd == "setSolo") return result (s.setTrackSolo (str ("trackId"), flag ("on"))).dump();

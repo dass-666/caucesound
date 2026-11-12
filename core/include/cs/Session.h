@@ -72,6 +72,8 @@ public:
     OpResult setTrackMute (const std::string& trackId, bool on);
     OpResult setTrackSolo (const std::string& trackId, bool on);
     OpResult setTrackArmed (const std::string& trackId, bool on);
+    // Envío post-fader de una pista hacia una pista bus (0..1). Como la mezcla: al instante y sin deshacer.
+    OpResult setTrackSend (const std::string& trackId, const std::string& busId, float level);
     OpResult setMasterDb (float db);
 
     // --- Clips (con deshacer) ------------------------------------------------------------------------------------
@@ -163,6 +165,8 @@ private:
     static constexpr int kPeakBlock = 256;
 
     void pushUndo();
+    int busIndexOf (const std::string& trackId) const;
+    void applySendsTo (TrackParams& p, const TrackModel& t) const;
     void paramUndoLocked (const std::string& key); // entrada de deshacer al empezar un gesto (ver endParamGesture)
     void syncInstancesLocked();                   // tras deshacer/rehacer: instancias vivas = estado del modelo
     void rebuildGraph();
