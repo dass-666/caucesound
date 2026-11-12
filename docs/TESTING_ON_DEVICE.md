@@ -1,6 +1,58 @@
 # Ejecutar CAUCESOUND en un Samsung desde Windows
 
-## Opción rápida: instalar el APK ya compilado (sin Android Studio)
+## Fase 1.2: instalar «CAUCESOUND Preview» junto a la app de la fase 1
+
+**Archivo**: `caucesound-0.2.0-fase1.2-preview.apk` (versión 0.2.0-fase1.2-preview, código 2).
+SHA-256 del APK: se indica en el informe de la entrega; compruébalo en PowerShell con
+`Get-FileHash .\caucesound-0.2.0-fase1.2-preview.apk`.
+
+**Por qué es una app aparte**: el APK de la fase 1 se firmó con una clave de depuración temporal que se perdió al
+cerrarse aquel entorno. Android solo permite actualizar una app con la **misma** firma, así que una versión nueva
+no puede sustituirla sin desinstalarla, y desinstalarla **borra sus proyectos** (se guardan dentro de la app).
+Para no perder nada, esta versión se instala **al lado**, con otro identificador (`com.caucesound.app.preview`) y el
+nombre «CAUCESOUND Preview». A partir de ahora se firma con una clave de prueba persistente (guardada fuera del
+repositorio, en la carpeta del proyecto), así que las próximas versiones Preview sí se instalarán encima conservando
+los proyectos.
+
+1. Sigue los pasos 1-3 de la «Opción rápida» de abajo (depuración USB y platform-tools) si no los tienes ya.
+2. Instala:
+   ```powershell
+   .\adb install caucesound-0.2.0-fase1.2-preview.apk
+   ```
+   (o copia el APK al teléfono y ábrelo desde «Mis archivos»). Verás dos iconos: CAUCESOUND (fase 1) y
+   CAUCESOUND Preview.
+3. **Proyectos antiguos**: siguen en la app de la fase 1, intactos. La Preview no puede leerlos (Android aísla los
+   datos de cada app). Si quieres uno en la Preview: en la app antigua, Exportar WAV; en la Preview, crea un
+   proyecto e importa ese WAV en una pista de audio. El formato nuevo sí abre proyectos de la fase 1 (se prueba
+   automáticamente), así que cuando haya una vía de copia de proyectos (fase 2) se podrán traer completos.
+4. No desinstales la app de la fase 1 hasta haber rescatado lo que quieras de ella.
+
+### Protocolo de prueba de la fase 1.2
+
+Anota modelo, versión de Android y si usas auriculares con cable, Bluetooth o altavoz. Lo más útil son los fallos:
+envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga, `.\adb logcat -s CauceSound` ayuda.
+
+| # | Prueba | Cómo | Qué anotar |
+|---|---|---|---|
+| 1 | Inicio | Abre la Preview. Toca la plantilla **Trap** | ¿Se crea y abre? ¿Ves Drums, 808, Melodía, Voz? |
+| 2 | Reproducir | Play | ¿Suena el beat con bajo y arpegio? ¿Clics, cortes, desfase entre batería y synths? |
+| 3 | Bucle | Toca el icono de bucle (y pulsación larga para cambiar compases) | ¿Repite exactamente sin hueco ni golpe doble? |
+| 4 | Batería | Pestaña Batería: activa/desactiva pasos mientras suena; cambia a 32 pasos; swing al 50 % | ¿Responde al instante? ¿El swing se nota? |
+| 5 | Pads | En Batería → Pads, toca con varios dedos a la vez | ¿Latencia perceptible? (nada / poca / molesta). ¿Suenan los dos golpes simultáneos? |
+| 6 | Kits | Cambia entre Trap, Reggaetón, Hip-hop y Electrónica | ¿Suenan distintos? ¿Algún sonido desagradable o muy fuerte? |
+| 7 | Synth | Pestaña Synth: prueba los 7 presets con el teclado; varios dedos a la vez | ¿Notas colgadas al soltar? ¿Latencia? |
+| 8 | Piano roll | Pestaña Piano roll: dibuja notas, muévelas, alarga, doble toque para borrar, zoom con dos dedos | ¿Qué gesto cuesta o falla? |
+| 9 | Notas colgadas | Mientras suena, para, mueve el cursor, cambia de pestaña, bloquea la pantalla | ¿Queda alguna nota sonando? |
+| 10 | Grabar voz | En la pista Voz (R activado), pulsa grabar y canta 8 compases sobre el beat con auriculares con cable | ¿La voz queda alineada con el beat al reproducir? |
+| 11 | Efectos | Mezclador → FX en Melodía → añade Reverb y Delay; gira perillas mientras suena; bypass | ¿Cambios sin clics? ¿Bypass funciona? |
+| 12 | Mezcla | Mezclador: volumen, pan, mute, solo | ¿Responde sin saltos? |
+| 13 | Guardar y reabrir | Guarda, vuelve al inicio, reabre | ¿Todo igual (patrones, notas, efectos, voz)? |
+| 14 | Exportar | Exporta a 24 bits y ábrelo en Windows | ¿Incluye batería, synths, voz y la cola de la reverb al final? |
+| 15 | Horizontal | Gira el teléfono en el Arreglo | ¿Se ve bien? ¿Cuántas pistas caben? |
+| 16 | Carga | Añade 4 synths con el preset Pad y acordes largos + reverb en cada uno | ¿Cortes? ¿Se calienta? Copia la línea de XRuns de Ajustes |
+| 17 | Interrupciones | Durante la reproducción: llamada, alarma, desconectar auriculares | ¿Se detiene limpio? ¿Notas colgadas al volver? |
+
+## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de
    compilación». Vuelve a Ajustes → Opciones de desarrollador → activa **Depuración USB**.
@@ -22,7 +74,11 @@ Para ver el registro del motor mientras pruebas: `.\adb logcat -s CauceSound`
 
 1. Instala Android Studio (gratis). En *SDK Manager* instala: Android SDK Platform 36, NDK 27.2.12479018 y CMake 3.31.6.
 2. `git clone https://github.com/dass-666/caucesound` y abre la carpeta `android/` en Android Studio.
-3. Conecta el teléfono y pulsa *Run*. O en terminal: `cd android` y `.\gradlew.bat installDebug`.
+3. Conecta el teléfono y en terminal: `cd android` y `.\gradlew.bat installPreview` (con la variable
+   `CAUCE_SIGNING` apuntando a `keystore.properties` de la clave de prueba; sin ella se firma con tu clave de
+   depuración local y no podrá actualizar la Preview instalada desde el APK). **No uses `installDebug` con la app
+   de la fase 1 instalada**: comparte su identificador, Android rechaza la firma distinta
+   (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) y la única salida sería desinstalarla, lo que borra sus proyectos.
 4. Pruebas del motor en Windows (opcional, con Visual Studio 2022 y CMake):
    ```powershell
    cmake -S . -B build

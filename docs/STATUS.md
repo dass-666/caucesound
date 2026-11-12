@@ -1,4 +1,61 @@
-# Estado de la fase 1 (2026-11-12)
+# Estado del proyecto
+
+**Nada está validado físicamente**: este entorno no tiene teléfono ni emulador Android (sin KVM). «Probado» significa
+pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
+dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
+
+# Fase 1.2 / 1.3 (2026-11-12, rama `claude/project-thread-w0xy20`)
+
+## Resumen de evidencias
+
+| Conjunto | Resultado |
+|---|---|
+| Pruebas del motor `cs_core_tests` (x86-64 Release) | **58/58** (28 de la fase 1 + 30 nuevas) |
+| Mismas pruebas con ASan + UBSan / con TSan | **58/58** / **58/58** |
+| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **58/58**: portabilidad y resultados numéricos, no rendimiento |
+| Pruebas JVM de la app (`testDebugUnitTest`) | **21/21**: 5 de modelos (fase 1), 6 del modelo musical, 10 de interfaz con Robolectric |
+| `lintDebug` | 0 errores (avisos: versiones nuevas de dependencias, plurales, icono monocromo) |
+| APK `0.2.0-fase1.2-preview` (`assemblePreview`) | Compila, firmado con clave de prueba persistente, `com.caucesound.app.preview` |
+| Bench x86-64 (Xeon 2,1 GHz), proyecto trap + pad 8 voces + 5 efectos | p99 176 µs por bloque de 4 ms = **4,4 %** de un núcleo. **No representa un teléfono**: estimación sin medir 3-6 veces más en gama media |
+
+## Por bloque de la misión
+
+| Bloque | Implementado | Probado automáticamente (prueba) | Render JVM | Físico |
+|---|---|---|---|---|
+| A. Auditoría y estabilidad | Sin ramas/PR paralelas; CI en verde en `main`. Corregidos: arnés de pruebas (`operator new` nothrow, ASan), `cs.gain` aceptaba NaN y lo guardaba como `null` | ASan/TSan limpios | — | No |
+| B. Diseño visual | Tema oscuro (carbón, violeta, azul eléctrico, cian), inicio con logo, continuar, plantillas, recientes con miniatura, renombrar/duplicar/borrar con confirmación; estudio con transporte grande, navegación inferior animada, modo horizontal compacto | Interacciones básicas en `UiScreensTest` | 10 capturas (`docs` → ver «Capturas») | No |
+| C. Cauce Drums | 8 carriles, 16/32 pasos, velocidad, swing, patrones (nuevo, duplicar, copiar/pegar, limpiar), encadenado en el arreglo, pads multitáctiles, 4 kits sintetizados (Trap, Reggaetón, Hip-hop, Electrónica), volumen/pan/tono/decay/mute/solo por carril, choke de hats | `pattern_expands_…`, `drum_kits_have_distinct_sounds…`, `drum_lane_mute_solo_volume_and_hat_choke`, `editing_patterns_while_playing_is_thread_safe` | Sí (vertical) | No |
+| D. Núcleo MIDI | Note On/Off, velocidad, canal, posición y duración en ticks (PPQ 960), clips, persistencia, cuantización con intensidad; eventos en frames absolutos con división de bloque → exacto a la muestra con cualquier tamaño de bloque; bucle, pausa, seek, exportación; sin notas colgadas | `midi_ticks_frames_quantize_and_swing`, `synth_note_is_sample_accurate_for_any_block_size`, `note_off_stop_seek_and_edits_never_leave_stuck_notes`, `loop_wraps_at_the_exact_frame…`, `tempo_change_moves_midi_events_but_not_audio` | — | No |
+| E. Piano roll | Dibujar, mover, redimensionar, borrar (doble toque), vista previa al tocar, velocidad, cuantizar, rejilla 1/4–1/32, zoom y desplazamiento con dos dedos, selección por rectángulo, seleccionar todo, duplicar, transponer | `MusicModelsTest.pianoRollEditOperations` (operaciones), API `setClipNotes`/`quantizeClip` | Sí | No: los gestos no se han probado con dedos reales |
+| F. Cauce Synth | Seno/triángulo/sierra/cuadrada con PolyBLEP, 2 osciladores, filtro SVF con envolvente, ADSR, octava, glide/mono, 1-16 voces con robo de voz, saturación suave; 7 presets (Sub Bass, 808 Bass, Lead, Soft Keys, Pad, Pluck, Synth Bass); teclado de 2 octavas multitáctil | `synth_voice_limit_levels_and_extreme_parameters_are_safe`, `mono_synth_glides…`, `live_midi_plays_while_transport_is_stopped` | Sí | No |
+| G. Flujo completo | 140 BPM → beat → bucle → synth → melodía → grabar voz sobre la instrumental → mezcla → guardar → reabrir → exportar | `full_flow_beat_melody_vocal_mix_save_reopen_export`: exportación = reproducción en vivo (diferencia 0), voz grabada con la instrumental sonando | — | No |
+| Plantillas | Trap 140, Reggaetón 95 (dembow), Hip-hop 90 (swing), Pop 105, Electrónica 124: batería + 2-3 synths con progresión de 4 acordes propia + pista de voz armada. Vacío: proyecto sin pistas | `templates_create_real_playable_content` (picos 0,55-0,62: la prueba detectó saturación antes de ajustar volúmenes) | Sí (inicio) | No |
+| Cauce FX (opcional) | Ganancia, filtro LP/HP, EQ 3 bandas, saturación, compresor (con medidor), delay (ping-pong), reverb; hasta 8 por pista, bypass, reordenar, deshacer; colas incluidas en la exportación | 8 pruebas `fx_*` con mediciones (LP −53 dB, EQ +11,8 dB, compresor −12,9 dB, eco en la muestra exacta, reverb −128 dB al final de la cola, 0 reservas) | Sí | No |
+| Compatibilidad | Formato v2; los proyectos v1 se abren sin cambios, se migran al guardar y se conserva `project.v1.json` | `v1_project_opens_unchanged_and_is_migrated_with_backup`, `future_format_and_broken_music_data_are_rejected` | — | No |
+| Rendimiento | Sin reservas, bloqueos, disco ni red en el callback con batería, synths, efectos, bucle y MIDI en vivo; NaN neutralizados; límite de voces | `engine_with_instruments_loop_and_live_input_does_not_allocate`, `fx_process_does_not_allocate` | — | **CPU real del Samsung sin medir** |
+
+## Capturas (render JVM, no teléfono)
+
+`android/app/build/outputs/roborazzi/` tras `./gradlew testDebugUnitTest -Pscreenshots` (copias en la carpeta del
+proyecto `capturas-jvm-fase1.2`). Se generan con datos JSON producidos por el propio motor (`ui_fixtures_from_engine`).
+Durante la revisión de estas imágenes se encontraron y corrigieron: la rejilla del piano roll pintando sobre la regla,
+el piano roll abriendo fuera de las notas, tiras del mezclador de distinta altura, metrónomo y bucle fuera de la
+pantalla en vertical y solo 1,5 pistas visibles en horizontal.
+
+## Limitaciones conocidas (fase 1.2)
+
+- **Validación física pendiente en todo**: latencia de pads y teclado, gestos multitáctiles, CPU, temperatura.
+- La pantalla de ajustes, diálogos y selector de archivos no tienen captura (dependen del sistema o del motor).
+- Sin compensación de latencia de inserciones (PDC): necesaria antes de VocalShift (150 ms). Los efectos propios
+  tienen latencia 0, así que hoy no hace falta.
+- Sin automatización, pitch bend, CC, aftertouch, MIDI externo ni importación/exportación de archivos MIDI
+  (el modelo admite añadirlos: ver ARCHITECTURE.md §6).
+- Sin deshacer para giros de perillas (igual que el mezclador en la fase 1): sí para estructura (patrones, clips,
+  notas, efectos).
+- Los proyectos de la app de la fase 1 **no aparecen** en la app Preview (son apps distintas): ver TESTING_ON_DEVICE.md.
+- Lista de carriles con nombres largos se recorta en vertical («Kick 8…»).
+
+## Fase 1 (histórico, 2026-11-12, commit dbdd93b)
 
 **Nada está validado físicamente**: este entorno no tiene teléfono ni emulador Android (sin KVM). Todas las
 afirmaciones de «probado» se refieren a pruebas automáticas en Linux x86-64 y ARM64 emulado.
