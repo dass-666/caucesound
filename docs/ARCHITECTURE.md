@@ -78,6 +78,8 @@ docs/
 - La grabación pasa por una cola SPSC sin bloqueo hacia un hilo de disco que escribe un WAV float32 incremental y
   actualiza el encabezado cada segundo, más un archivo auxiliar `.rec.json` con la posición. Tras un cierre
   inesperado, abrir el proyecto recupera la toma (`recording_is_recovered_after_unexpected_close`).
+- Desnormales a cero dentro de `Engine::process` y `renderOffline` (FTZ/DAZ en x86, FZ en ARM64), restaurados al
+  salir: las colas que decaen no disparan la CPU en silencio (`stress_decaying_tails_never_produce_denormals`).
 - IA y procesamiento offline: irán en hilos de trabajo propios y entregarán resultados (audio o MIDI) como nuevas
   fuentes/clips por la misma vía que una importación. Nunca en el callback.
 

@@ -27,6 +27,17 @@ los proyectos.
    automáticamente), así que cuando haya una vía de copia de proyectos (fase 2) se podrán traer completos.
 4. No desinstales la app de la fase 1 hasta haber rescatado lo que quieras de ella.
 
+#### Rescatar proyectos de la fase 1
+
+La Preview ya exporta e importa proyectos completos (`.caucesound`), pero la app de la fase 1 no tiene esa opción y
+no se puede actualizar. Comprobé el APK de la fase 1: **no es depurable** y desactiva las copias de seguridad de sus
+datos, así que no hay vía con `adb` (`run-as`, `adb backup`) para sacar sus carpetas. La vía que sí funciona es
+por pistas: en la app de la fase 1, para cada pista activa **Solo** y exporta el WAV. Así obtienes una pista por
+archivo, con su posición desde el inicio (comprobado en el código de la fase 1: la exportación respeta Solo y
+empieza en el compás 1; no probado en el teléfono). Luego, en la Preview, crea un proyecto e importa cada WAV en su propia
+pista de audio, en la posición 0. Se pierden los ajustes de clip (cortes y fundidos ya van aplicados en el audio),
+pero no el sonido.
+
 ### Protocolo de prueba de la fase 1.2
 
 Anota modelo, versión de Android y si usas auriculares con cable, Bluetooth o altavoz. Lo más útil son los fallos:
@@ -51,6 +62,8 @@ envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga
 | 15 | Horizontal | Gira el teléfono en el Arreglo | ¿Se ve bien? ¿Cuántas pistas caben? |
 | 16 | Carga | Añade 4 synths con el preset Pad y acordes largos + reverb en cada uno | ¿Cortes? ¿Se calienta? Copia la línea de XRuns de Ajustes |
 | 17 | Interrupciones | Durante la reproducción: llamada, alarma, desconectar auriculares | ¿Se detiene limpio? ¿Notas colgadas al volver? |
+| 18 | Deshacer perillas | Gira el corte del synth varias veces y pulsa Deshacer | ¿Vuelve al valor anterior a cada giro (no paso a paso)? |
+| 19 | Exportar/importar proyecto | Inicio → ⋮ de un proyecto → Exportar (.caucesound), guárdalo en Descargas; luego Importar ese archivo | ¿Aparece la copia y suena igual? ¿Se abre el archivo en Windows como ZIP? |
 
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 

@@ -1,4 +1,4 @@
-# Para retomar el trabajo (actualizado 2026-11-12, fin de la sesión nocturna)
+# Para retomar el trabajo (actualizado 2026-11-12 ~10:30 UTC, fin de la sesión nocturna)
 
 ## Estado
 
@@ -6,7 +6,8 @@
   `feat/fase-1-2-beatmaker-ui-midi`). Pull request abierto contra `main`, **sin fusionar** (requiere autorización).
 - **Base**: `main` en `dbdd93b` (fase 1). Ver `git log main..claude/project-thread-w0xy20` para los commits.
 - **APK de prueba**: `caucesound-0.2.0-fase1.2-preview.apk` en la carpeta del proyecto (`/mnt/project-files/caucesound/`),
-  `com.caucesound.app.preview`, versionCode 2. Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
+  `com.caucesound.app.preview`, versionCode 2, SHA-256 `659f7a8e463bd70c6b102b823c41face5796c3de35a1ee2ab63d1241ae6bcf37`
+  (compilado 08:40 UTC, incluye PDC, deshacer por gesto, .caucesound, desnormales y presets corregidos). Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
 - **Clave de prueba**: `/mnt/project-files/caucesound/signing/` (`caucesound-preview.jks` + `keystore.properties`).
   Fuera de git. Si se pierde, la Preview instalada tampoco podrá actualizarse (igual que pasó con la fase 1).
 - **Validación física**: ninguna. Todo lo «probado» es automático (ver STATUS.md).
@@ -15,13 +16,15 @@
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 60/60 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 60/60 |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 60/60 |
-| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 60/60 |
-| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 21/21 |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 72/72 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 72/72 |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 72/72 |
+| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 72/72 |
+| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 22/22 |
 | Lint | `./gradlew lintDebug` | 0 errores |
-| Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 4,4 % (Xeon; no es un teléfono) |
+| Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 1,8-4,4 % (Xeon compartido, varía; no es un teléfono) |
+| Carga | `./build/cs_core_tests stress` (`CS_STRESS_PASSES`, `CS_STRESS_EDITS` para alargar) | 32 pistas: p99 17-26 % |
+| Perfil | `build-prof` (RelWithDebInfo) + `valgrind --tool=callgrind ./build-prof/cs_core_tests stress_large` | synth ~30 %, reverb ~20 % |
 
 Datos de prueba de la interfaz: JSON real del motor, se regeneran con
 `CS_FIXTURE_DIR=android/app/src/test/resources/fixtures ./build/cs_core_tests ui_fixtures`.
@@ -39,9 +42,14 @@ Datos de prueba de la interfaz: JSON real del motor, se regeneran con
 1. Nada probado en un teléfono: latencia de pads/teclado, gestos multitáctiles, CPU y temperatura sin medir.
 2. PDC hecha y probada solo con un efecto sintético (`LatencyFx` en TestEffects.cpp); falta validarla con VocalShift
    real. Tras arrancar/seek, los primeros L frames de la pista latente son el retardo del efecto.
-3. Los proyectos de la app fase 1 no son accesibles desde la Preview (apps distintas). Falta una vía de
-   exportar/importar proyectos completos (por ejemplo, ZIP del proyecto con el selector de archivos del sistema).
-4. Giros de perillas (synth, FX, mezclador) no entran en deshacer.
+3. Los proyectos de la app fase 1 no son accesibles desde la Preview (apps distintas). Ya existe exportar/importar
+   `.caucesound` en la Preview, pero la app fase 1 no lo tiene. El APK de la fase 1 no es depurable
+   y bloquea las copias de datos: el rescate es por pistas (Solo + Exportar WAV en la fase 1, importar en la Preview).
+   Ver TESTING_ON_DEVICE.md, «Rescatar proyectos de la fase 1».
+4. El mezclador de pista (volumen, pan, mute, solo) no entra en deshacer (decisión de la fase 1). Las perillas de
+   synth, batería y efectos sí, agrupadas por gesto.
+4b. Proyectos grandes: 32 pistas usan 17-26 % de un Xeon; en un teléfono probablemente no cabe. Ver STATUS.md,
+   «Rendimiento con proyectos grandes» (envíos a reverb compartida y congelar pista).
 5. Nombres de carril largos recortados en vertical; diálogos y ajustes sin captura.
 6. CI de GitHub: ahora ejecuta también las pruebas Robolectric (descargan `android-all` ~ 100-200 MB la primera vez).
    Gratis dentro de la cuota; verificar que el primer run pasa.
@@ -50,9 +58,9 @@ Datos de prueba de la interfaz: JSON real del motor, se regeneran con
 
 1. **Probar en el Samsung** con el protocolo de TESTING_ON_DEVICE.md y corregir lo que salga (prioridad absoluta:
    latencia de pads, notas colgadas, CPU).
-2. Exportar/importar proyecto completo (ZIP) para rescatar proyectos y compartirlos.
+2. Envíos (bus de efectos compartido, sobre todo reverb) y congelar pista: lo que más CPU ahorra en proyectos grandes.
 3. Integrar VocalShift como `cs::AudioProcessor` (requiere decidir licencia y forma de dependencia).
-4. Deshacer agrupado para perillas (una entrada por gesto).
+4. Sobremuestreo x2 de sierra/cuadrada solo si se oye aliasing en notas agudas sin filtro.
 5. Automatización básica (volumen y corte del filtro) y pitch bend en el piano roll.
 6. Servicio en primer plano para grabar con la pantalla apagada.
 

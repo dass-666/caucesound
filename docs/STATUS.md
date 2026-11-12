@@ -10,13 +10,42 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 
 | Conjunto | Resultado |
 |---|---|
-| Pruebas del motor `cs_core_tests` (x86-64 Release) | **60/60** (28 de la fase 1 + 32 nuevas) |
-| Mismas pruebas con ASan + UBSan / con TSan | **60/60** / **60/60** |
-| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **60/60**: portabilidad y resultados numéricos, no rendimiento |
-| Pruebas JVM de la app (`testDebugUnitTest`) | **21/21**: 5 de modelos (fase 1), 6 del modelo musical, 10 de interfaz con Robolectric |
+| Pruebas del motor `cs_core_tests` (x86-64 Release) | **72/72** (28 de la fase 1 + 44 nuevas) |
+| Mismas pruebas con ASan + UBSan / con TSan | **72/72** / **72/72** |
+| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **72/72**: portabilidad y resultados numéricos, no rendimiento |
+| Pruebas JVM de la app (`testDebugUnitTest`) | **22/22**: 5 de modelos (fase 1), 6 del modelo musical, 11 de interfaz con Robolectric |
 | `lintDebug` | 0 errores (avisos: versiones nuevas de dependencias, plurales, icono monocromo) |
 | APK `0.2.0-fase1.2-preview` (`assemblePreview`) | Compila, firmado con clave de prueba persistente, `com.caucesound.app.preview` |
-| Bench x86-64 (Xeon 2,1 GHz), proyecto trap + pad 8 voces + 5 efectos | p99 176 µs por bloque de 4 ms = **4,4 %** de un núcleo. **No representa un teléfono**: estimación sin medir 3-6 veces más en gama media |
+| Bench x86-64 (Xeon 2,1 GHz), proyecto trap + pad 8 voces + 5 efectos | p99 entre 73 y 176 µs por bloque de 4 ms = **1,8-4,4 %** de un núcleo (la máquina es compartida y el tiempo varía; ver el recuento de instrucciones abajo). **No representa un teléfono**: estimación sin medir 3-6 veces más en gama media |
+| Proyecto de 32 pistas (6 baterías, 16 synths con acordes, 10 de audio, 64 efectos) | p99 por bloque de 5,3 ms: 31-34 % antes de optimizar, 17-26 % después. Instrucciones (callgrind, determinista): synth -35 %. **En un teléfono probablemente no cabe en tiempo real**: ver «Rendimiento con proyectos grandes» |
+
+## Continuación de la noche (08:00-11:00 UTC)
+
+| Trabajo | Resultado | Prueba |
+|---|---|---|
+| Carga y concurrencia | 600-4000 ediciones de efectos al azar (añadir, quitar, mover, bypass, parámetros, deshacer) con el audio sonando: salida finita, modelo coherente, reabre idéntico; TSan limpio | `stress_fx_chain_edits_while_playing_are_thread_safe` |
+| Sesión larga | 30 vueltas de bucle (3,4 min): 0 reservas, energía por vuelta estable (0,12 dB), posición sin deriva, batería idéntica a la muestra en la vuelta 3 y la 30, 0 voces al parar | `stress_long_loop_session_is_deterministic_and_does_not_drift` |
+| Proyecto grande | 32 pistas: guarda en ~5 ms, abre en ~150-190 ms (genera los kits), la pista 33 se rechaza, 0 reservas | `stress_large_project_32_tracks_saves_reopens_and_renders` |
+| Desnormales | El callback y la exportación ponen los desnormales a cero (FTZ/DAZ en x86, FZ en ARM64) y lo restauran al salir. Sin ello, las colas en silencio costaban ~4,5 veces más en x86 | `stress_decaying_tails_never_produce_denormals` (sonda determinista, también en ARM64) |
+| Revisión de pruebas | `editing_patterns_while_playing_is_thread_safe` terminaba en `CHECK (true)`: ahora comprueba salida y modelo. Las de «igual con cualquier bloque» comprueban que la referencia no es silencio. `pdc_export_matches_live…` no comparaba con el vivo: ahora sí (diferencia 0). Nueva `pdc_after_seek…` fija el comportamiento tras un seek | — |
+| Deshacer por gesto | Un giro de perilla (synth, batería, efectos) = una entrada; preset y kit también se deshacen. **Error real corregido**: deshacer otra edición dejaba la instancia sonando con un valor y guardaba otro (diferencia 0,87 entre exportar antes y después de reabrir; 0 con la corrección). El mezclador sigue fuera del deshacer, como en la fase 1 | `param_gestures_undo_as_one_step_and_live_instances_follow` |
+| Exportar/importar proyecto | `.caucesound` = ZIP sin compresión con project.json + WAV usados; abre con cualquier descompresor (comprobado con `unzip -t` y Python). Importar rechaza rutas peligrosas, comprimidos, cifrados, CRC malos, truncados y proyectos sin su audio, sin dejar restos; id nuevo. En la app: menú ⋮ → Exportar; botón Importar en el inicio (selector del sistema, sin permisos) | `project_archive_*` (2), `home_import_and_export_actions_are_wired` (JVM) |
+| Calidad de presets | **Error real corregido**: Lead y Pad sonaban 6 y 9 cents altos (solo subía el oscilador 2); ahora el detune se reparte. Bajos reequilibrados (diferencia 8,6 → 3,5 dB). Todos: afinación ≤ 0,1 cents (Synth Bass +2,7, estimación sobre onda filtrada), DC despreciable, colas que terminan, sin clic al soltar | `synth_presets_are_in_tune_balanced_and_end_cleanly` |
+| Aliasing | Seno -88/-92 dB; triángulo -44/-53; sierra -38/-41; cuadrada -40/-43 (Do 6 / Do 7, sin filtro). Con el filtro del preset Lead: -65/-70 dB. Sierra y cuadrada agudas sin filtro: mejorable con sobremuestreo x2 (pendiente) | `synth_oscillators_have_low_aliasing_at_high_notes` |
+| Kits | 4 kits: picos de -3,4 (bombo) a -11 dB (hats), bombo y caja a 2,1 dB, colas de 119 a 1500 ms, sin DC | `drum_kits_are_balanced_short_and_clean` |
+| Rendimiento | Seno polinómico en el oscilador (error 5,6e-8), reverb sin división por muestra | `fast_sine_matches_std_sin` + todas las de salida idéntica |
+
+### Rendimiento con proyectos grandes (inferencia, sin medir en teléfono)
+
+El proyecto de 32 pistas usa entre el 17 % y el 26 % de un núcleo Xeon tras optimizar. Si un núcleo grande de un
+Samsung de gama media rinde de 3 a 6 veces menos en este código, quedaría entre el 50 % y más del 100 %. Es decir, al
+límite o fuera de tiempo real. El perfil muestra dónde está el coste: el synth (~30 %, voces con dos osciladores y
+filtro por muestra) y la reverb (~20 %, una instancia por pista). Lo más rentable, por orden:
+1. **Envíos a un bus de reverb compartido** en lugar de una reverb por pista (lo normal en mezcla; quita la mayor
+   parte del 20 %).
+2. **Congelar pista** (renderizar a audio una pista de synth terminada).
+3. Sobremuestreo o SIMD solo si las mediciones en el teléfono lo piden.
+La prueba 16 de TESTING_ON_DEVICE.md (carga) dirá dónde está el límite real.
 
 ## Por bloque de la misión
 
@@ -52,9 +81,12 @@ pantalla en vertical y solo 1,5 pistas visibles en horizontal.
   latencia, así que hoy no cambia nada audible; validar con VocalShift real.
 - Sin automatización, pitch bend, CC, aftertouch, MIDI externo ni importación/exportación de archivos MIDI
   (el modelo admite añadirlos: ver ARCHITECTURE.md §6).
-- Sin deshacer para giros de perillas (igual que el mezclador en la fase 1): sí para estructura (patrones, clips,
-  notas, efectos).
-- Los proyectos de la app de la fase 1 **no aparecen** en la app Preview (son apps distintas): ver TESTING_ON_DEVICE.md.
+- Deshacer agrupado por gesto en perillas de synth, batería y efectos. El mezclador (volumen, pan, mute, solo de
+  pista) sigue fuera del deshacer, como en la fase 1.
+- Los proyectos de la app de la fase 1 **no aparecen** en la app Preview (son apps distintas). La app de la fase 1
+  no tiene «Exportar proyecto» (se añadió ahora y no se puede actualizar): se rescatan por pistas (Solo + Exportar WAV): ver TESTING_ON_DEVICE.md.
+- Sierra y cuadrada sin filtro en notas muy agudas: aliasing de -38/-40 dB (medido); con los filtros de los presets,
+  por debajo de -65 dB.
 - Lista de carriles con nombres largos se recorta en vertical («Kick 8…»).
 
 ## Fase 1 (histórico, 2026-11-12, commit dbdd93b)
