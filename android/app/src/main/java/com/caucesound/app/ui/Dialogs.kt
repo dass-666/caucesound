@@ -168,23 +168,6 @@ internal fun GainDialog(gainDb: Float, onDismiss: () -> Unit, onOk: (Float) -> U
 }
 
 @Composable
-internal fun ExportDialog(onDismiss: () -> Unit, onOk: (Int) -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.export_wav)) },
-        text = { Text(stringResource(R.string.export_note)) },
-        confirmButton = {
-            Row {
-                TextButton(onClick = { onOk(16) }) { Text("16 bit") }
-                TextButton(onClick = { onOk(24) }) { Text("24 bit") }
-                TextButton(onClick = { onOk(32) }) { Text("32 float") }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
-}
-
-@Composable
 internal fun RenameDialog(name: String, onDismiss: () -> Unit, onDelete: () -> Unit, onOk: (String) -> Unit) {
     var n by remember { mutableStateOf(name) }
     AlertDialog(

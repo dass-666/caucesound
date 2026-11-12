@@ -576,6 +576,85 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         }
     }
 
+    /**
+     * Paquete para DAW. El motor lo crea en segundo plano en la caché de la app (no bloquea la interfaz ni el audio) y,
+     * cuando termina, se copia al documento que eligió el usuario. Si se cancela o falla, se borra ese documento para
+     * no dejar un ZIP vacío. El proyecto no se modifica.
+     */
+    private var exportPoll: Job? = null
+    fun exportDaw(uri: Uri, wet: Boolean) {
+        if (_plugins.value.export?.active == true) return
+        exportPoll = viewModelScope.launch {
+            val app = getApplication<Application>()
+            fun setExport(e: com.caucesound.app.data.DawExportUi?) { _plugins.value = _plugins.value.copy(export = e) }
+            fun dropTarget() { runCatching { android.provider.DocumentsContract.deleteDocument(app.contentResolver, uri) } }
+            val dir = File(app.cacheDir, "daw-export")
+            withContext(Dispatchers.IO) { dir.deleteRecursively(); dir.mkdirs() }
+            val tmp = File(dir, "package.zip")
+            try {
+                // Espacio: los WAV temporales, el ZIP y la copia final conviven un momento (24 bits estéreo por pista).
+                val s = _state.value
+                if (s != null) {
+                    val need = (s.contentEnd + 10L * com.caucesound.app.data.SAMPLE_RATE) * 6L * (s.tracks.size + 1) * 3L
+                    val free = withContext(Dispatchers.IO) { app.cacheDir.usableSpace }
+                    if (free < need) {
+                        dropTarget()
+                        setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = tr(
+                            "No hay espacio suficiente: hacen falta unos ${need / 1048576} MB libres y hay ${free / 1048576} MB.",
+                            "Not enough space: about ${need / 1048576} MB are needed and ${free / 1048576} MB are free.")))
+                        return@launch
+                    }
+                }
+                val r = call(Cmd.exportDaw(tmp.absolutePath, wet))
+                if (!r.ok) { dropTarget(); setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = r.error)); return@launch }
+                val jobId = r.raw.optString("jobId")
+                setExport(com.caucesound.app.data.DawExportUi("running", jobId, 0f, wet))
+                var result: JSONObject? = null
+                while (isActive && result == null) {
+                    val st = call(Cmd.jobStatus(jobId))
+                    val job = if (st.ok) com.caucesound.app.data.PluginParser.job(st.raw) else null
+                    when (job?.state) {
+                        "done" -> result = st.raw.optJSONObject("result") ?: JSONObject()
+                        "cancelled" -> { dropTarget(); setExport(com.caucesound.app.data.DawExportUi("cancelled", wet = wet)); return@launch }
+                        null, "failed" -> { dropTarget(); setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = job?.error)); return@launch }
+                        else -> { setExport(com.caucesound.app.data.DawExportUi("running", jobId, job.progress, wet)); delay(150) }
+                    }
+                }
+                val res = result ?: return@launch
+                setExport(com.caucesound.app.data.DawExportUi("saving", jobId, 1f, wet))
+                withContext(Dispatchers.IO) { app.contentResolver.openOutputStream(uri, "w")!!.use { out -> tmp.inputStream().use { it.copyTo(out, 1 shl 16) } } }
+                setExport(com.caucesound.app.data.DawExportUi("done", jobId, 1f, wet, res.optInt("stems"), res.optInt("midiNotes"), res.optInt("files"),
+                    res.optLong("bytes"), res.optLong("clippedSamples")))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                dropTarget()
+                setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = e.message ?: e.javaClass.simpleName))
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { dir.deleteRecursively() }
+            }
+        }
+    }
+    fun cancelExport() { _plugins.value.export?.takeIf { it.phase == "running" }?.let { e -> viewModelScope.launch { call(Cmd.jobCancel(e.jobId)) } } }
+    fun dismissExport() { if (_plugins.value.export?.active != true) _plugins.value = _plugins.value.copy(export = null) }
+
+    fun exportMidi(uri: Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tmp = File(app.cacheDir, "export_${System.nanoTime()}.mid")
+            try {
+                val r = call(Cmd.exportMidi(tmp.absolutePath))
+                if (!r.ok) { runCatching { android.provider.DocumentsContract.deleteDocument(app.contentResolver, uri) }; toast(r.error ?: ""); return@launch }
+                withContext(Dispatchers.IO) { app.contentResolver.openOutputStream(uri, "w")!!.use { out -> tmp.inputStream().use { it.copyTo(out) } } }
+                toast(tr("MIDI exportado (${r.raw.optInt("notes")} notas)", "MIDI exported (${r.raw.optInt("notes")} notes)"))
+            } catch (e: Exception) {
+                toast(str(R.string.msg_export_failed, e.message ?: ""))
+            } finally {
+                tmp.delete()
+            }
+        }
+    }
+
     // --- Formas de onda -----------------------------------------------------------------------------------------
     // Resumen fijo por fuente (mín/máx cada WAVE_BLOCK frames), pedido en el hilo de control y dibujado
     // localmente: la interfaz nunca espera al motor mientras pinta.

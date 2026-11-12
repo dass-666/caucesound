@@ -117,6 +117,17 @@ data class HarmonyState(val keyRoot: Int, val minor: Boolean, val source: String
 /** Escucha previa de VocalShift: una región corta procesada en memoria por el motor. No forma parte del proyecto. */
 data class VocalPreviewState(val clipId: String, val from: Long, val length: Long, val listening: Boolean, val params: VocalParams)
 
+/**
+ * Exportación para DAW en curso o recién terminada (estado de interfaz).
+ * phase: running (el motor renderiza; progress es el real), saving (copiando a la carpeta elegida), done, failed, cancelled.
+ */
+data class DawExportUi(
+    val phase: String, val jobId: String = "", val progress: Float = 0f, val wet: Boolean = true, val stems: Int = 0, val midiNotes: Int = 0,
+    val files: Int = 0, val bytes: Long = 0, val clipped: Long = 0, val error: String? = null,
+) {
+    val active get() = phase == "running" || phase == "saving"
+}
+
 /** Estado de interfaz de los plugins: no forma parte del proyecto. */
 data class PluginUi(
     val vocalPresets: List<VocalPreset> = emptyList(),
@@ -124,6 +135,7 @@ data class PluginUi(
     val vocalResult: VocalResult? = null,
     val analysis: BeatAnalysis? = null,
     val family: SoloFamily? = null,
+    val export: DawExportUi? = null,
 )
 
 object PluginParser {

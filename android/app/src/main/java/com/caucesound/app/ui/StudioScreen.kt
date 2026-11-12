@@ -159,6 +159,15 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
         if (uri != null) vm.exportWav(uri, exportBits)
     }
+    var exportWet by remember { mutableStateOf(true) }
+    val dawExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) vm.exportDaw(uri, exportWet)
+    }
+    val midiExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/midi")) { uri ->
+        if (uri != null) vm.exportMidi(uri)
+    }
+    val pluginUi by vm.plugins.collectAsState()
+    val fileBase = state.name.replace(Regex("[^\\p{L}\\p{N} _-]"), "_").trim().ifEmpty { "cancion" }
 
     StudioLayout(
         state, panel, selected, selectedTrack, waveforms, catalog, busy != null, position, playingState.value, meters, vm, snackbar,
@@ -168,6 +177,13 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         onRecord = { requestMic { vm.record() } },
         favorites = vm.favoritePresets.collectAsState().value, countIn = countIn, plugins = vm.plugins.collectAsState().value,
     )
+
+    // Exportación para DAW: progreso real, cancelar visible y final claro. No se cierra tocando fuera mientras trabaja.
+    pluginUi.export?.let { e ->
+        CauceDialog(tr("Paquete para DAW", "DAW package"), onDismiss = { vm.dismissExport() }, confirm = null) {
+            DawExportStatus(e, onCancel = vm::cancelExport, onClose = vm::dismissExport)
+        }
+    }
 
     // --- Diálogos ---
     when (val d = dialog) {
@@ -179,9 +195,13 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         "gain" -> selected?.let { state.clip(it) }?.let { (_, c) ->
             GainDialog(c.gainDb, onDismiss = { dialog = null }) { db -> vm.setClipGain(c.id, db); dialog = null }
         } ?: run { dialog = null }
-        "export" -> ExportDialog(onDismiss = { dialog = null }) { bits ->
-            exportBits = bits; dialog = null
-            exporter.launch("${state.name.ifBlank { "mix" }}.wav")
+        "export" -> CauceDialog(tr("Exportar", "Export"), onDismiss = { dialog = null }, confirm = null, dismiss = tr("Cerrar", "Close")) {
+            ExportOptions(
+                hasMidi = state.tracks.any { t -> t.midiClips.isNotEmpty() },
+                onMix = { bits -> exportBits = bits; dialog = null; exporter.launch("$fileBase.wav") },
+                onDaw = { wet -> exportWet = wet; dialog = null; dawExporter.launch("$fileBase-cauce-daw.zip") },
+                onMidi = { dialog = null; midiExporter.launch("$fileBase.mid") },
+            )
         }
         "settings" -> SettingsDialog(vm, state, requestMic, onDismiss = { dialog = null })
         null -> {}

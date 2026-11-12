@@ -19,8 +19,6 @@
     <string name="duplicate">Duplicate</string>
     <string name="exclusive">exclusive</string>
     <string name="export">Export</string>
-    <string name="export_note">Exports the full mix (with volume, pan, mute and solo) as a WAV file. The metronome is not included.</string>
-    <string name="export_wav">Export WAV</string>
     <string name="fade_in_ms">Fade in: %1$d ms</string>
     <string name="fade_out_ms">Fade out: %1$d ms</string>
     <string name="fades">Fades</string>

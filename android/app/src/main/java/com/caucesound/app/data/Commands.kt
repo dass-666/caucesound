@@ -102,5 +102,8 @@ object Cmd {
     fun seek(frame: Long) = c("seek", "frame" to frame)
     fun setMonitoring(on: Boolean) = c("setMonitoring", "on" to on, "gain" to 1.0)
     fun startRecording(trackId: String, countInBars: Int = 0) = c("startRecording", "trackId" to trackId, "channels" to 1, "countInBars" to countInBars)
+    /** Paquete para DAW (trabajo en segundo plano): mode wet = con efectos, dry = sin efectos. */
+    fun exportDaw(path: String, wet: Boolean, bits: Int = 24) = c("exportDaw", "path" to path, "mode" to if (wet) "wet" else "dry", "bits" to bits)
+    fun exportMidi(path: String) = c("exportMidi", "path" to path)
     fun export(path: String, bits: Int) = c("export", "path" to path, "bits" to bits, "tail" to SAMPLE_RATE / 2)
 }

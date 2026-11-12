@@ -19,8 +19,6 @@
     <string name="duplicate">Duplicar</string>
     <string name="exclusive">exclusivo</string>
     <string name="export">Exportar</string>
-    <string name="export_note">Exporta la mezcla completa (con volumen, pan, mute y solo) como WAV. El metrónomo no se incluye.</string>
-    <string name="export_wav">Exportar WAV</string>
     <string name="fade_in_ms">Fundido de entrada: %1$d ms</string>
     <string name="fade_out_ms">Fundido de salida: %1$d ms</string>
     <string name="fades">Fundidos</string>

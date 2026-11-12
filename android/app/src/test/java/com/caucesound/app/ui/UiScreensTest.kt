@@ -651,4 +651,52 @@ class UiScreensTest {
         }
         shot("06_timeline")
     }
+
+    // --- Exportación para DAW (misión 0.6) ----------------------------------------------------------------------
+    @Test fun export_options_offer_mix_daw_package_and_midi_with_the_chosen_mode() {
+        val calls = mutableListOf<String>()
+        compose.setContent { Themed { Box(Modifier.padding(16.dp)) { ExportOptions(hasMidi = true, onMix = { calls += "mix:$it" }, onDaw = { calls += "daw:$it" }, onMidi = { calls += "midi" }) } } }
+        shot("26_export_options")
+        compose.onNodeWithTag("export_mix").performScrollTo().performClick()
+        compose.onNodeWithTag("export_daw").performScrollTo().performClick()            // por defecto: con efectos
+        compose.onNodeWithText(tr("Sin efectos", "No effects")).performScrollTo().performClick()
+        compose.onNodeWithTag("export_daw").performScrollTo().performClick()
+        compose.onNodeWithTag("export_midi").performScrollTo().performClick()
+        assertEquals(listOf("mix:24", "daw:true", "daw:false", "midi"), calls)
+    }
+
+    @Test fun export_options_disable_midi_when_the_song_has_no_notes() {
+        val calls = mutableListOf<String>()
+        compose.setContent { Themed { ExportOptions(hasMidi = false, onMix = {}, onDaw = {}, onMidi = { calls += "midi" }) } }
+        compose.onNodeWithTag("export_midi").performScrollTo().performClick()
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun daw_export_status_shows_real_progress_with_cancel_and_never_done_while_working() {
+        val calls = mutableListOf<String>()
+        var e by mutableStateOf(com.caucesound.app.data.DawExportUi("running", "job1", 0.42f, true))
+        compose.setContent { Themed { Box(Modifier.padding(16.dp)) { DawExportStatus(e, onCancel = { calls += "cancel" }, onClose = { calls += "close" }) } } }
+        compose.onNodeWithText("42 %", substring = true).assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasTestTag("export_done")).fetchSemanticsNodes().isEmpty())
+        shot("27_export_progress")
+        compose.onNodeWithTag("export_cancel").performClick()
+        assertEquals(listOf("cancel"), calls)
+        // Copiando a la carpeta elegida: sigue sin decir «guardado» y ya no se puede cancelar a medias.
+        e = e.copy(phase = "saving", progress = 1f)
+        compose.onNodeWithTag("export_saving").assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasTestTag("export_done")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(hasTestTag("export_cancel")).fetchSemanticsNodes().isEmpty())
+        // Terminado: resumen y aviso de recorte.
+        e = com.caucesound.app.data.DawExportUi("done", "job1", 1f, true, stems = 6, midiNotes = 499, files = 11, bytes = 63_400_000, clipped = 12)
+        compose.onNodeWithTag("export_done").assertIsDisplayed()
+        compose.onNodeWithTag("export_clipped").assertIsDisplayed()
+        compose.onNodeWithText("499", substring = true).assertIsDisplayed()
+        shot("28_export_done")
+        compose.onNodeWithTag("export_close").performClick()
+        assertEquals(listOf("cancel", "close"), calls)
+        // Cancelado: lo dice y no afirma que haya archivo.
+        e = com.caucesound.app.data.DawExportUi("cancelled")
+        compose.onNodeWithTag("export_failed").assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasTestTag("export_done")).fetchSemanticsNodes().isEmpty())
+    }
 }
