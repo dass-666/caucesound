@@ -125,8 +125,43 @@ class UiScreensTest {
         val synth = state.tracks.first { it.isSynth }
         compose.setContent { Themed { SynthPanel(state, synth, catalog, rec) } }
         shot("04_synth")
-        compose.onNodeWithText("Pad").performClick()
+        compose.onNodeWithText("Pad").performScrollTo().performClick()
         assertTrue(rec.calls.contains("preset:pad"))
+    }
+
+    @Test fun knob_follows_the_engine_value_after_a_drag_and_an_undo() {
+        // Error real: tras arrastrar, la perilla seguía mostrando su valor local aunque el motor lo cambiara
+        // (deshacer o cargar un preset). Ahora el valor externo manda en cuanto cambia.
+        val engine = mutableStateOf(0.2f)
+        val sent = mutableListOf<Float>()
+        compose.setContent { Themed { Knob("Test", engine.value, 0f, 1f, 0.5f, { sent += it }, format = { "${(it * 100).toInt()}%" }) } }
+        compose.onNodeWithContentDescription("Test 20%").performTouchInput { swipeUp() }
+        assertTrue(sent.isNotEmpty() && sent.last() > 0.2f)
+        // El motor aún no ha contestado: la perilla conserva lo que el dedo dejó (sin saltar atrás).
+        compose.waitForIdle()
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Test 20%")).fetchSemanticsNodes().isEmpty())
+        // El motor confirma el valor nuevo y después se deshace: la perilla debe mostrar el valor del motor.
+        engine.value = sent.last(); compose.waitForIdle()
+        engine.value = 0.2f; compose.waitForIdle()
+        compose.onNodeWithContentDescription("Test 20%").assertExists()
+        // Un segundo gesto parte del valor del motor, no del antiguo valor local.
+        sent.clear()
+        compose.onNodeWithContentDescription("Test 20%").performTouchInput { down(center); moveBy(androidx.compose.ui.geometry.Offset(0f, -4f)); up() }
+        assertTrue(sent.all { it < 0.3f })
+    }
+
+    @Test fun synth_panel_filters_by_category_and_marks_favorites() {
+        val rec = object : StudioActions { var fav: String? = null; override fun toggleFavoritePreset(presetId: String) { fav = presetId } }
+        val synth = state.tracks.first { it.isSynth }
+        compose.setContent { Themed { SynthPanel(state, synth, catalog, rec, favorites = setOf("pad")) } }
+        compose.onNodeWithText("★ Pad").assertExists()
+        compose.onNodeWithText("Pads").performClick()
+        compose.onNodeWithText("★ Pad").assertExists()
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Lead")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText("★").performClick()
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Pluck")).fetchSemanticsNodes().isEmpty())
+        compose.onNode(androidx.compose.ui.test.hasContentDescription("Añadir a favoritos").or(androidx.compose.ui.test.hasContentDescription("Add to favorites"))).performClick()
+        assertEquals(synth.preset, rec.fav)
     }
 
     @Test fun mixer_panel_toggles_mute() {

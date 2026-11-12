@@ -25,6 +25,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlin.math.max
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
@@ -95,6 +102,7 @@ fun DrumsPanel(
     var page by remember(track.id, patternId) { mutableIntStateOf(0) }
     var laneSettings by remember { mutableStateOf<Int?>(null) }
     var kitMenu by remember { mutableStateOf(false) }
+    var variationMenu by remember { mutableStateOf(false) }
 
     if (pattern == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -105,61 +113,73 @@ fun DrumsPanel(
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)) {
         // --- Cabecera: kit y vista ---
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Cauce Drums", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Box {
-                    Text(
-                        (kit?.name ?: "Kit") + " ▾", color = Palette.Cyan, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { kitMenu = true }.padding(vertical = 6.dp),
-                    )
-                    DropdownMenu(kitMenu, { kitMenu = false }) {
-                        catalog.drumKits.forEachIndexed { i, k ->
-                            DropdownMenuItem(text = { Text(k.name) }, onClick = { kitMenu = false; actions.setParam(track.id, "kit", i.toFloat()) })
-                        }
+        PanelHeader("Cauce Drums", track.name) {
+            Box {
+                PillToggle((kit?.name ?: "Kit") + " ▾", false, { kitMenu = true }, height = 40.dp)
+                DropdownMenu(kitMenu, { kitMenu = false }) {
+                    catalog.drumKits.forEachIndexed { i, k ->
+                        DropdownMenuItem(text = { Text(k.name, fontWeight = if (i == kitIndex) FontWeight.Bold else FontWeight.Normal) },
+                            onClick = { kitMenu = false; actions.setParam(track.id, "kit", i.toFloat()) })
                     }
                 }
             }
-            Segmented(listOf(tr("Pasos", "Steps"), "Pads"), if (showPads) 1 else 0, { showPads = it == 1 })
+            Spacer(Modifier.width(8.dp))
+            Segmented(listOf(tr("Pasos", "Steps"), "Pads"), if (showPads) 1 else 0, { showPads = it == 1 }, height = 40.dp)
+        }
+        // Vista previa del kit: al cambiarlo (con el transporte parado) suenan bombo y caja del kit nuevo.
+        var previewKit by remember(track.id) { mutableIntStateOf(kitIndex) }
+        LaunchedEffect(kitIndex) {
+            if (previewKit != kitIndex) {
+                previewKit = kitIndex
+                if (!playing) {
+                    delay(120); actions.liveNote(slot, DRUM_BASE_NOTE, 110, true)
+                    delay(260); actions.liveNote(slot, DRUM_BASE_NOTE + 1, 105, true)
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
 
         // --- Patrones ---
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             track.patterns.forEach { p ->
                 PillToggle(p.name.ifEmpty { "?" }, p.id == pattern.id, { patternId = p.id }, minWidth = 44.dp, height = 40.dp, color = Palette.Violet)
             }
-            IconButton(onClick = { actions.addPattern(track.id, null) }) { Icon(Icons.Default.Add, tr("Patrón nuevo", "New pattern"), tint = Palette.TextDim) }
-            IconButton(onClick = { actions.addPattern(track.id, pattern.id) }) { Icon(Icons.Default.LibraryAdd, tr("Duplicar patrón", "Duplicate pattern"), tint = Palette.TextDim) }
-            IconButton(onClick = { onCopy(pattern.lanes) }) { Icon(Icons.Default.ContentCopy, tr("Copiar", "Copy"), tint = Palette.TextDim) }
-            IconButton(onClick = { clipboard?.let { cb -> actions.setPatternLanes(track.id, pattern.id, fitLanes(cb, pattern.steps)) } }, enabled = clipboard != null) {
-                Icon(Icons.Default.ContentPaste, tr("Pegar", "Paste"), tint = if (clipboard != null) Palette.TextDim else Palette.TextFaint)
+            ToolButton(Icons.Default.Add, tr("Patrón nuevo", "New pattern"), { actions.addPattern(track.id, null) })
+            ToolButton(Icons.Default.LibraryAdd, tr("Duplicar patrón", "Duplicate pattern"), { actions.addPattern(track.id, pattern.id) })
+            ToolButton(Icons.Default.ContentCopy, tr("Copiar", "Copy"), { onCopy(pattern.lanes) })
+            ToolButton(Icons.Default.ContentPaste, tr("Pegar", "Paste"), { clipboard?.let { cb -> actions.setPatternLanes(track.id, pattern.id, fitLanes(cb, pattern.steps)) } }, enabled = clipboard != null)
+            Box {
+                ToolButton(Icons.Default.AutoFixHigh, tr("Variaciones", "Variations"), { variationMenu = true })
+                DropdownMenu(variationMenu, { variationMenu = false }) {
+                    DrumVariation.entries.forEach { v ->
+                        DropdownMenuItem(text = { Column { Text(v.title()); Text(v.hint(), fontSize = 11.sp, color = Palette.TextDim) } },
+                            onClick = { variationMenu = false; actions.setPatternLanes(track.id, pattern.id, v.apply(pattern.lanes)) })
+                    }
+                }
             }
-            IconButton(onClick = { actions.setPatternLanes(track.id, pattern.id, List(8) { List(pattern.steps) { 0 } }) }) {
-                Icon(Icons.Default.DeleteSweep, tr("Vaciar patrón", "Clear pattern"), tint = Palette.TextDim)
-            }
+            // Vaciar se puede deshacer (botón Deshacer de la barra superior), por eso no pide confirmación.
+            ToolButton(Icons.Default.DeleteSweep, tr("Vaciar patrón", "Clear pattern"), { actions.setPatternLanes(track.id, pattern.id, List(8) { List(pattern.steps) { 0 } }) })
         }
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Segmented(listOf("16", "32"), if (pattern.steps == 32) 1 else 0, { actions.setPatternLength(track.id, pattern.id, if (it == 1) 32 else 16) })
-            PillToggle("Vel", velocityMode, { velocityMode = !velocityMode }, color = Palette.Cyan, height = 36.dp)
-            Spacer(Modifier.weight(1f))
-            Text("Swing ${(pattern.swing * 100).toInt()}%", color = Palette.TextDim, fontSize = 13.sp)
-        }
-        SwingSlider(pattern.swing) { actions.setSwing(track.id, pattern.id, it) }
         Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Segmented(listOf("16", "32"), if (pattern.steps == 32) 1 else 0, { actions.setPatternLength(track.id, pattern.id, if (it == 1) 32 else 16) })
+            PillToggle(tr("Intensidad", "Velocity"), velocityMode, { velocityMode = !velocityMode }, color = Palette.Violet, height = 36.dp)
+            Text("Swing", color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
+            Box(Modifier.weight(1f)) { SwingSlider(pattern.swing) { actions.setSwing(track.id, pattern.id, it) } }
+            Text("${(pattern.swing * 100).toInt()}%", style = ValueText, color = Palette.Text, modifier = Modifier.width(32.dp))
+        }
+        if (velocityMode && !showPads) Text(tr("Arrastra arriba o abajo dentro de un paso para cambiar la fuerza del golpe.", "Drag up or down inside a step to set how hard it hits."),
+            color = Palette.TextFaint, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        Spacer(Modifier.height(4.dp))
 
         if (!showPads) {
             StepGrid(state, track, pattern, laneNames, position, playing, velocityMode, page, onPage = { page = it }, slot = slot, actions = actions,
                 onLaneSettings = { laneSettings = it })
             Spacer(Modifier.height(10.dp))
-            TextButton(onClick = {
+            CauceButton(tr("Añadir «${pattern.name}» al final del arreglo", "Append “${pattern.name}” to the arrangement"), {
                 val last = track.midiClips.maxOfOrNull { it.end } ?: 0L
                 actions.addMidiClip(track.id, last, pattern.steps.toLong() / 16 * 4 * PPQ * state.beatsPerBar / 4, pattern.id)
-            }) {
-                Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp))
-                Text(tr("Añadir «${pattern.name}» al final del arreglo", "Append “${pattern.name}” to the arrangement"))
-            }
+            }, kind = ButtonKind.Ghost, icon = Icons.Default.Add)
         } else {
             DrumPads(laneNames, slot, actions)
         }
@@ -167,6 +187,60 @@ fun DrumsPanel(
 
     laneSettings?.let { lane ->
         LaneDialog(track, lane, laneNames.getOrElse(lane) { "?" }, actions, onDismiss = { laneSettings = null })
+    }
+}
+
+/**
+ * Variaciones de un patrón. Son transformaciones deterministas (el mismo patrón da siempre el mismo resultado), se
+ * aplican como una edición normal (se pueden deshacer) y el resultado se edita paso a paso como cualquier patrón.
+ * Carriles: 0 bombo, 1 caja, 2 palmas, 3 hat cerrado, 4 hat abierto, 5-7 percusión.
+ */
+enum class DrumVariation {
+    DYNAMICS, FILL, DOUBLE_HATS, HALF_HATS;
+
+    fun title() = when (this) {
+        DYNAMICS -> tr("Dinámica natural", "Natural dynamics")
+        FILL -> tr("Remate al final", "Fill at the end")
+        DOUBLE_HATS -> tr("Hi-hats al doble", "Double-time hats")
+        HALF_HATS -> tr("Hi-hats a la mitad", "Half-time hats")
+    }
+    fun hint() = when (this) {
+        DYNAMICS -> tr("Acentúa los tiempos y suaviza el resto", "Accents the beats, softens the rest")
+        FILL -> tr("Redoble de caja en el último tiempo", "Snare roll on the last beat")
+        DOUBLE_HATS -> tr("Un hat cerrado en cada paso", "A closed hat on every step")
+        HALF_HATS -> tr("Deja solo los hats en los tiempos pares", "Keeps hats on even steps only")
+    }
+
+    fun apply(lanes: List<List<Int>>): List<List<Int>> {
+        val steps = lanes.firstOrNull()?.size ?: return lanes
+        fun map(f: (lane: Int, step: Int, v: Int) -> Int) = lanes.mapIndexed { l, lane -> lane.mapIndexed { st, v -> f(l, st, v) } }
+        return when (this) {
+            // Intensidad según la posición en el compás: tiempo fuerte > contratiempo > semicorcheas. Bombo y caja
+            // se quedan casi enteros; los hats respiran. Idempotente.
+            DYNAMICS -> map { l, st, v ->
+                if (v <= 0) 0 else {
+                    val pos = st % 4
+                    val soft = l >= 3
+                    when {
+                        pos == 0 -> if (soft) 112 else 120
+                        pos == 2 -> if (soft) 88 else 108
+                        else -> if (soft) 64 else 96
+                    }
+                }
+            }
+            FILL -> map { l, st, v ->
+                val k = st - (steps - 4) // 0..3 dentro del último tiempo
+                when {
+                    k < 0 -> v
+                    l == 1 -> intArrayOf(78, 92, 106, 122)[k]   // redoble de caja creciente
+                    l == 3 -> 0                                  // los hats dejan sitio
+                    l == 4 -> if (k == 3) 0 else v
+                    else -> v
+                }
+            }
+            DOUBLE_HATS -> map { l, st, v -> if (l == 3 && v <= 0) (if (st % 2 == 0) 96 else 68) else v }
+            HALF_HATS -> map { l, st, v -> if (l == 3 && st % 2 == 1) 0 else v }
+        }
     }
 }
 
@@ -178,7 +252,7 @@ fun fitLanes(src: List<List<Int>>, steps: Int): List<List<Int>> =
 private fun SwingSlider(value: Float, onCommit: (Float) -> Unit) {
     var v by remember(value) { mutableStateOf(value) }
     androidx.compose.material3.Slider(
-        v, { v = it }, valueRange = 0f..1f, onValueChangeFinished = { onCommit(v) },
+        v, { v = it }, valueRange = 0f..1f, onValueChangeFinished = { onCommit(v) }, modifier = Modifier.height(36.dp),
         colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Palette.Text, activeTrackColor = Palette.Violet, inactiveTrackColor = Palette.SurfaceTop),
     )
 }
@@ -201,9 +275,7 @@ private fun StepGrid(
         val pages = pattern.steps / visible
         val first = (page.coerceIn(0, pages - 1)) * visible
         Column {
-            if (pages > 1) {
-                Segmented((0 until pages).map { "${it * visible + 1}–${(it + 1) * visible}" }, page.coerceIn(0, pages - 1), onPage, Modifier.padding(start = LANE_HEADER, bottom = 6.dp), height = 34.dp)
-            }
+            if (pages > 1) StepOverview(lanes, pattern.steps, visible, page.coerceIn(0, pages - 1), onPage, Modifier.padding(start = LANE_HEADER, bottom = 6.dp).width(gridW))
             Row {
                 Column(Modifier.width(LANE_HEADER)) {
                     for (l in 0 until 8) {
@@ -212,10 +284,10 @@ private fun StepGrid(
                         Row(Modifier.height(CELL_H).padding(end = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.width(4.dp).height(CELL_H - 12.dp).background(LANE_COLORS[l], RoundedCornerShape(2.dp)))
                             Text(
-                                laneNames.getOrElse(l) { "?" }, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                laneNames.getOrElse(l) { "?" }, fontSize = 11.sp, lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 color = if (muted) Palette.TextFaint else if (solo) Palette.Solo else Palette.Text,
                                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
-                                    .clickable { actions.liveNote(slot, DRUM_BASE_NOTE + l, 110, true) }.padding(horizontal = 6.dp, vertical = 12.dp),
+                                    .clickable { actions.liveNote(slot, DRUM_BASE_NOTE + l, 110, true) }.padding(horizontal = 6.dp, vertical = 6.dp),
                             )
                             Icon(Icons.Default.Tune, tr("Ajustes del carril", "Lane settings"), tint = Palette.TextFaint,
                                 modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)).clickable { onLaneSettings(l) }.padding(4.dp))
@@ -263,20 +335,26 @@ private fun StepGrid(
                         }
                     },
                 ) {
-                    val gap = 4f
+                    val u = 1.dp.toPx()
+                    val gap = 3 * u
+                    val corner = CornerRadius(6 * u)
                     for (l in 0 until 8) for (i in 0 until visible) {
                         val s = first + i
                         val v = lanes[l].getOrElse(s) { 0 }
-                        val x = i * cellPx
+                        // Los tiempos (grupos de 4 pasos) se separan un poco más y alternan de tono.
+                        val x = i * cellPx + (if (s % 4 == 0) u else 0f)
+                        val w = cellPx - gap - (if (s % 4 == 0) u else 0f)
                         val y = l * cellHPx
                         val beatShade = if ((s / 4) % 2 == 0) Palette.SurfaceHigh else Palette.Surface
-                        drawRoundRect(beatShade, Offset(x + gap / 2, y + gap / 2), Size(cellPx - gap, cellHPx - gap), CornerRadius(10f))
+                        drawRoundRect(beatShade, Offset(x + gap / 2, y + gap / 2), Size(w, cellHPx - gap), corner)
+                        if (s % 4 == 0 && v <= 0) drawCircle(Palette.GridStrong, 1.5f * u, Offset(x + gap / 2 + w / 2, y + cellHPx / 2))
                         if (v > 0) {
                             val c = LANE_COLORS[l]
-                            val a = 0.35f + 0.65f * v / 127f
-                            // La altura del relleno muestra la velocidad.
-                            val h = (cellHPx - gap) * (0.35f + 0.65f * v / 127f)
-                            drawRoundRect(c.copy(alpha = a), Offset(x + gap / 2, y + gap / 2 + (cellHPx - gap - h)), Size(cellPx - gap, h), CornerRadius(10f))
+                            // El relleno muestra la intensidad: más alto y más opaco = más fuerte.
+                            val k = v / 127f
+                            val h = (cellHPx - gap) * (0.4f + 0.6f * k)
+                            drawRoundRect(c.copy(alpha = 0.22f), Offset(x + gap / 2, y + gap / 2), Size(w, cellHPx - gap), corner)
+                            drawRoundRect(c.copy(alpha = 0.55f + 0.45f * k), Offset(x + gap / 2, y + gap / 2 + (cellHPx - gap - h)), Size(w, h), corner)
                         }
                     }
                     // Cursor del secuenciador: se lee la posición en la fase de dibujo (no recompone la cuadrícula).
@@ -286,12 +364,37 @@ private fun StepGrid(
                         val stp = MusicTime.activeStep(pos, st.bpm, clip.start, clip.length, pattern.steps)
                         if (stp in first until first + visible) {
                             val x = (stp - first) * cellPx
-                            drawRoundRect(Palette.Cyan, Offset(x + 1f, 0f), Size(cellPx - 2f, size.height), CornerRadius(10f), style = Stroke(3f))
+                            drawRoundRect(Palette.Cyan.copy(alpha = 0.12f), Offset(x + gap / 2, 0f), Size(cellPx - gap, size.height), corner)
+                            drawRoundRect(Palette.Cyan, Offset(x + gap / 2, 0f), Size(cellPx - gap, size.height), corner, style = Stroke(1.5f * u))
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Vista general del patrón completo (16 o 32 pasos) con la página visible resaltada y el paso que suena. Tocar una
+ * mitad cambia de página. Sustituye a los botones «1–8 / 9–16»: se ve dónde hay golpes sin cambiar de página.
+ */
+@Composable
+private fun StepOverview(lanes: List<List<Int>>, steps: Int, visible: Int, page: Int, onPage: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val pages = steps / visible
+    Canvas(
+        modifier.height(30.dp).clip(RoundedCornerShape(8.dp)).background(Palette.Surface)
+            .semantics { contentDescription = tr("Página de pasos ${page + 1} de $pages", "Step page ${page + 1} of $pages") }
+            .pointerInput(pages) { detectTapGestures { o -> onPage((o.x / size.width * pages).toInt().coerceIn(0, pages - 1)) } },
+    ) {
+        val u = 1.dp.toPx()
+        val cw = size.width / steps
+        val rowH = (size.height - 6 * u) / 8
+        drawRoundRect(Palette.Violet.copy(alpha = 0.16f), Offset(page * visible * cw, 0f), Size(visible * cw, size.height), CornerRadius(8 * u))
+        drawRoundRect(Palette.Violet.copy(alpha = 0.7f), Offset(page * visible * cw + u / 2, u / 2), Size(visible * cw - u, size.height - u), CornerRadius(8 * u), style = Stroke(u))
+        for (l in 0 until 8) for (st in 0 until steps) {
+            if (lanes[l].getOrElse(st) { 0 } > 0) drawRect(LANE_COLORS[l], Offset(st * cw + u, 3 * u + l * rowH), Size(cw - 2 * u, max(u, rowH - u / 2)))
+        }
+        for (b in 1 until steps / 4) drawLine(Palette.GridStrong.copy(alpha = 0.6f), Offset(b * 4 * cw, 0f), Offset(b * 4 * cw, size.height), 1f)
     }
 }
 
@@ -354,5 +457,12 @@ private fun LaneDialog(track: TrackState, lane: Int, name: String, actions: Stud
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        dismissButton = {
+            // Vuelve a los valores de fábrica del carril (una sola entrada de deshacer).
+            TextButton(onClick = {
+                mapOf("vol" to 0f, "pan" to 0f, "pitch" to 0f, "decay" to 1f).forEach { (id, d) -> actions.setParam(track.id, "$id$lane", d) }
+                actions.commitMixer()
+            }) { Text(tr("Restablecer", "Reset")) }
+        },
     )
 }

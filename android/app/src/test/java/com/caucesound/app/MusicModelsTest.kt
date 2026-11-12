@@ -39,7 +39,7 @@ class MusicModelsTest {
         assertEquals(4, c.drumKits.size)
         assertEquals(8, c.drumKits[0].lanes.size)
         assertEquals(5, c.templates.size)
-        assertEquals(19, c.synthParams.size)
+        assertEquals(22, c.synthParams.size)
         assertEquals(listOf("cs.gain", "cs.filter", "cs.eq", "cs.saturation", "cs.compressor", "cs.delay", "cs.reverb"), c.effects.map { it.type })
         assertTrue(c.effects.all { it.params.isNotEmpty() })
     }
@@ -55,6 +55,53 @@ class MusicModelsTest {
         assertEquals(240L, MusicTime.floorTicks(470, 240))
         assertEquals("C4", MusicTime.noteName(60))
         assertTrue(MusicTime.isBlack(61) && !MusicTime.isBlack(64))
+    }
+
+    @Test fun drumVariationsAreDeterministicAndKeepTheGrid() {
+        val s = StateParser.state(res("state_trap.json"))!!
+        val lanes = s.tracks[0].patterns[0].lanes
+        for (v in com.caucesound.app.ui.DrumVariation.values()) {
+            val a = v.apply(lanes)
+            assertEquals(a, v.apply(lanes))                     // misma entrada, misma salida: nada aleatorio
+            assertEquals(lanes.size, a.size)
+            assertTrue(a.all { it.size == lanes[0].size && it.all { x -> x in 0..127 } })
+        }
+        // Dinámica: no añade ni quita golpes y es idempotente.
+        val dyn = com.caucesound.app.ui.DrumVariation.DYNAMICS.apply(lanes)
+        assertEquals(lanes.map { l -> l.map { it > 0 } }, dyn.map { l -> l.map { it > 0 } })
+        assertEquals(dyn, com.caucesound.app.ui.DrumVariation.DYNAMICS.apply(dyn))
+        // Remate: solo toca el último tiempo; la caja crece hasta el final.
+        val fill = com.caucesound.app.ui.DrumVariation.FILL.apply(lanes)
+        val n = lanes[0].size
+        assertEquals(lanes.map { it.take(n - 4) }, fill.map { it.take(n - 4) })
+        assertEquals(listOf(78, 92, 106, 122), fill[1].takeLast(4))
+        // Hats al doble llena todos los pasos; a la mitad deja libres los impares y no toca otros carriles.
+        assertTrue(com.caucesound.app.ui.DrumVariation.DOUBLE_HATS.apply(lanes)[3].all { it > 0 })
+        val half = com.caucesound.app.ui.DrumVariation.HALF_HATS.apply(lanes)
+        assertTrue(half[3].filterIndexed { i, _ -> i % 2 == 1 }.all { it == 0 })
+        assertEquals(lanes[0], half[0])
+    }
+
+    @Test fun pianoRollRepeatAndVelocityLaneHelpers() {
+        val notes = listOf(NoteState(60, 100, 0, 0, 240), NoteState(64, 80, 0, 960, 240), NoteState(67, 120, 0, 960, 480))
+        val d = PianoRollOps.doubled(notes, 1920)
+        assertEquals(6, d.size)
+        assertEquals(notes, d.take(3))
+        assertEquals(listOf(1920L, 2880L, 2880L), d.drop(3).map { it.start })
+        assertEquals(notes.map { it.key to it.velocity }, d.drop(3).map { it.key to it.velocity })
+        assertEquals(0, PianoRollOps.nearestByStart(notes, 100, 240))
+        assertEquals(2, PianoRollOps.nearestByStart(notes, 950, 240))   // empate en el inicio: gana la más fuerte
+        assertEquals(-1, PianoRollOps.nearestByStart(notes, 500, 120))
+        assertEquals(-1, PianoRollOps.nearestByStart(emptyList(), 0, 120))
+    }
+
+    @Test fun scalesHighlightTheRightKeys() {
+        val sc = com.caucesound.app.ui.Scale.MINOR
+        // La menor: A B C D E F G.
+        assertEquals(listOf(57, 59, 60, 62, 64, 65, 67), (57..68).filter { sc.contains(it, 9) })
+        assertTrue((0..127).all { com.caucesound.app.ui.Scale.NONE.contains(it, 3) })
+        assertTrue(com.caucesound.app.ui.Scale.MINOR_PENTA.contains(0, 0) && !com.caucesound.app.ui.Scale.MINOR_PENTA.contains(2, 0))
+        assertTrue(com.caucesound.app.ui.Scale.MAJOR.contains(1, 1)) // la tónica siempre pertenece, también en octavas bajas
     }
 
     @Test fun pianoRollEditOperations() {

@@ -340,6 +340,16 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     fun commitParams() { viewModelScope.launch { refresh() } }
     override fun loadPreset(trackId: String, presetId: String) = edit(Cmd.loadPreset(trackId, presetId))
 
+    // Favoritos de presets: preferencia del usuario en este dispositivo (no viaja con el proyecto ni cambia los presets).
+    private val prefs = app.getSharedPreferences("cauce_prefs", android.content.Context.MODE_PRIVATE)
+    private val _favoritePresets = MutableStateFlow(prefs.getStringSet("favoritePresets", emptySet())!!.toSet())
+    val favoritePresets: StateFlow<Set<String>> = _favoritePresets
+    override fun toggleFavoritePreset(presetId: String) {
+        val next = _favoritePresets.value.let { if (presetId in it) it - presetId else it + presetId }
+        _favoritePresets.value = next
+        prefs.edit().putStringSet("favoritePresets", next).apply()
+    }
+
     /** Directo al motor (sin pasar por el hilo de control): la latencia de los pads es la del búfer de audio. */
     override fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {
         NativeEngine.liveMidi(slot, if (on) 0x90 else 0x80, key, if (on) velocity.coerceIn(1, 127) else 0)

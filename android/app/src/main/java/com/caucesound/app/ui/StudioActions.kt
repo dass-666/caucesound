@@ -34,6 +34,8 @@ interface StudioActions {
     fun setSendLive(trackId: String, busId: String, level: Float) {}
     /** Crea un bus «Reverb» con una reverb 100 % húmeda, listo para recibir envíos. */
     fun addReverbBus() {}
+    /** Marca o desmarca un preset como favorito (preferencia del usuario; no modifica el preset ni el proyecto). */
+    fun toggleFavoritePreset(presetId: String) {}
     fun setMasterLive(db: Float) {}
     fun commitMixer() {}
 

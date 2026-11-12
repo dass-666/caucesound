@@ -18,6 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -52,25 +57,36 @@ private val WAVES = listOf("Sine", "Tri", "Saw", "Square")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SynthPanel(state: ProjectState, track: TrackState, catalog: Catalog, actions: StudioActions) {
+fun SynthPanel(state: ProjectState, track: TrackState, catalog: Catalog, actions: StudioActions, favorites: Set<String> = emptySet()) {
     val slot = state.trackIndex(track.id)
     fun v(id: String) = track.params[id] ?: catalog.synthParam(id)?.default ?: 0f
     @Composable
-    fun K(id: String, label: String, log: Boolean = false, color: Color = Palette.Cyan, format: (Float) -> String) {
+    fun K(id: String, label: String, log: Boolean = false, color: Color = Palette.Blue, format: (Float) -> String) {
         val info = catalog.synthParam(id) ?: return
         Knob(label, v(id), info.min, info.max, info.default, { actions.setParam(track.id, id, it) }, onEnd = actions::commitMixer, log = log, color = color, format = format)
     }
     val ms: (Float) -> String = { if (it >= 1000) "%.1f s".format(it / 1000) else "${it.roundToInt()} ms" }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Cauce Synth", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text(track.name + " · " + (catalog.synthPresets.firstOrNull { it.id == track.preset }?.name ?: tr("Ajustes propios", "Custom")), color = Palette.TextDim, fontSize = 12.sp)
+            val current = catalog.synthPresets.firstOrNull { it.id == track.preset }
+            PanelHeader("Cauce Synth", track.name + " · " + (current?.name ?: tr("Ajustes propios", "Custom"))) {
+                if (current != null) {
+                    val fav = current.id in favorites
+                    ToolButton(if (fav) Icons.Default.Star else Icons.Default.StarBorder, if (fav) tr("Quitar de favoritos", "Remove from favorites") else tr("Añadir a favoritos", "Add to favorites"),
+                        { actions.toggleFavoritePreset(current.id) }, active = fav, activeColor = Palette.Solo)
+                    // Vuelve a cargar el preset: deshace los cambios de perillas (y se puede deshacer).
+                    ToolButton(Icons.Default.RestartAlt, tr("Restablecer el preset", "Reset preset"), { actions.loadPreset(track.id, current.id) })
                 }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                catalog.synthPresets.forEach { p -> PillToggle(p.name, p.id == track.preset, { actions.loadPreset(track.id, p.id) }, height = 40.dp) }
+            // Categorías: ★ favoritos, todos y las del catálogo del motor.
+            var category by rememberSaveable { mutableStateOf("all") }
+            val cats = listOf("fav" to "★", "all" to tr("Todos", "All"), "bass" to tr("Bajos", "Bass"), "lead" to "Leads", "keys" to tr("Teclas", "Keys"), "pad" to "Pads")
+            Segmented(cats.map { it.second }, cats.indexOfFirst { it.first == category }.coerceAtLeast(0), { category = cats[it].first }, Modifier.horizontalScroll(rememberScrollState()), height = 38.dp)
+            val shown = catalog.synthPresets.filter { when (category) { "all" -> true; "fav" -> it.id in favorites; else -> it.category == category } }
+            if (shown.isEmpty()) Text(if (category == "fav") tr("Aún no tienes favoritos: toca la estrella de arriba con un preset cargado.", "No favorites yet: tap the star above with a preset loaded.")
+                else tr("No hay presets en esta categoría.", "No presets in this category."), color = Palette.TextDim, fontSize = 12.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                shown.forEach { p -> PillToggle((if (p.id in favorites) "★ " else "") + p.name, p.id == track.preset, { actions.loadPreset(track.id, p.id) }, height = 40.dp) }
             }
             SectionCard(tr("Osciladores", "Oscillators")) {
                 Text("Osc 1", fontSize = 12.sp, color = Palette.TextDim)
@@ -84,6 +100,8 @@ fun SynthPanel(state: ProjectState, track: TrackState, catalog: Catalog, actions
                     K("osc2Detune", "Detune") { "%+.0f c".format(it) }
                     K("osc2Octave", "Oct 2") { "%+d".format(it.roundToInt()) }
                     K("octave", tr("Octava", "Octave")) { "%+d".format(it.roundToInt()) }
+                    K("pitchEnvSt", tr("Caída tono", "Pitch drop")) { "%.0f st".format(it) }
+                    K("pitchDecayMs", tr("T. caída", "Drop time"), log = true, format = ms)
                 }
             }
             SectionCard(tr("Filtro", "Filter")) {
@@ -92,14 +110,15 @@ fun SynthPanel(state: ProjectState, track: TrackState, catalog: Catalog, actions
                     K("resonance", "Res", color = Palette.Violet) { "${(it * 100).roundToInt()}%" }
                     K("filterEnv", "Env", color = Palette.Violet) { "${(it * 100).roundToInt()}%" }
                     K("filterDecayMs", "Env decay", log = true, color = Palette.Violet, format = ms)
+                    K("velToFilter", tr("Fuerza", "Velocity"), color = Palette.Violet) { "${(it * 100).roundToInt()}%" }
                 }
             }
             SectionCard(tr("Envolvente", "Envelope")) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    K("attackMs", "Attack", log = true, color = Palette.Blue, format = ms)
-                    K("decayMs", "Decay", log = true, color = Palette.Blue, format = ms)
-                    K("sustain", "Sustain", color = Palette.Blue) { "${(it * 100).roundToInt()}%" }
-                    K("releaseMs", "Release", log = true, color = Palette.Blue, format = ms)
+                    K("attackMs", "Attack", log = true, color = Palette.Cyan, format = ms)
+                    K("decayMs", "Decay", log = true, color = Palette.Cyan, format = ms)
+                    K("sustain", "Sustain", color = Palette.Cyan) { "${(it * 100).roundToInt()}%" }
+                    K("releaseMs", "Release", log = true, color = Palette.Cyan, format = ms)
                 }
             }
             SectionCard(tr("Salida", "Output")) {

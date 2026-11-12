@@ -161,6 +161,7 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         onSettings = { vm.refreshAudioStatus(); dialog = "settings" },
         onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
         onRecord = { requestMic { vm.record() } },
+        favorites = vm.favoritePresets.collectAsState().value,
     )
 
     // --- Diálogos ---
@@ -193,6 +194,7 @@ fun StudioLayout(
     state: ProjectState, panel: Panel, selected: String?, selectedTrack: String?, waveforms: Map<String, FloatArray>, catalog: Catalog,
     busy: Boolean, position: LongState, playing: Boolean, meters: androidx.compose.runtime.State<FloatArray>, actions: StudioActions,
     snackbar: SnackbarHostState, onDialog: (String) -> Unit, onSettings: () -> Unit, onImport: (String) -> Unit, onRecord: () -> Unit,
+    favorites: Set<String> = emptySet(),
 ) {
     var drumClipboard by remember { mutableStateOf<List<List<Int>>?>(null) }
     // Horizontal (poca altura): barra superior y transporte en una sola fila y navegación compacta, para dejar
@@ -264,7 +266,7 @@ fun StudioLayout(
                         val t = track?.takeIf { it.isSynth } ?: state.tracks.firstOrNull { it.isSynth }
                         if (t == null) EmptyPanel(tr("No hay pistas de sintetizador.", "No synth tracks."), tr("Añadir Cauce Synth", "Add Cauce Synth")) {
                             actions.addTrack("Synth", "synth")
-                        } else SynthPanel(state, t, catalog, actions)
+                        } else SynthPanel(state, t, catalog, actions, favorites)
                     }
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions)
                     Panel.FX -> {
