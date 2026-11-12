@@ -71,9 +71,20 @@ class UiScreensTest {
         override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
         override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
         override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
-        override fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) {
-            calls += "solo:$startBar:$bars:$type:$proposal:${seed != 0L}:$keyRoot:$minor"
-        }
+        var vocal: com.caucesound.app.data.VocalParams? = null
+        var request: com.caucesound.app.data.SoloRequest? = null
+        override fun vocalProcess(clipId: String, params: com.caucesound.app.data.VocalParams) { calls += "vocal:$clipId"; vocal = params }
+        override fun cancelJob() { calls += "cancelJob" }
+        override fun setClipVersion(clipId: String, original: Boolean) { calls += "version:$original" }
+        override fun discardProcess(clipId: String) { calls += "discard" }
+        override fun auditionClip(clipId: String) { calls += "audition" }
+        override fun soloAnalyze(clipId: String) { calls += "analyze:$clipId" }
+        override fun confirmAnalysis(keyRoot: Int, minor: Boolean, bpm: Double?, useChords: Boolean) { calls += "confirm:$keyRoot:$minor:${bpm?.let { Math.round(it) }}:$useChords" }
+        override fun soloProposals(request: com.caucesound.app.data.SoloRequest) { calls += "proposals"; this.request = request }
+        override fun soloPick(index: Int) { calls += "pick:$index" }
+        override fun soloVary() { calls += "vary" }
+        override fun openPanel(panel: Panel) { calls += "panel:$panel" }
+        override fun selectClip(id: String?) { calls += "selectClip:$id" }
         override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) { calls += "roll:$lane:$step:$roll" }
         override fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) { calls += "step:$lane:$step:$velocity" }
         override fun commitMixer() { calls += "commit" }
@@ -133,26 +144,201 @@ class UiScreensTest {
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("vary_chords")).fetchSemanticsNodes().isEmpty())
     }
 
-    @Test fun solo_ai_uses_song_key_when_there_is_a_plan() {
-        assertTrue(catalog.hasPlugin("solo.ai"))
+    // --- Misión 0.5: Solo AI 2.0 y VocalShift. Todos los datos son JSON reales del motor (cs_render --fixtures05). ---
+    private val stateVocal: ProjectState by lazy { StateParser.state(res("state_vocal.json"))!! }
+    private val stateBeat: ProjectState by lazy { StateParser.state(res("state_beat.json"))!! }
+    private val presets by lazy { com.caucesound.app.data.PluginParser.vocalPresets(res("vocal_presets.json")) }
+    private val analysis by lazy { com.caucesound.app.data.BeatAnalysis.parse(org.json.JSONObject(res("analysis.json")).getJSONObject("result")) }
+    private val family by lazy { com.caucesound.app.data.SoloFamily.parse(com.caucesound.app.data.SoloRequest(bars = 8, seed = 2026), org.json.JSONObject(res("family.json"))) }
+    private fun ui(job: com.caucesound.app.data.JobUi? = null, a: com.caucesound.app.data.BeatAnalysis? = null, f: com.caucesound.app.data.SoloFamily? = null) =
+        com.caucesound.app.data.PluginUi(presets, job, com.caucesound.app.data.PluginParser.vocalResult(org.json.JSONObject(res("vocal_job.json")).getJSONObject("result")), a, f)
+
+    @Test fun variations_panel_links_to_solo_ai() {
+        assertTrue(catalog.hasPlugin("solo.ai") && catalog.hasPlugin("vocalshift"))
         val rec = Recorder()
         compose.setContent { Themed { VariationsPanel(state04, rec, soloAvailable = true) } }
-        compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
-        shot("14_solo_ai_plan")
-        assertEquals(listOf("solo:2:8:chorus:0:true:null:true"), rec.calls)
+        compose.onNodeWithTag("open_solo").performScrollTo().performClick()
+        assertEquals(listOf("panel:SOLO"), rec.calls)
     }
 
-    @Test fun solo_ai_asks_for_the_key_without_a_plan() {
+    @Test fun solo_ai_uses_song_key_when_there_is_a_plan() {
         val rec = Recorder()
-        compose.setContent { Themed { VariationsPanel(state, rec, soloAvailable = true) } }
+        compose.setContent { Themed { SoloAiPanel(state04, null, ui(), rec) } }
+        compose.onNodeWithTag("solo_key_plan").assertExists()
+        compose.onNodeWithTag("solo_type_solo").performClick()
+        compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
+        assertEquals(listOf("proposals"), rec.calls)
+        val r = rec.request!!
+        assertEquals("solo", r.type); assertEquals(8, r.bars); assertEquals(2, r.startBar); assertEquals(null, r.keyRoot)
+        assertTrue(r.seed != 0L)
+    }
+
+    @Test fun solo_ai_asks_for_the_key_without_a_plan_and_never_guesses() {
+        val rec = Recorder()
+        compose.setContent { Themed { SoloAiPanel(state, null, ui(), rec) } } // proyecto 0.3: sin plan, sin audio
         shot("15_solo_ai_key")
         compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
-        assertTrue("sin tonalidad elegida no debe generar", rec.calls.isEmpty())
+        assertTrue("sin tonalidad no debe generar", rec.calls.isEmpty())
         compose.onNodeWithTag("solo_key_7").performScrollTo().performClick() // Sol
         compose.onNodeWithText(tr("Mayor", "Major")).performScrollTo().performClick()
-        compose.onNodeWithText("Solo").performClick()
-        compose.onNodeWithTag("solo_generate").performScrollTo().performClick()
-        assertEquals(listOf("solo:0:8:solo:0:true:7:false"), rec.calls)
+        compose.onNodeWithTag("solo_key_save").performScrollTo().performClick()
+        assertEquals(listOf("confirm:7:false:null:false"), rec.calls) // guarda la tonalidad y no toca el tempo
+    }
+
+    @Test fun solo_ai_offers_to_analyze_an_imported_beat() {
+        val rec = Recorder()
+        val beat = stateBeat.tracks.first { it.name == "Beat" }.clips.first()
+        compose.setContent { Themed { SoloAiPanel(stateBeat, beat.id, ui(), rec) } }
+        compose.onNodeWithTag("solo_analyze").performScrollTo().performClick()
+        assertEquals(listOf("analyze:${beat.id}"), rec.calls)
+    }
+
+    @Test fun solo_ai_analysis_shows_confidence_and_keeps_the_tempo_unless_the_user_picks_one() {
+        // Datos del motor: beat sintético de 92 BPM en La menor.
+        assertEquals(92.0, analysis.bpm, 1.0)
+        assertEquals(9, analysis.keyRoot); assertTrue(analysis.minor && analysis.tonal)
+        assertTrue(analysis.bpmConfidence in 0.0..1.0 && analysis.keyConfidence in 0.0..1.0)
+        assertTrue(analysis.chords.isNotEmpty())
+        val rec = Recorder()
+        val beat = stateBeat.tracks.first { it.name == "Beat" }.clips.first()
+        compose.setContent { Themed { SoloAiPanel(stateBeat, beat.id, ui(a = analysis), rec) } }
+        compose.onNodeWithTag("solo_analysis").assertExists()
+        shot("23_solo_ai_analysis")
+        // Por defecto: confirmar guarda la tonalidad y NO cambia el tempo.
+        compose.onNodeWithTag("solo_confirm").performScrollTo().performClick()
+        assertEquals("confirm:9:true:null:false", rec.calls.first())
+        rec.calls.clear()
+        // El usuario corrige la tonalidad a Do, adopta el tempo detectado y los acordes.
+        compose.onNodeWithTag("solo_fix_key_0").performScrollTo().performClick()
+        compose.onNodeWithTag("solo_bpm_0").performScrollTo().performClick()
+        compose.onNodeWithTag("solo_use_chords").performScrollTo().performClick()
+        compose.onNodeWithTag("solo_confirm").performScrollTo().performClick()
+        assertEquals("confirm:0:true:92:true", rec.calls.first())
+    }
+
+    @Test fun solo_ai_alternatives_can_be_picked_varied_and_opened_in_the_piano_roll() {
+        assertEquals(4, family.proposals.size)
+        assertTrue(family.proposals.all { it.notes > 0 && it.name.isNotBlank() })
+        val pick = org.json.JSONObject(res("family_pick.json"))
+        assertEquals(family.proposals[0].notes, pick.getInt("notes")) // lo que se anuncia es lo que entra en la pista
+        val rec = Recorder()
+        val track = stateVocal.tracks.first { it.name.startsWith("Solo AI") }
+        compose.setContent { Themed { SoloAiPanel(stateVocal, null, ui(f = family.copy(selected = 0, trackId = track.id)), rec) } }
+        compose.onNodeWithTag("solo_key_confirmed").assertExists()
+        compose.onNodeWithTag("solo_alt_2").performScrollTo().performClick()
+        compose.onNodeWithTag("solo_vary").performScrollTo().performClick()
+        compose.onNodeWithTag("solo_listen").performScrollTo().performClick()
+        compose.onNodeWithTag("solo_open_piano").performScrollTo().performClick()
+        assertEquals(listOf("pick:2", "vary", "play", "selectClip:${track.midiClips.first().id}", "panel:PIANO"), rec.calls)
+        compose.onNodeWithTag("solo_alt_0").performScrollTo()
+        shot("24_solo_ai_alternatives")
+    }
+
+    @Test fun vocalshift_reference_preset_and_processed_clip_come_from_the_engine() {
+        val urban = presets.first { it.id == "urban_spatial" }
+        assertEquals(7f, urban.params.semitones); assertEquals(65f, urban.params.character); assertEquals(70f, urban.params.magic)
+        assertEquals(-12f, urban.params.secondGainDb); assertTrue(urban.params.secondVoice)
+        val clip = stateVocal.tracks.first { it.name == "Voz" }.clips.first()
+        val pr = clip.process!!
+        assertEquals("vocalshift", pr.plugin)
+        assertTrue(!pr.playingOriginal && pr.procLength >= pr.origLength && clip.length == pr.procLength)
+        assertEquals(urban.params.copy(preset = ""), pr.params.copy(preset = ""))
+        assertTrue(stateVocal.missingPlugins.isEmpty())
+    }
+
+    @Test fun vocalshift_panel_processes_with_the_chosen_settings() {
+        val rec = Recorder()
+        val clip = stateBeat.tracks.first { it.name == "Voz" }.clips.first() // toma sin procesar
+        compose.setContent { Themed { VocalShiftPanel(stateBeat, clip.id, ui(), emptyMap(), rec) } }
+        shot("20_vocalshift_easy")
+        // Sin versión procesada no hay A/B ni descartar.
+        assertTrue(compose.onAllNodes(hasTestTag("vocal_ab")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("vocal_process").performScrollTo().performClick()
+        assertEquals(listOf("vocal:${clip.id}"), rec.calls)
+        assertEquals(presets.first { it.id == "urban_spatial" }.params, rec.vocal) // por defecto: Urbano Espacial
+        // Otro preset y segunda voz desactivada.
+        val other = presets.first { it.id != "urban_spatial" }
+        compose.onNodeWithTag("vocal_preset_${other.id}").performScrollTo().performClick()
+        compose.onNodeWithTag("vocal_process").performScrollTo().performClick()
+        assertEquals(other.params, rec.vocal)
+    }
+
+    @Test fun vocalshift_panel_compares_accepts_and_discards() {
+        val rec = Recorder()
+        val clip = stateVocal.tracks.first { it.name == "Voz" }.clips.first()
+        compose.setContent { Themed { VocalShiftPanel(stateVocal, clip.id, ui(), emptyMap(), rec) } }
+        compose.onNodeWithText(tr("A · Original", "A · Original")).performScrollTo().performClick()
+        compose.onNodeWithTag("vocal_listen").performScrollTo().performClick()
+        compose.onNodeWithTag("vocal_discard").performScrollTo().performClick()
+        compose.onNodeWithTag("vocal_accept").performScrollTo().performClick()
+        assertEquals(listOf("version:true", "audition", "discard", "panel:ARRANGE"), rec.calls)
+        compose.onNodeWithTag("vocal_ab").performScrollTo()
+        shot("21_vocalshift_ab")
+    }
+
+    @Test fun vocalshift_panel_shows_real_progress_and_cancel() {
+        val rec = Recorder()
+        val clip = stateBeat.tracks.first { it.name == "Voz" }.clips.first()
+        val job = com.caucesound.app.data.JobUi("job_1", "vocalshift", clip.id, "running", 0.42f)
+        compose.setContent { Themed { VocalShiftPanel(stateBeat, clip.id, ui(job = job), emptyMap(), rec) } }
+        compose.onNodeWithTag("vocal_progress").performScrollTo().assertExists()
+        compose.onNodeWithText("42 %", substring = true).assertExists()
+        assertTrue(compose.onAllNodes(hasTestTag("vocal_process")).fetchSemanticsNodes().isEmpty()) // no se puede lanzar otro encima
+        shot("22_vocalshift_processing")
+        compose.onNodeWithTag("vocal_cancel").performClick()
+        assertEquals(listOf("cancelJob"), rec.calls)
+    }
+
+    @Test fun vocalshift_advanced_mode_only_shows_engine_controls() {
+        val clip = stateBeat.tracks.first { it.name == "Voz" }.clips.first()
+        compose.setContent { Themed { VocalShiftPanel(stateBeat, clip.id, ui(), emptyMap(), Recorder()) } }
+        compose.onNodeWithText(tr("Avanzado", "Advanced")).performClick()
+        for (tag in listOf("vocal_formant", "vocal_brightness", "vocal_pan", "vocal_offset")) compose.onNodeWithTag(tag).performScrollTo().assertExists()
+        // La mezcla solo existe sin segunda voz (así funciona el motor).
+        assertTrue(compose.onAllNodes(hasTestTag("vocal_mix")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("vocal_formant").performScrollTo()
+        shot("21b_vocalshift_advanced")
+        compose.onNodeWithTag("vocal_second").performScrollTo().performClick()
+        compose.onNodeWithTag("vocal_mix").performScrollTo().assertExists()
+        assertTrue(compose.onAllNodes(hasTestTag("vocal_pan")).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun vocalshift_asks_for_a_clip_when_none_is_selected() {
+        val rec = Recorder()
+        val clip = stateVocal.tracks.first { it.name == "Voz" }.clips.first()
+        compose.setContent { Themed { VocalShiftPanel(stateVocal, null, ui(), emptyMap(), rec) } }
+        compose.onNodeWithTag("vocal_clip_${clip.id}").performClick()
+        assertEquals("selectClip:${clip.id}", rec.calls.last())
+    }
+
+    @Test fun vocalshift_explains_what_it_needs_when_the_project_has_no_audio() {
+        val rec = Recorder()
+        compose.setContent { Themed { VocalShiftPanel(state04, null, ui(), emptyMap(), rec) } }
+        compose.onNodeWithText(tr("VocalShift necesita una voz", "VocalShift needs a voice")).assertExists()
+        assertTrue(compose.onAllNodes(hasTestTag("vocal_process")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText(tr("Ir al arreglo", "Go to the arrangement")).performClick()
+        assertEquals(listOf("panel:ARRANGE"), rec.calls)
+    }
+
+    @Test fun selected_audio_clip_offers_vocalshift_and_analysis_in_the_arrangement() {
+        val rec = Recorder()
+        val clip = stateVocal.tracks.first { it.name == "Voz" }.clips.first()
+        val meters = mutableStateOf(FloatArray(stateVocal.tracks.size + 1))
+        compose.setContent { Themed { StudioLayout(stateVocal, Panel.ARRANGE, clip.id, stateVocal.tracks[0].id, emptyMap(), catalog, false, remember { mutableLongStateOf(0L) }, false,
+            meters, rec, androidx.compose.material3.SnackbarHostState(), {}, {}, {}, {}, plugins = ui()) } }
+        shot("19_arrange_audio_clip_tools")
+        compose.onNodeWithTag("clip_vocalshift").performScrollTo().performClick()
+        assertTrue(rec.calls.contains("panel:VOCAL"))
+    }
+
+    @Test fun plugin_tools_are_hidden_when_the_engine_does_not_include_them() {
+        val clip = stateVocal.tracks.first { it.name == "Voz" }.clips.first()
+        val meters = mutableStateOf(FloatArray(stateVocal.tracks.size + 1))
+        compose.setContent { Themed { StudioLayout(stateVocal, Panel.ARRANGE, clip.id, stateVocal.tracks[0].id, emptyMap(), catalog.copy(plugins = emptyList()), false,
+            remember { mutableLongStateOf(0L) }, false, meters, Recorder(), androidx.compose.material3.SnackbarHostState(), {}, {}, {}, {}) } }
+        assertTrue(compose.onAllNodes(hasTestTag("clip_vocalshift")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(hasTestTag("clip_analyze")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(hasTestTag("open_variations")).fetchSemanticsNodes().isEmpty()) // sin plan ni Solo AI no hay ✨
     }
 
     @Test fun variations_panel_explains_when_the_project_has_no_plan() {

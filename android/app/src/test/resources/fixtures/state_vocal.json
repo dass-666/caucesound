@@ -1,0 +1,327 @@
+{
+ "canRedo": false,
+ "canUndo": true,
+ "contentEnd": 2027478,
+ "dirty": true,
+ "folder": "/tmp/fx05/_proj05",
+ "missingClips": [],
+ "missingPlugins": [],
+ "open": true,
+ "project": {
+  "beatsPerBar": 4,
+  "bpm": 120.0,
+  "createdAt": 1794503893243,
+  "format": "caucesound-project",
+  "harmony": {
+   "chords": [],
+   "chordsBpm": 0.0,
+   "confirmed": true,
+   "keyRoot": 9,
+   "minor": true,
+   "source": "analysis"
+  },
+  "id": "prj_dade777096b5",
+  "loop": {
+   "enabled": false,
+   "end": 15360,
+   "start": 0
+  },
+  "masterDb": 0.0,
+  "metronome": false,
+  "modifiedAt": 1794503894315,
+  "name": "Voz y beat",
+  "ppq": 960,
+  "recordLatencyOffset": 0,
+  "sampleRate": 48000,
+  "sources": [
+   {
+    "channels": 1,
+    "file": "audio/src_deedce4539f3.wav",
+    "frames": 288000,
+    "id": "src_deedce4539f3",
+    "origin": "Toma de voz"
+   },
+   {
+    "channels": 1,
+    "file": "audio/src_67ddab41fe6e.wav",
+    "frames": 2027478,
+    "id": "src_67ddab41fe6e",
+    "origin": "Beat importado"
+   },
+   {
+    "channels": 2,
+    "file": "audio/src_f13592aed625.wav",
+    "frames": 324576,
+    "id": "src_f13592aed625",
+    "origin": "vocalshift"
+   }
+  ],
+  "template": "empty",
+  "tracks": [
+   {
+    "armed": false,
+    "clips": [
+     {
+      "fadeIn": 0,
+      "fadeOut": 0,
+      "gainDb": 0.0,
+      "id": "clp_ee2159773815",
+      "length": 324576,
+      "name": "Toma de voz",
+      "process": {
+       "origLength": 288000,
+       "origOffset": 0,
+       "origSourceId": "src_deedce4539f3",
+       "params": {
+        "brightnessOffset": 0.0,
+        "character": 65.0,
+        "formantOffset": 0.0,
+        "magic": 70.0,
+        "mixPercent": 100.0,
+        "offsetMs": 0.0,
+        "pan": 0.0,
+        "preset": "",
+        "radical": false,
+        "secondGainDb": -12.0,
+        "secondVoice": true,
+        "semitones": 7.0,
+        "spatial": true
+       },
+       "plugin": "vocalshift",
+       "procLength": 324576,
+       "procSourceId": "src_f13592aed625",
+       "version": "vocalshift-ai-studio@10e679c"
+      },
+      "sourceId": "src_f13592aed625",
+      "sourceOffset": 0,
+      "start": 0
+     }
+    ],
+    "color": 4287323382,
+    "id": "trk_33877f17322c",
+    "inserts": [],
+    "kind": "audio",
+    "midiClips": [],
+    "mute": false,
+    "name": "Voz",
+    "pan": 0.0,
+    "patterns": [],
+    "solo": false,
+    "volumeDb": 0.0
+   },
+   {
+    "armed": false,
+    "clips": [
+     {
+      "fadeIn": 0,
+      "fadeOut": 0,
+      "gainDb": 0.0,
+      "id": "clp_fd202f1ecd4b",
+      "length": 2027478,
+      "name": "Beat importado",
+      "sourceId": "src_67ddab41fe6e",
+      "sourceOffset": 0,
+      "start": 0
+     }
+    ],
+    "color": 4282090230,
+    "id": "trk_ee72d9317769",
+    "inserts": [],
+    "kind": "audio",
+    "midiClips": [],
+    "mute": false,
+    "name": "Beat",
+    "pan": 0.0,
+    "patterns": [],
+    "solo": false,
+    "volumeDb": 0.0
+   },
+   {
+    "armed": false,
+    "clips": [],
+    "color": 4280472558,
+    "id": "trk_16a7571a51a3",
+    "inserts": [],
+    "instrument": {
+     "preset": "bright_lead",
+     "state": "{\"attackMs\":4.0,\"cutoffHz\":3000.0,\"decayMs\":500.0,\"drive\":0.0,\"filterDecayMs\":300.0,\"filterEnv\":0.30000001192092896,\"glideMs\":0.0,\"mono\":0.0,\"noiseDecayMs\":40.0,\"noiseMix\":0.0,\"octave\":0.0,\"osc1Wave\":2.0,\"osc2Detune\":10.0,\"osc2Mix\":0.4000000059604645,\"osc2Octave\":0.0,\"osc2Wave\":3.0,\"pitchDecayMs\":60.0,\"pitchEnvSt\":0.0,\"polyphony\":6.0,\"preset\":\"bright_lead\",\"releaseMs\":220.0,\"resonance\":0.20000000298023224,\"sustain\":0.699999988079071,\"velToFilter\":0.3499999940395355,\"volumeDb\":-9.0,\"width\":0.4000000059604645}",
+     "type": "cs.synth"
+    },
+    "kind": "synth",
+    "midiClips": [
+     {
+      "id": "mcl_358f4496ba23",
+      "length": 30720,
+      "name": "Solo AI · A · Sencilla y pegajosa",
+      "notes": [
+       [
+        64,
+        70,
+        0,
+        0,
+        698
+       ],
+       [
+        62,
+        64,
+        0,
+        720,
+        1164
+       ],
+       [
+        62,
+        74,
+        0,
+        1920,
+        698
+       ],
+       [
+        62,
+        67,
+        0,
+        2640,
+        931
+       ],
+       [
+        65,
+        80,
+        0,
+        3840,
+        698
+       ],
+       [
+        64,
+        62,
+        0,
+        4560,
+        1164
+       ],
+       [
+        64,
+        69,
+        0,
+        5760,
+        1186
+       ],
+       [
+        62,
+        60,
+        0,
+        8166,
+        480
+       ],
+       [
+        57,
+        69,
+        0,
+        8640,
+        1397
+       ],
+       [
+        59,
+        70,
+        0,
+        12480,
+        953
+       ],
+       [
+        55,
+        68,
+        0,
+        13440,
+        931
+       ],
+       [
+        60,
+        70,
+        0,
+        15360,
+        698
+       ],
+       [
+        62,
+        64,
+        0,
+        16080,
+        1164
+       ],
+       [
+        62,
+        74,
+        0,
+        17280,
+        698
+       ],
+       [
+        62,
+        67,
+        0,
+        18000,
+        931
+       ],
+       [
+        65,
+        80,
+        0,
+        19200,
+        698
+       ],
+       [
+        64,
+        62,
+        0,
+        19920,
+        1164
+       ],
+       [
+        64,
+        69,
+        0,
+        21120,
+        1186
+       ],
+       [
+        62,
+        60,
+        0,
+        23526,
+        480
+       ],
+       [
+        57,
+        69,
+        0,
+        24000,
+        1397
+       ],
+       [
+        59,
+        70,
+        0,
+        27840,
+        953
+       ],
+       [
+        55,
+        68,
+        0,
+        28800,
+        1800
+       ]
+      ],
+      "patternId": "",
+      "start": 0
+     }
+    ],
+    "mute": false,
+    "name": "Solo AI · A · Sencilla y pegajosa",
+    "pan": 0.0,
+    "patterns": [],
+    "solo": false,
+    "volumeDb": -10.0
+   }
+  ],
+  "version": 2
+ },
+ "recording": false
+}

@@ -7,6 +7,10 @@
 #include "cs/Wav.h"
 
 #include <nlohmann/json.hpp>
+#ifdef CS_WITH_SOLO
+#include "solo/BeatAnalyzer.h"
+#endif
+#include <thread>
 
 #include <chrono>
 #include <cmath>
@@ -154,6 +158,68 @@ int main (int argc, char** argv)
         std::filesystem::remove_all (dir);
         if (! s.createProject (dir, "Fixture", 48000, argv[2]).ok) return 1;
         std::ofstream (argv[3]) << json::parse (s.stateJson()).dump (1);
+        return 0;
+    }
+    if (argc >= 3 && std::string (argv[1]) == "--fixtures05")
+    {
+        // Datos reales del motor para las pruebas de interfaz de la 0.5: presets de VocalShift, un proyecto con una
+        // toma procesada, el resultado de analizar un beat y una familia de Solo AI.
+        const std::string out = std::filesystem::absolute (argv[2]).string();
+        std::filesystem::create_directories (out);
+        Engine e; e.prepare (48000, 1024);
+        Session s (e);
+        auto cmd = [&] (const json& q) { return json::parse (handleCommand (s, e, q.dump())); };
+        auto wait = [&] (const std::string& id)
+        {
+            for (;;)
+            {
+                const json j = cmd ({ { "cmd", "jobStatus" }, { "jobId", id } });
+                const std::string st = j.value ("state", std::string());
+                if (st == "done" || st == "failed" || st == "cancelled") return j;
+                std::this_thread::sleep_for (std::chrono::milliseconds (5));
+            }
+        };
+        const std::string dir = out + "/_proj05";
+        std::filesystem::remove_all (dir);
+        if (! s.createProject (dir, "Voz y beat", 48000, "").ok) return 1;
+        // «Voz» sintética de 6 s (tono con vibrato en sílabas) y un beat sintético de Solo AI (92 BPM, La menor).
+        AudioData v; v.sampleRate = 48000; v.allocate (1, 6 * 48000);
+        double ph = 0;
+        for (size_t i = 0; i < v.channels[0].size(); ++i)
+        {
+            const double t = (double) i / 48000.0, syl = std::fmod (t, 0.5);
+            ph += (165.0 + 30.0 * std::sin (t * 1.3)) / 48000.0;
+            double x = 0; for (int h = 1; h <= 12; ++h) x += std::sin (2 * 3.14159265358979 * ph * h) / h;
+            v.channels[0][i] = (float) (x * 0.2 * (syl < 0.38 ? std::min (1.0, syl / 0.02) * std::min (1.0, (0.38 - syl) / 0.05) : 0.0));
+        }
+        std::string err;
+        writeWav (out + "/_voz.wav", v, WavFormat::Float32, err);
+        s.addTrack ("Voz"); const std::string voz = s.model().tracks.back().id;
+        const auto ic = s.importWav (out + "/_voz.wav", voz, 0, "Toma de voz");
+#ifdef CS_WITH_SOLO
+        ::solo::SyntheticBeatSpec spec; spec.bpm = 92; spec.bars = 16; spec.sampleRate = 48000;
+        const auto mono = ::solo::synthesiseBeat (spec);
+        AudioData b; b.sampleRate = 48000; b.channels.assign (1, mono.samples);
+        writeWav (out + "/_beat.wav", b, WavFormat::Float32, err);
+        s.addTrack ("Beat"); const std::string beat = s.model().tracks.back().id;
+        const auto ib = s.importWav (out + "/_beat.wav", beat, 0, "Beat importado");
+        const json an = wait (cmd ({ { "cmd", "soloAnalyze" }, { "clipId", ib.id } }).value ("jobId", std::string()));
+        std::ofstream (out + "/analysis.json") << an.dump (1);
+        std::ofstream (out + "/state_beat.json") << json::parse (s.stateJson()).dump (1);
+        cmd ({ { "cmd", "setHarmony" }, { "keyRoot", 9 }, { "minor", true }, { "source", "analysis" } });
+        std::ofstream (out + "/family.json") << cmd ({ { "cmd", "soloProposals" }, { "bars", 8 }, { "seed", 2026 } }).dump (1);
+        const json pick = cmd ({ { "cmd", "soloMelody" }, { "bars", 8 }, { "seed", 2026 }, { "proposal", 0 } });
+        std::ofstream (out + "/family_pick.json") << pick.dump (1);
+#endif
+        std::ofstream (out + "/vocal_presets.json") << cmd ({ { "cmd", "vocalPresets" } }).dump (1);
+        const json job = wait (cmd ({ { "cmd", "vocalProcess" }, { "clipId", ic.id }, { "params", json::parse (vocal::Params().toJson()) } }).value ("jobId", std::string()));
+        std::ofstream (out + "/vocal_job.json") << job.dump (1);
+        std::ofstream (out + "/state_vocal.json") << json::parse (s.stateJson()).dump (1);
+        std::ofstream (out + "/catalog.json") << cmd ({ { "cmd", "catalog" } }).dump (1);
+        s.close();
+        std::filesystem::remove_all (dir);
+        std::filesystem::remove (out + "/_voz.wav"); std::filesystem::remove (out + "/_beat.wav");
+        std::printf ("ok\n");
         return 0;
     }
     if (argc >= 3 && std::string (argv[1]) == "--solo")

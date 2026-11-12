@@ -1,0 +1,22 @@
+{
+ "error": "",
+ "jobId": "job_2",
+ "ok": true,
+ "progress": 1.0,
+ "result": {
+  "clipAltered": 0,
+  "clipId": "clp_ee2159773815",
+  "inputFrames": 288000,
+  "inputPeak": 0.3459113836288452,
+  "latencySamples": 7200,
+  "nonFiniteEvents": 0,
+  "outputFrames": 324576,
+  "outputPeak": 0.4692819118499756,
+  "seconds": 0.313795387,
+  "sourceId": "src_f13592aed625",
+  "tailFrames": 36576
+ },
+ "state": "done",
+ "targetId": "clp_ee2159773815",
+ "type": "vocalshift"
+}

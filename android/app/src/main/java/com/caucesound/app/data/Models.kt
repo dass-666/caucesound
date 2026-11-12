@@ -16,6 +16,8 @@ data class ClipState(
     val fadeOut: Long,
     val gainDb: Float,
     val missing: Boolean,
+    /** Procesado no destructivo (VocalShift): null si el clip solo tiene su audio original. */
+    val process: ClipProcess? = null,
 ) {
     val end: Long get() = start + length
 }
@@ -41,7 +43,7 @@ data class PatternState(
  * Plan musical del compositor local (misión 0.4): qué parte genera cada pista, energía y pistas bloqueadas.
  * Solo existe en proyectos creados con las plantillas 0.4; en los anteriores es null y no se ofrecen variaciones.
  */
-data class MusicPlanState(val genre: String, val energy: Float, val roles: Map<String, String>, val locked: Set<String>) {
+data class MusicPlanState(val genre: String, val energy: Float, val roles: Map<String, String>, val locked: Set<String>, val keyRoot: Int = -1, val minor: Boolean = true) {
     fun hasPart(part: String) = roles.values.contains(part)
 }
 
@@ -103,6 +105,10 @@ data class ProjectState(
     val loopEnd: Long = 16L * PPQ,
     val templateId: String = "",
     val music: MusicPlanState? = null,
+    /** Tonalidad confirmada por el usuario (proyectos sin plan del compositor). */
+    val harmony: HarmonyState? = null,
+    /** Plugins que usa el proyecto y esta versión no tiene: se avisa y sus datos se conservan. */
+    val missingPlugins: List<String> = emptyList(),
 ) {
     fun clip(id: String): Pair<TrackState, ClipState>? {
         for (t in tracks) for (c in t.clips) if (c.id == id) return t to c
@@ -182,6 +188,10 @@ object StateParser {
                     c.getString("id"), c.getString("sourceId"), c.optString("name"), c.getLong("start"),
                     c.getLong("sourceOffset"), c.getLong("length"), c.optLong("fadeIn"), c.optLong("fadeOut"),
                     c.optDouble("gainDb", 0.0).toFloat(), c.getString("id") in missing,
+                    c.optJSONObject("process")?.let { pr ->
+                        ClipProcess(pr.optString("plugin"), pr.optString("version"), VocalParams.fromJson(pr.optJSONObject("params")),
+                            c.getString("sourceId") == pr.optString("origSourceId"), pr.optLong("origLength"), pr.optLong("procLength"))
+                    },
                 )
             }.sortedBy { it.start }
             val inst = t.optJSONObject("instrument")
@@ -237,6 +247,10 @@ object StateParser {
             p.optJSONObject("loop")?.optLong("end", 16L * PPQ) ?: 16L * PPQ,
             p.optString("template"),
             p.optJSONObject("music")?.let { musicPlan(it) },
+            p.optJSONObject("harmony")?.takeIf { it.optInt("keyRoot", -1) in 0..11 }?.let {
+                HarmonyState(it.optInt("keyRoot"), it.optBoolean("minor"), it.optString("source"), it.optJSONArray("chords")?.length() ?: 0, it.optDouble("chordsBpm", 0.0))
+            },
+            o.optJSONArray("missingPlugins")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
         )
     }
 
@@ -245,7 +259,7 @@ object StateParser {
         m.optJSONObject("roles")?.let { r -> for (k in r.keys()) roles[k] = r.optString(k) }
         val locked = mutableSetOf<String>()
         m.optJSONArray("locked")?.let { a -> for (i in 0 until a.length()) locked += a.optString(i) }
-        return MusicPlanState(m.optString("genre"), m.optDouble("energy", 0.0).toFloat(), roles, locked)
+        return MusicPlanState(m.optString("genre"), m.optDouble("energy", 0.0).toFloat(), roles, locked, m.optInt("keyRoot", -1), m.optBoolean("minor", true))
     }
 }
 

@@ -680,9 +680,34 @@
  "ok": true,
  "plugins": [
   {
+   "appliesTo": "song",
+   "cancellable": false,
+   "category": "generator",
    "id": "solo.ai",
    "kind": "offline",
-   "version": "solo-ai-studio@fe8445b"
+   "latencySamples": 0,
+   "name": "Solo AI",
+   "output": "midi",
+   "realtime": false,
+   "version": "solo-ai-studio@fe8445b",
+   "wantsMidi": false,
+   "wantsTransport": true
+  },
+  {
+   "appliesTo": "audioClip",
+   "cancellable": true,
+   "category": "effect",
+   "id": "vocalshift",
+   "kind": "offline",
+   "latencyMs": 150,
+   "maxSeconds": 600.0,
+   "name": "VocalShift",
+   "output": "audio",
+   "presets": 12,
+   "realtime": false,
+   "version": "vocalshift-ai-studio@10e679c",
+   "wantsMidi": false,
+   "wantsTransport": true
   }
  ],
  "ppq": 960,

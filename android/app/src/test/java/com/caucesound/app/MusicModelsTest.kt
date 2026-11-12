@@ -39,7 +39,7 @@ class MusicModelsTest {
         assertEquals(17, c.synthPresets.size)
         assertEquals(8, c.drumKits.size)
         assertEquals("Crash", c.drumKits[5].lanes[7])
-        assertEquals(listOf("solo.ai"), c.plugins)
+        assertEquals(listOf("solo.ai", "vocalshift"), c.plugins)
         assertEquals(8, c.drumKits[0].lanes.size)
         assertEquals(5, c.templates.size)
         assertEquals(25, c.synthParams.size)

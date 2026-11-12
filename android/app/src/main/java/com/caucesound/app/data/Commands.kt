@@ -29,9 +29,22 @@ object Cmd {
         c("setRoll", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "roll" to roll)
     /** Variación local con semilla (misión 0.4). part: all, drums, bass, chords, melody, pad. energy null = la actual. */
     fun varyPart(part: String, seed: Long, energy: Float?) = c("varyPart", "part" to part, "seed" to seed, "energy" to energy?.toDouble())
-    /** Solo AI: melodía o solo en una pista nueva. keyRoot null = usar la tonalidad del plan de la canción. */
-    fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) =
-        c("soloMelody", "startBar" to startBar, "bars" to bars, "type" to type, "proposal" to proposal, "seed" to seed, "keyRoot" to keyRoot, "minor" to minor)
+    // --- Plugins (misión 0.5) ---
+    fun vocalPresets() = c("vocalPresets")
+    fun vocalProcess(clipId: String, params: VocalParams) = c("vocalProcess", "clipId" to clipId, "params" to params.toJson())
+    fun clipVersion(clipId: String, original: Boolean) = c("clipVersion", "clipId" to clipId, "original" to original)
+    fun discardProcess(clipId: String) = c("discardProcess", "clipId" to clipId)
+    fun jobStatus(jobId: String) = c("jobStatus", "jobId" to jobId)
+    fun jobCancel(jobId: String) = c("jobCancel", "jobId" to jobId)
+    fun soloAnalyze(clipId: String) = c("soloAnalyze", "clipId" to clipId)
+    fun setHarmony(keyRoot: Int, minor: Boolean, chords: List<ChordGuess>, chordsBpm: Double, source: String) =
+        c("setHarmony", "keyRoot" to keyRoot, "minor" to minor, "chordsBpm" to chordsBpm, "source" to source,
+            "chords" to JSONArray(chords.map { JSONObject().put("root", it.root).put("quality", it.quality) }))
+    private fun solo(name: String, r: SoloRequest, vararg extra: Pair<String, Any?>) = c(name, "startBar" to r.startBar, "bars" to r.bars, "type" to r.type,
+        "character" to r.character, "freedom" to r.freedom, "seed" to r.seed, "keyRoot" to r.keyRoot, "minor" to r.minor, "preset" to r.preset, *extra)
+    fun soloProposals(r: SoloRequest) = solo("soloProposals", r)
+    fun soloPick(r: SoloRequest, proposal: Int, variation: Long, replaceTrackId: String?) =
+        solo("soloMelody", r, "proposal" to proposal, "variation" to variation, "replaceTrackId" to replaceTrackId)
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =

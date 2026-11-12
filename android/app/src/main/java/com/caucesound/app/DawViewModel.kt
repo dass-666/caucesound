@@ -64,6 +64,11 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val _monitoring = MutableStateFlow(false)
     val monitoring: StateFlow<Boolean> = _monitoring.asStateFlow()
 
+    // Plugins (misión 0.5): presets de VocalShift, trabajo offline en curso, último análisis y familia de Solo AI.
+    private val _plugins = MutableStateFlow(com.caucesound.app.data.PluginUi())
+    val plugins: StateFlow<com.caucesound.app.data.PluginUi> = _plugins.asStateFlow()
+    private var jobPoll: Job? = null
+
     private var autosave: Job? = null
     private var audioOk = false
 
@@ -82,7 +87,13 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         _route.value = currentRoute()
         startAudio()
         refreshProjects()
-        viewModelScope.launch { _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) } }
+        viewModelScope.launch {
+            _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) }
+            if (_catalog.value.hasPlugin("vocalshift")) {
+                val presets = withContext(control) { runCatching { com.caucesound.app.data.PluginParser.vocalPresets(NativeEngine.command(Cmd.vocalPresets())) }.getOrDefault(emptyList()) }
+                _plugins.value = _plugins.value.copy(vocalPresets = presets)
+            }
+        }
     }
 
     private fun currentRoute(): AudioGuard.Route = runCatching { guard.outputRoute() }.getOrDefault(AudioGuard.Route.SPEAKER)
@@ -226,6 +237,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     }
 
     private suspend fun onProjectOpened() {
+        clearPluginUi()
         _waveforms.value = emptyMap()
         _selectedClip.value = null
         _panel.value = Panel.ARRANGE
@@ -242,6 +254,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
 
     override fun closeProject() {
         autosave?.cancel()
+        clearPluginUi() // el motor cancela los trabajos del proyecto al cerrarlo; aquí se deja de consultarlos
         viewModelScope.launch {
             call(Cmd.closeProject()) // guarda si hay cambios, detiene grabación/transporte y vuelve la posición a 0
             guard.abandonFocus()
@@ -332,10 +345,104 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) = edit(Cmd.setRoll(trackId, patternId, lane, step, roll))
     override fun varyPart(part: String, seed: Long, energy: Float?) = edit(Cmd.varyPart(part, seed, energy))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
-    override fun soloMelody(startBar: Int, bars: Int, type: String, proposal: Int, seed: Long, keyRoot: Int?, minor: Boolean) =
-        edit(Cmd.soloMelody(startBar, bars, type, proposal, seed, keyRoot, minor)) { r ->
-            toast(r.raw.optString("name") + " · " + r.raw.optInt("notes") + " notas")
+
+    // --- Plugins: VocalShift y Solo AI ---------------------------------------------------------------------------
+    private fun clearPluginUi() {
+        jobPoll?.cancel()
+        _plugins.value = com.caucesound.app.data.PluginUi(vocalPresets = _plugins.value.vocalPresets)
+    }
+
+    /** Sigue un trabajo offline hasta su estado final. El progreso es el real que publica el motor. */
+    private fun followJob(jobId: String, onDone: suspend (JSONObject) -> Unit) {
+        jobPoll?.cancel()
+        jobPoll = viewModelScope.launch {
+            while (isActive) {
+                val r = call(Cmd.jobStatus(jobId))
+                if (!r.ok) { _plugins.value = _plugins.value.copy(job = null); return@launch }
+                val job = com.caucesound.app.data.PluginParser.job(r.raw)
+                _plugins.value = _plugins.value.copy(job = job)
+                when (job.state) {
+                    "done" -> { onDone(r.raw.optJSONObject("result") ?: JSONObject()); return@launch }
+                    "failed" -> { toast(job.error ?: tr("El proceso falló", "The process failed")); refresh(); return@launch }
+                    "cancelled" -> { toast(tr("Proceso cancelado: el clip queda como estaba", "Process cancelled: the clip is unchanged")); refresh(); return@launch }
+                }
+                delay(120)
+            }
         }
+    }
+
+    override fun vocalProcess(clipId: String, params: com.caucesound.app.data.VocalParams) {
+        viewModelScope.launch {
+            val r = call(Cmd.vocalProcess(clipId, params))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "vocalshift", clipId, "queued", 0f), vocalResult = null)
+            followJob(r.raw.optString("jobId")) { res ->
+                _plugins.value = _plugins.value.copy(vocalResult = com.caucesound.app.data.PluginParser.vocalResult(res))
+                refresh()
+                toast(tr("Voz procesada. Compara original y procesada.", "Voice processed. Compare original and processed."))
+            }
+        }
+    }
+
+    override fun cancelJob() { _plugins.value.job?.takeIf { it.active }?.let { j -> viewModelScope.launch { call(Cmd.jobCancel(j.id)) } } }
+    override fun setClipVersion(clipId: String, original: Boolean) = edit(Cmd.clipVersion(clipId, original))
+    override fun discardProcess(clipId: String) = edit(Cmd.discardProcess(clipId)) { _plugins.value = _plugins.value.copy(vocalResult = null) }
+    override fun auditionClip(clipId: String) {
+        val c = _state.value?.clip(clipId)?.second ?: return
+        viewModelScope.launch { call(Cmd.stop()); call(Cmd.seek(c.start)); play() }
+    }
+
+    override fun soloAnalyze(clipId: String) {
+        viewModelScope.launch {
+            val r = call(Cmd.soloAnalyze(clipId))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "soloAnalyze", clipId, "queued", 0f), analysis = null)
+            followJob(r.raw.optString("jobId")) { res -> _plugins.value = _plugins.value.copy(analysis = com.caucesound.app.data.BeatAnalysis.parse(res)) }
+        }
+    }
+
+    override fun confirmAnalysis(keyRoot: Int, minor: Boolean, bpm: Double?, useChords: Boolean) {
+        viewModelScope.launch {
+            val a = _plugins.value.analysis
+            val s = _state.value ?: return@launch
+            // El tempo solo cambia si el usuario lo pidió expresamente (bpm != null).
+            if (bpm != null && bpm != s.bpm) { val t = call(Cmd.setTempo(bpm, s.beatsPerBar)); if (!t.ok) { toast(t.error ?: ""); refresh(); return@launch } }
+            val chords = if (useChords && a != null && bpm != null) a.chords else emptyList()
+            val r = call(Cmd.setHarmony(keyRoot, minor, chords, bpm ?: 0.0, if (a != null) "analysis" else "manual"))
+            if (!r.ok) toast(r.error ?: "") else toast(tr("Tonalidad guardada: ", "Key saved: ") + com.caucesound.app.data.KeyNames.name(keyRoot) + if (minor) tr(" menor", " minor") else tr(" mayor", " major"))
+            refresh()
+        }
+    }
+
+    override fun dismissAnalysis() { _plugins.value = _plugins.value.copy(analysis = null) }
+
+    override fun soloProposals(request: com.caucesound.app.data.SoloRequest) {
+        viewModelScope.launch {
+            val r = call(Cmd.soloProposals(request))
+            if (!r.ok) { toast(if (r.error == "key_required") tr("Elige primero la tonalidad de la canción", "Pick the song key first") else (r.error ?: "")); return@launch }
+            val fam = com.caucesound.app.data.SoloFamily.parse(request, r.raw)
+            // La alternativa A entra en una pista nueva para poder escucharla; las demás la sustituyen al elegirlas.
+            val a = call(Cmd.soloPick(request, 0, 0, null))
+            if (!a.ok) { toast(a.error ?: ""); return@launch }
+            _plugins.value = _plugins.value.copy(family = fam.copy(selected = 0, trackId = a.id))
+            refresh()
+            a.id?.let { _selectedTrack.value = it }
+        }
+    }
+
+    private fun soloApply(index: Int, variation: Long) {
+        viewModelScope.launch {
+            val fam = _plugins.value.family ?: return@launch
+            // Si la pista se borró o se deshizo, se crea de nuevo en vez de fallar.
+            val target = fam.trackId?.takeIf { id -> _state.value?.tracks?.any { it.id == id } == true }
+            val r = call(Cmd.soloPick(fam.request, index, variation, target))
+            if (!r.ok) { toast(r.error ?: ""); refresh(); return@launch }
+            _plugins.value = _plugins.value.copy(family = fam.copy(selected = index, trackId = r.id ?: target, variation = variation))
+            refresh()
+        }
+    }
+    override fun soloPick(index: Int) = soloApply(index, 0)
+    override fun soloVary() { _plugins.value.family?.takeIf { it.selected >= 0 }?.let { soloApply(it.selected, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)) } }
 
     /** Parámetros de instrumento: se aplican al instante; el estado (y la interfaz) se refresca al terminar. */
     override fun setParam(trackId: String, param: String, value: Float) {
