@@ -89,7 +89,17 @@ void appendClipEvents (const MidiClipModel& clip, const DrumPattern* pattern, do
                     if (rel >= clip.length) continue;
                     const Tick at = clip.start + rep + stepTick (s, pattern->swing);
                     if (at >= clipEnd) continue;
-                    addNote (out, at, std::min (at + kStepTicks, clipEnd), kDrumBaseNote + lane, vel, 9, bpm, sampleRate);
+                    const int roll = std::min (4, pattern->rollAt (lane, s));
+                    if (roll <= 1) { addNote (out, at, std::min (at + kStepTicks, clipEnd), kDrumBaseNote + lane, vel, 9, bpm, sampleRate); continue; }
+                    // Redoble: 'roll' golpes repartidos en el paso, con una pequeña subida de intensidad hacia el último.
+                    const Tick sub = kStepTicks / roll;
+                    for (int r = 0; r < roll; ++r)
+                    {
+                        const Tick ra = at + r * sub;
+                        if (ra >= clipEnd) break;
+                        const int rv = std::clamp ((int) std::lround (vel * (0.72 + 0.28 * r / (roll - 1.0))), 1, 127);
+                        addNote (out, ra, std::min (ra + sub, clipEnd), kDrumBaseNote + lane, rv, 9, bpm, sampleRate);
+                    }
                 }
         return;
     }
@@ -121,6 +131,15 @@ std::string validatePattern (const DrumPattern& p)
     {
         if (l.size() != (size_t) p.steps) return "carril con número de pasos incorrecto";
         for (int v : l) if (v < 0 || v > 127) return "velocidad de paso fuera de rango";
+    }
+    if (! p.rolls.empty())
+    {
+        if (p.rolls.size() != (size_t) kDrumLanes) return "redobles: deben ser 8 carriles";
+        for (const auto& l : p.rolls)
+        {
+            if (l.size() != (size_t) p.steps) return "redobles: número de pasos incorrecto";
+            for (int v : l) if (v < 0 || v > 4) return "redoble fuera de rango (0-4)";
+        }
     }
     return {};
 }

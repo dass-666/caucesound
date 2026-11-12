@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.doubleClick
@@ -17,6 +18,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import com.caucesound.app.data.Catalog
@@ -66,6 +69,10 @@ class UiScreensTest {
         override fun addReverbBus() { calls += "addReverbBus" }
         override fun setSendLive(trackId: String, busId: String, level: Float) { calls += "send:$trackId:$busId" }
         override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
+        override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
+        override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
+        override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) { calls += "roll:$lane:$step:$roll" }
+        override fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) { calls += "step:$lane:$step:$velocity" }
         override fun commitMixer() { calls += "commit" }
             }
 
@@ -86,6 +93,58 @@ class UiScreensTest {
         compose.setContent { Themed { HomeScreen(projects, catalog.templates, null, {}, object : HomeActions {}) } }
         compose.onNodeWithText("Beat trap 140", substring = true).assertExists()
         shot("01_home")
+    }
+
+    // Misión 0.4 (D): el botón «Nueva canción» no debe tapar el último proyecto (ni su menú) con la lista al final.
+    @Test fun new_song_button_does_not_cover_the_last_project() {
+        val projects = (1..9).map { com.caucesound.app.data.ProjectSummary("/p/$it", "Proyecto $it", 1_700_000_000_000L - it * 1000L, 4, null, 120.0, "trap") }
+        compose.setContent { Themed { HomeScreen(projects, catalog.templates, null, {}, object : HomeActions {}) } }
+        compose.onNodeWithTag("home_list").performScrollToNode(androidx.compose.ui.test.hasText("Proyecto 9"))
+        compose.waitForIdle()
+        val menus = compose.onAllNodesWithContentDescription(tr("Opciones", "Options")).fetchSemanticsNodes()
+        val lastMenu = menus.maxBy { it.boundsInRoot.bottom }.boundsInRoot
+        val lastRow = compose.onNodeWithText("Proyecto 9").fetchSemanticsNode().boundsInRoot
+        val fab = compose.onNodeWithTag("fab_new_song").fetchSemanticsNode().boundsInRoot
+        assertTrue("el botón tapa el menú del último proyecto: menú $lastMenu, botón $fab", lastMenu.bottom <= fab.top)
+        assertTrue("el botón tapa el nombre del último proyecto: $lastRow vs $fab", lastRow.bottom <= fab.top)
+        shot("01b_home_scrolled_end")
+    }
+
+    // Misión 0.4 (B): variaciones locales. El estado sale del motor real (cs_render --state trap).
+    private val state04: ProjectState by lazy { StateParser.state(res("state_trap04.json"))!! }
+
+    @Test fun variations_panel_sends_part_energy_and_lock_commands() {
+        val plan = state04.music!!
+        assertEquals("trap", plan.genre)
+        assertTrue(plan.hasPart("drums") && plan.hasPart("bass") && plan.hasPart("melody"))
+        val rec = Recorder()
+        compose.setContent { Themed { VariationsPanel(state04, rec) } }
+        shot("12_variations")
+        compose.onNodeWithTag("vary_all").performClick()
+        compose.onNodeWithTag("vary_melody").performClick()
+        compose.onNodeWithText(tr("Más enérgica", "More energy")).performClick()
+        val bass = plan.roles.entries.first { it.value == "bass" }.key
+        compose.onNodeWithTag("lock_$bass").performScrollTo().performClick()
+        assertEquals(listOf("vary:all:true:null", "vary:melody:true:null", "vary:all:false:0.6", "lock:$bass:true"), rec.calls)
+        // El trap no tiene parte de acordes: no se ofrece un botón que no haría nada.
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("vary_chords")).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun variations_panel_explains_when_the_project_has_no_plan() {
+        assertEquals(null, state.music) // fixture de la 0.3: sin plan musical
+        compose.setContent { Themed { VariationsPanel(state, Recorder()) } }
+        compose.onNodeWithText(tr("Este proyecto no tiene variaciones", "This project has no variations")).assertExists()
+    }
+
+    @Test fun drum_rolls_are_parsed_and_roll_mode_cycles_hits() {
+        val drums = state04.tracks.first { it.isDrums }
+        val withRoll = drums.patterns.first { p -> p.rolls.any { lane -> lane.any { it > 1 } } }
+        assertTrue(withRoll.rollAt(0, 0) >= 1)
+        val rec = Recorder()
+        compose.setContent { Themed { DrumsPanel(state04, drums, catalog, remember { mutableLongStateOf(0L) }, false, rec, null) {} } }
+        compose.onNodeWithText(tr("Redoble", "Roll")).performClick()
+        shot("13_drums_roll_mode")
+        compose.onNodeWithText(tr("Toca un paso", "Tap a step"), substring = true).assertExists()
     }
 
     @Test fun home_import_and_export_actions_are_wired() {

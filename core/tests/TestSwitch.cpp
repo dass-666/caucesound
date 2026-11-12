@@ -58,6 +58,10 @@ struct Rig
 };
 } // namespace
 
+// Umbral de «suena»: las plantillas de la 0.4 empiezan con una Intro suave (RMS ≈ 0,005 en el primer segundo), y el
+// fallo que buscamos da silencio exacto (RMS 0,0000). 0,002 (≈ -54 dBFS) separa ambos casos con margen.
+constexpr double kAudible = 0.002;
+
 // Reproduce la secuencia del informe con el motor en el mismo hilo (determinista).
 TEST (switch_projects_play_after_long_playback)
 {
@@ -80,7 +84,7 @@ TEST (switch_projects_play_after_long_playback)
     CHECK (r ({ { "cmd", "play" } })["ok"].get<bool>());
     const double rmsB = pump (r.engine, 2 * 48000);
     MEASURE ("B tras A: RMS %.4f, posición %lld", rmsB, (long long) r.engine.position());
-    CHECK_MSG (rmsB > 0.01, "B no suena tras cerrar A: RMS " + std::to_string (rmsB));
+    CHECK_MSG (rmsB > kAudible, "B no suena tras cerrar A: RMS " + std::to_string (rmsB));
     r ({ { "cmd", "closeProject" } });
 
     // Vuelta a A: también debe sonar.
@@ -89,7 +93,7 @@ TEST (switch_projects_play_after_long_playback)
     r ({ { "cmd", "play" } });
     const double rmsA = pump (r.engine, 2 * 48000);
     MEASURE ("A de nuevo: RMS %.4f", rmsA);
-    CHECK_MSG (rmsA > 0.01, "A no suena al volver: RMS " + std::to_string (rmsA));
+    CHECK_MSG (rmsA > kAudible, "A no suena al volver: RMS " + std::to_string (rmsA));
 }
 
 // Bucle activo cuya región termina antes de la posición actual: el transporte debe volver a la región.
@@ -106,7 +110,7 @@ TEST (loop_region_behind_playhead_wraps_instead_of_playing_silence)
     const Frame loopEnd = r.session.model().ticksToFrames (4 * 4 * 960);
     CHECK_MSG (r.engine.position() < loopEnd, "posición fuera del bucle: " + std::to_string (r.engine.position()));
     const double rms = pump (r.engine, 48000);
-    CHECK_MSG (rms > 0.01, "el bucle no suena: " + std::to_string (rms));
+    CHECK_MSG (rms > kAudible, "el bucle no suena: " + std::to_string (rms));
 }
 
 namespace
@@ -232,7 +236,7 @@ TEST (switch_120_sessions_with_audio_thread)
         const Frame before = r.engine.position();
         const double rms = audio.measure (24000);
         minRms = std::min (minRms, rms);
-        if (rms < 0.01) { ++audibleFails; CHECK_MSG (false, "sin audio al reproducir " + f + " (ciclo " + std::to_string (i) + "): RMS " + std::to_string (rms)); }
+        if (rms < kAudible) { ++audibleFails; CHECK_MSG (false, "sin audio al reproducir " + f + " (ciclo " + std::to_string (i) + "): RMS " + std::to_string (rms)); }
         CHECK (r.engine.isPlaying());
         if (variant != 3 && f != lp) CHECK_MSG (r.engine.position() > before, "la posición no avanza");
 

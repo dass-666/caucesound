@@ -35,11 +35,13 @@ class MusicModelsTest {
 
     @Test fun parsesCatalogFromEngine() {
         val c = Catalog.parse(res("catalog.json"))
-        assertEquals(7, c.synthPresets.size)
-        assertEquals(4, c.drumKits.size)
+        // Catálogo de la 0.4 (regenerado con cs_render --catalog): 17 presets y 8 kits (4 nuevos «Cauce»).
+        assertEquals(17, c.synthPresets.size)
+        assertEquals(8, c.drumKits.size)
+        assertEquals("Crash", c.drumKits[5].lanes[7])
         assertEquals(8, c.drumKits[0].lanes.size)
         assertEquals(5, c.templates.size)
-        assertEquals(22, c.synthParams.size)
+        assertEquals(25, c.synthParams.size)
         assertEquals(listOf("cs.gain", "cs.filter", "cs.eq", "cs.saturation", "cs.compressor", "cs.delay", "cs.reverb"), c.effects.map { it.type })
         assertTrue(c.effects.all { it.params.isNotEmpty() })
     }

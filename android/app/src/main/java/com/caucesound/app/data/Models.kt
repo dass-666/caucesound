@@ -29,7 +29,21 @@ data class NoteState(val key: Int, val velocity: Int, val channel: Int, val star
     val end: Long get() = start + length
 }
 
-data class PatternState(val id: String, val name: String, val steps: Int, val swing: Float, val lanes: List<List<Int>>)
+data class PatternState(
+    val id: String, val name: String, val steps: Int, val swing: Float, val lanes: List<List<Int>>,
+    /** Redobles: rolls[carril][paso] = golpes dentro del paso (1 = normal, 2..4 = redoble). Vacío = sin redobles. */
+    val rolls: List<List<Int>> = emptyList(),
+) {
+    fun rollAt(lane: Int, step: Int): Int = rolls.getOrNull(lane)?.getOrNull(step)?.coerceAtLeast(1) ?: 1
+}
+
+/**
+ * Plan musical del compositor local (misión 0.4): qué parte genera cada pista, energía y pistas bloqueadas.
+ * Solo existe en proyectos creados con las plantillas 0.4; en los anteriores es null y no se ofrecen variaciones.
+ */
+data class MusicPlanState(val genre: String, val energy: Float, val roles: Map<String, String>, val locked: Set<String>) {
+    fun hasPart(part: String) = roles.values.contains(part)
+}
 
 data class MidiClipState(val id: String, val name: String, val patternId: String, val start: Long, val length: Long, val notes: List<NoteState>) {
     val end: Long get() = start + length
@@ -88,6 +102,7 @@ data class ProjectState(
     val loopStart: Long = 0,
     val loopEnd: Long = 16L * PPQ,
     val templateId: String = "",
+    val music: MusicPlanState? = null,
 ) {
     fun clip(id: String): Pair<TrackState, ClipState>? {
         for (t in tracks) for (c in t.clips) if (c.id == id) return t to c
@@ -179,8 +194,10 @@ object StateParser {
                 for (k in 0 until pa.length()) {
                     val po = pa.getJSONObject(k)
                     val la = po.getJSONArray("lanes")
+                    val ra = po.optJSONArray("rolls")
                     patterns += PatternState(po.getString("id"), po.optString("name"), po.optInt("steps", 16), po.optDouble("swing", 0.0).toFloat(),
-                        (0 until la.length()).map { l -> la.getJSONArray(l).let { a -> (0 until a.length()).map { a.getInt(it) } } })
+                        (0 until la.length()).map { l -> la.getJSONArray(l).let { a -> (0 until a.length()).map { a.getInt(it) } } },
+                        ra?.let { r -> (0 until r.length()).map { l -> r.getJSONArray(l).let { a -> (0 until a.length()).map { a.getInt(it) } } } } ?: emptyList())
                 }
             }
             val midi = mutableListOf<MidiClipState>()
@@ -219,7 +236,16 @@ object StateParser {
             p.optJSONObject("loop")?.optLong("start") ?: 0L,
             p.optJSONObject("loop")?.optLong("end", 16L * PPQ) ?: 16L * PPQ,
             p.optString("template"),
+            p.optJSONObject("music")?.let { musicPlan(it) },
         )
+    }
+
+    fun musicPlan(m: JSONObject): MusicPlanState {
+        val roles = mutableMapOf<String, String>()
+        m.optJSONObject("roles")?.let { r -> for (k in r.keys()) roles[k] = r.optString(k) }
+        val locked = mutableSetOf<String>()
+        m.optJSONArray("locked")?.let { a -> for (i in 0 until a.length()) locked += a.optString(i) }
+        return MusicPlanState(m.optString("genre"), m.optDouble("energy", 0.0).toFloat(), roles, locked)
     }
 }
 

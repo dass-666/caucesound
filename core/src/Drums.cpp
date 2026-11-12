@@ -179,6 +179,146 @@ Buf shaker (double sr, double hz, double attack, double tau)
     return b;
 }
 
+// --- Cauce Signature Sound (misión 0.4): capas, saturación y una pequeña sala, todo sintetizado aquí ------------
+void mixInto (Buf& dst, const Buf& src, float g, size_t offset = 0)
+{
+    if (dst.size() < src.size() + offset) dst.resize (src.size() + offset, 0.0f);
+    for (size_t i = 0; i < src.size(); ++i) dst[i + offset] += src[i] * g;
+}
+
+// Sala corta (primeras reflexiones fijas + cola de ruido filtrado que decae): da cuerpo y lugar a cajas y palmas.
+void addRoom (Buf& b, double sr, double amount, double decay, uint32_t seed)
+{
+    const size_t dry = b.size();
+    const size_t tail = (size_t) (decay * sr * 3.0);
+    Buf out (dry + tail, 0.0f);
+    std::copy (b.begin(), b.end(), out.begin());
+    static const double taps[6][2] = { { 0.0071, 0.42 }, { 0.0113, 0.35 }, { 0.0167, 0.3 }, { 0.0229, 0.22 }, { 0.0311, 0.17 }, { 0.0397, 0.12 } };
+    for (const auto& t : taps)
+    {
+        const size_t d = (size_t) (t[0] * sr);
+        for (size_t i = 0; i < dry && i + d < out.size(); ++i) out[i + d] += b[i] * (float) (t[1] * amount);
+    }
+    // Cola: convolución con ruido exponencial corto, aproximada por un filtro peine realimentado con pérdidas.
+    Rng rng (seed);
+    Biquad lp; lp.set (Biquad::LowPass, sr, 5500, 0.7);
+    double env = 0;
+    for (size_t i = 0; i < out.size(); ++i)
+    {
+        const double x = i < dry ? std::fabs (b[i]) : 0.0;
+        env = std::max (x, env * std::exp (-1.0 / (decay * sr)));
+        out[i] += (float) (lp.process (rng.next()) * env * 0.35 * amount);
+    }
+    b.swap (out);
+}
+
+// Bombo en capas: sub (seno con caída de tono), «knock» de cuerpo una octava arriba, clic filtrado y saturación.
+Buf layeredKick (double sr, double f0, double f1, double pitchTau, double subTau, double knockAmt, double click, double drive, double len)
+{
+    Buf b = envelopeLen (sr, len);
+    Rng rng (101);
+    Biquad hp; hp.set (Biquad::HighPass, sr, 2500, 0.7);
+    Biquad bp; bp.set (Biquad::BandPass, sr, 4500, 1.2);
+    double ph = 0, ph2 = 0;
+    const double dn = std::tanh (drive);
+    for (size_t i = 0; i < b.size(); ++i)
+    {
+        const double t = (double) i / sr;
+        const double f = f1 + (f0 - f1) * std::exp (-t / pitchTau);
+        ph += f / sr; ph2 += 2.0 * f / sr;
+        const double sub = std::sin (2 * kPi * ph) * std::exp (-t / subTau);
+        const double knock = std::sin (2 * kPi * ph2) * std::exp (-t / 0.028) * knockAmt;
+        double x = (sub + knock) * std::min (1.0, t / 0.0006);
+        x = std::tanh (x * drive) / dn;
+        const double c = t < 0.004 ? (hp.process (rng.next()) * 0.6 + bp.process (rng.next()) * 0.4) * click * (1.0 - t / 0.004) : 0.0;
+        b[i] = (float) (x + c);
+    }
+    return b;
+}
+
+// Membrana afinada (conga, bongó, timbal): tono con pequeña caída + golpe de ruido; 'ring' alarga el armónico.
+Buf membrane (double sr, double hz, double tau, double slap, double ring, double len, uint32_t seed)
+{
+    Buf b = envelopeLen (sr, len);
+    Rng rng (seed);
+    Biquad bp; bp.set (Biquad::BandPass, sr, hz * 4.2, 1.6);
+    double p1 = 0, p2 = 0;
+    for (size_t i = 0; i < b.size(); ++i)
+    {
+        const double t = (double) i / sr;
+        const double bend = 1.0 + 0.18 * std::exp (-t / 0.012);
+        p1 += hz * bend / sr; p2 += hz * 1.59 * bend / sr;
+        const double body = std::sin (2 * kPi * p1) * std::exp (-t / tau) + std::sin (2 * kPi * p2) * ring * std::exp (-t / (tau * 0.6));
+        const double n = t < 0.02 ? bp.process (rng.next()) * slap * std::exp (-t / 0.004) : 0.0;
+        b[i] = (float) ((body + n) * std::min (1.0, t / 0.0004));
+    }
+    return b;
+}
+
+// Güiro / güira: tren de raspados de ruido agudo (el carácter metálico del merengue y del dembow).
+Buf guira (double sr, double hz, int scrapes, double spacing, double tau)
+{
+    Buf b = envelopeLen (sr, scrapes * spacing + tau * 6);
+    Rng rng (131);
+    Biquad bp; bp.set (Biquad::BandPass, sr, hz, 2.0);
+    Biquad hp; hp.set (Biquad::HighPass, sr, 3000, 0.7);
+    for (size_t i = 0; i < b.size(); ++i)
+    {
+        const double t = (double) i / sr;
+        double env = 0;
+        for (int k = 0; k < scrapes; ++k) { const double tk = t - k * spacing; if (tk >= 0) env = std::max (env, std::exp (-tk / tau) * (1.0 - 0.15 * k)); }
+        b[i] = (float) (hp.process (bp.process (rng.next())) * env);
+    }
+    return b;
+}
+
+// Platillo (crash): metales inarmónicos + ruido, cola larga. Marca el inicio de las secciones.
+Buf crash (double sr, double tau, double len)
+{
+    static const double fr[6] = { 263.0, 400.0, 421.0, 474.0, 587.0, 845.0 };
+    Buf b = envelopeLen (sr, len);
+    Rng rng (151);
+    Biquad hp; hp.set (Biquad::HighPass, sr, 4200, 0.7);
+    Biquad hp2; hp2.set (Biquad::HighPass, sr, 4200, 0.7);
+    double ph[6] = {};
+    for (size_t i = 0; i < b.size(); ++i)
+    {
+        const double t = (double) i / sr;
+        double m = 0;
+        for (int k = 0; k < 6; ++k) { ph[k] += fr[k] * 2.9 / sr; ph[k] -= std::floor (ph[k]); m += ph[k] < 0.5 ? 1.0 : -1.0; }
+        const double x = m / 6.0 * 0.5 + rng.next() * 0.5;
+        // Fundido de coseno en el último 35 % para que la cola acabe suave dentro de 'len' (un one-shot no debe
+        // sonar más de 2,5 s: se solaparía con el siguiente compás y gastaría voces).
+        const double fadeStart = 0.65 * len;
+        const double fade = t < fadeStart ? 1.0 : 0.5 + 0.5 * std::cos (3.14159265358979 * (t - fadeStart) / (len - fadeStart));
+        const double env = (0.7 * std::exp (-t / tau) + 0.3 * std::exp (-t / 0.05)) * std::min (1.0, t / 0.001) * fade;
+        b[i] = (float) (hp2.process (hp.process ((float) x)) * env);
+    }
+    return b;
+}
+
+// Chasquido de dedos (snap): dos ráfagas de ruido de banda media muy cortas.
+Buf snap (double sr)
+{
+    Buf b = envelopeLen (sr, 0.18);
+    Rng rng (161);
+    Biquad bp; bp.set (Biquad::BandPass, sr, 2300, 2.2);
+    for (size_t i = 0; i < b.size(); ++i)
+    {
+        const double t = (double) i / sr;
+        const double env = std::exp (-t / 0.012) + (t > 0.004 ? 0.6 * std::exp (-(t - 0.004) / 0.03) : 0.0);
+        b[i] = (float) (bp.process (rng.next()) * env);
+    }
+    return b;
+}
+
+Buf lowpassed (Buf b, double sr, double hz)
+{
+    Biquad lp; lp.set (Biquad::LowPass, sr, hz, 0.7);
+    for (float& v : b) v = lp.process (v);
+    return b;
+}
+
 struct KitSounds { std::array<Buf, kDrumLanes> lanes; };
 
 std::shared_ptr<KitSounds> buildKit (int kit, double sr)
@@ -228,6 +368,58 @@ std::shared_ptr<KitSounds> buildKit (int kit, double sr)
             L[6] = cowbell (sr, 587, 845, 0.1);
             L[7] = tom (sr, 220, 160, 0.2, 0.8, 0.35);
             break;
+        // --- Cauce Signature (misión 0.4). Los kits 0-3 no cambian: los proyectos guardados suenan igual. ----------
+        case 4: // Cauce Dembow: bombo corto y redondo, caja seca con aro, timbal y conga, güira
+            L[0] = layeredKick (sr, 210, 56, 0.022, 0.2, 0.35, 0.5, 2.2, 0.6);
+            L[1] = snare (sr, 260, 0.04, 0.07, 2200, 11000, 0.45, 0.3);
+            mixInto (L[1], rim (sr, 1900, 0.018), 0.5f);
+            addRoom (L[1], sr, 0.45, 0.06, 171);
+            L[2] = clap (sr, 1700, 0.11, 0.4);
+            addRoom (L[2], sr, 0.6, 0.08, 173);
+            L[3] = hat (sr, 0.022, 8800, 0.14, 175);
+            L[4] = hat (sr, 0.2, 8000, 0.8, 177);
+            L[5] = membrane (sr, 560, 0.09, 0.8, 0.35, 0.45, 179); // timbal agudo
+            L[6] = membrane (sr, 300, 0.16, 0.6, 0.25, 0.6, 181);  // conga
+            L[7] = guira (sr, 7800, 3, 0.011, 0.012);
+            break;
+        case 5: // Cauce Trap: bombo con pegada que deja sitio al 808, caja «crack», palmas anchas, chasquido, crash
+            L[0] = layeredKick (sr, 180, 50, 0.035, 0.16, 0.45, 0.65, 2.6, 0.5);
+            L[1] = snare (sr, 200, 0.05, 0.11, 1800, 12000, 0.3, 0.4);
+            mixInto (L[1], clap (sr, 1500, 0.09, 0.3), 0.55f);
+            addRoom (L[1], sr, 0.5, 0.09, 183);
+            L[2] = clap (sr, 1300, 0.2, 0.55);
+            addRoom (L[2], sr, 0.8, 0.12, 185);
+            L[3] = hat (sr, 0.018, 9500, 0.12, 187);
+            L[4] = hat (sr, 0.28, 8200, 1.1, 189);
+            L[5] = rim (sr, 1800, 0.02);
+            L[6] = snap (sr);
+            addRoom (L[6], sr, 0.7, 0.1, 191);
+            L[7] = crash (sr, 0.8, 2.3);
+            break;
+        case 6: // Cauce Boom Bap: bombo «polvoriento» (paso bajo + saturación), caja gorda con sala, aro, shaker
+            L[0] = lowpassed (layeredKick (sr, 130, 50, 0.03, 0.28, 0.6, 0.35, 3.0, 0.8), sr, 3500);
+            L[1] = lowpassed (snare (sr, 185, 0.09, 0.17, 800, 8000, 0.5, 0.5), sr, 7000);
+            addRoom (L[1], sr, 0.7, 0.14, 193);
+            L[2] = snap (sr);
+            L[3] = lowpassed (hat (sr, 0.04, 6000, 0.2, 195), sr, 11000);
+            L[4] = lowpassed (hat (sr, 0.32, 5800, 1.0, 197), sr, 10000);
+            L[5] = rim (sr, 1450, 0.03);
+            L[6] = shaker (sr, 5500, 0.014, 0.08);
+            L[7] = crash (sr, 0.7, 2.2);
+            break;
+        case 7: // Cauce Pop: bombo apretado, caja brillante con palmas, charles nítidos, pandereta, crash
+            L[0] = layeredKick (sr, 240, 54, 0.02, 0.24, 0.4, 0.7, 1.8, 0.65);
+            L[1] = snare (sr, 230, 0.05, 0.16, 1400, 13000, 0.32, 0.45);
+            mixInto (L[1], clap (sr, 1400, 0.14, 0.4), 0.6f);
+            addRoom (L[1], sr, 0.6, 0.12, 199);
+            L[2] = clap (sr, 1250, 0.22, 0.6);
+            addRoom (L[2], sr, 0.9, 0.15, 201);
+            L[3] = hat (sr, 0.02, 10000, 0.13, 203);
+            L[4] = hat (sr, 0.4, 9000, 1.3, 205);
+            L[5] = membrane (sr, 420, 0.1, 0.5, 0.3, 0.5, 207);
+            L[6] = guira (sr, 9000, 2, 0.006, 0.02); // pandereta corta
+            L[7] = crash (sr, 0.85, 2.3);
+            break;
     }
     static const float peaks[kDrumLanes] = { 0.95f, 0.75f, 0.7f, 0.42f, 0.4f, 0.55f, 0.5f, 0.65f };
     for (int i = 0; i < kDrumLanes; ++i) normalize (L[(size_t) i], peaks[i]);
@@ -242,7 +434,7 @@ const std::vector<ParameterInfo>& drumParams()
     static const std::vector<ParameterInfo> ps = []
     {
         std::vector<ParameterInfo> v;
-        v.push_back ({ "kit", "Kit", 0, 3, 0 });
+        v.push_back ({ "kit", "Kit", 0, 7, 0 });
         v.push_back ({ "volumeDb", "Volume (dB)", -40, 6, -3 });
         for (int l = 0; l < kDrumLanes; ++l)
         {
@@ -415,6 +607,10 @@ const std::vector<DrumKitInfo>& drumKits()
         { "reggaeton", "Reggaetón", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Timbal Hi", "Timbal Lo", "Shaker" } },
         { "hiphop", "Hip-hop", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Rim", "Shaker", "Tom" } },
         { "electronic", "Electrónica", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Rim", "Cowbell", "Tom" } },
+        { "cauce_dembow", "Cauce Dembow", { "Kick", "Snare + Rim", "Clap", "Closed Hat", "Open Hat", "Timbal", "Conga", "Güira" } },
+        { "cauce_trap", "Cauce Trap", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Rim", "Snap", "Crash" } },
+        { "cauce_boombap", "Cauce Boom Bap", { "Kick", "Snare", "Snap", "Closed Hat", "Open Hat", "Rim", "Shaker", "Crash" } },
+        { "cauce_pop", "Cauce Pop", { "Kick", "Snare + Clap", "Clap", "Closed Hat", "Open Hat", "Perc", "Tambourine", "Crash" } },
     };
     return k;
 }

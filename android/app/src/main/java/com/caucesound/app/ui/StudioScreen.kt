@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
@@ -90,6 +91,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -223,6 +225,8 @@ fun StudioLayout(
                     }
                 }
                 if (compact) transport(Modifier.width(440.dp))
+                if (state.music != null) ToolButton(Icons.Default.AutoAwesome, tr("Variaciones", "Variations"), { actions.openPanel(if (panel == Panel.VARY) Panel.ARRANGE else Panel.VARY) },
+                    active = panel == Panel.VARY, tint = Palette.Text, modifier = Modifier.testTag("open_variations"))
                 ToolButton(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo), actions::undo, enabled = state.canUndo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo), actions::redo, enabled = state.canRedo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.Default.Save, stringResource(R.string.save), actions::saveNow, tint = if (state.dirty) Palette.Text else Palette.TextDim)
@@ -271,6 +275,7 @@ fun StudioLayout(
                         } else SynthPanel(state, t, catalog, actions, favorites)
                     }
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions)
+                    Panel.VARY -> VariationsPanel(state, actions)
                     Panel.FX -> {
                         val t = track ?: state.tracks.firstOrNull()
                         if (t == null) EmptyPanel(tr("No hay pistas.", "No tracks."), tr("Añadir pista de audio", "Add audio track")) { actions.addTrack("Audio 1", "audio") }

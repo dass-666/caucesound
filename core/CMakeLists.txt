@@ -12,6 +12,7 @@ add_library(cs_core STATIC
     src/Resampler.cpp
     src/Session.cpp
     src/SessionMusic.cpp
+    src/Composer.cpp
     src/Synth.cpp
     src/Wav.cpp
 )

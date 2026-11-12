@@ -238,6 +238,13 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();
         if (cmd == "loadPreset") return result (s.loadSynthPreset (str ("trackId"), str ("preset"))).dump();
         if (cmd == "addPattern") return result (s.addPattern (str ("trackId"), str ("copyFrom"))).dump();
+        if (cmd == "varyPart")
+        {
+            const bool setE = q.contains ("energy");
+            return result (s.varyPart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 0), setE ? (float) num ("energy") : 0.0f, setE)).dump();
+        }
+        if (cmd == "setPartLocked") return result (s.setPartLocked (str ("trackId"), flag ("on"))).dump();
+        if (cmd == "setRoll") return result (s.setPatternRoll (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("roll"))).dump();
         if (cmd == "setStep") return result (s.setPatternStep (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("velocity"))).dump();
         if (cmd == "setPatternLength") return result (s.setPatternLength (str ("trackId"), str ("patternId"), (int) num ("steps", 16))).dump();
         if (cmd == "setSwing") return result (s.setPatternSwing (str ("trackId"), str ("patternId"), (float) num ("swing"))).dump();

@@ -101,6 +101,7 @@ std::string toJson (const ProjectModel& p, bool pretty)
     j["createdAt"] = p.createdAt;
     j["modifiedAt"] = p.modifiedAt;
     j["template"] = p.templateId;
+    if (! p.music.empty()) { json m = json::parse (p.music, nullptr, false); if (! m.is_discarded()) j["music"] = m; }
     j["loop"] = { { "enabled", p.loopEnabled }, { "start", p.loopStart }, { "end", p.loopEnd } };
     j["ppq"] = kPpq;
     j["sources"] = json::array();
@@ -125,7 +126,13 @@ std::string toJson (const ProjectModel& p, bool pretty)
             jt["instrument"] = { { "type", t.instrument.type }, { "state", t.instrument.state }, { "preset", t.instrument.preset } };
         jt["patterns"] = json::array();
         for (const auto& pt : t.patterns)
-            jt["patterns"].push_back ({ { "id", pt.id }, { "name", pt.name }, { "steps", pt.steps }, { "swing", pt.swing }, { "lanes", pt.lanes } });
+        {
+            json jp = { { "id", pt.id }, { "name", pt.name }, { "steps", pt.steps }, { "swing", pt.swing }, { "lanes", pt.lanes } };
+            bool anyRoll = false;
+            for (const auto& l : pt.rolls) for (int v : l) anyRoll |= v > 1;
+            if (anyRoll) jp["rolls"] = pt.rolls;
+            jt["patterns"].push_back (jp);
+        }
         jt["midiClips"] = json::array();
         for (const auto& c : t.midiClips)
         {
@@ -162,6 +169,7 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
         p.createdAt = j.value ("createdAt", (int64_t) 0);
         p.modifiedAt = j.value ("modifiedAt", (int64_t) 0);
         p.templateId = j.value ("template", std::string());
+        if (j.contains ("music") && j.at ("music").is_object()) p.music = j.at ("music").dump();
         if (j.contains ("loop") && j["loop"].is_object())
         {
             p.loopEnabled = j["loop"].value ("enabled", false);
@@ -231,6 +239,7 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                     pt.steps = jp.at ("steps").get<int>();
                     pt.swing = jp.value ("swing", 0.0f);
                     pt.lanes = jp.at ("lanes").get<std::vector<std::vector<int>>>();
+                    if (jp.contains ("rolls")) pt.rolls = jp.at ("rolls").get<std::vector<std::vector<int>>>();
                     t.patterns.push_back (pt);
                 }
             if (jt.contains ("midiClips"))

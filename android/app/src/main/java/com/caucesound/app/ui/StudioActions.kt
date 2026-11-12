@@ -66,6 +66,13 @@ interface StudioActions {
     fun setPatternLength(trackId: String, patternId: String, steps: Int) {}
     fun setSwing(trackId: String, patternId: String, swing: Float) {}
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) {}
+    /** Redoble de un paso: 1 golpe (normal) a 4 golpes dentro del paso. */
+    fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) {}
+
+    // Variaciones del compositor local (misión 0.4). Cada una es un solo paso de deshacer.
+    /** Nueva versión de una parte (o de todas con "all"); seed 0 = recomponer con la semilla guardada. */
+    fun varyPart(part: String, seed: Long, energy: Float? = null) {}
+    fun setPartLocked(trackId: String, locked: Boolean) {}
 
     // Instrumentos
     fun setParam(trackId: String, param: String, value: Float) {}
@@ -84,4 +91,4 @@ interface StudioActions {
     fun openPanel(panel: Panel) {}
 }
 
-enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER, FX }
+enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER, FX, VARY }

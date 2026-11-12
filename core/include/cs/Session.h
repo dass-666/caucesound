@@ -2,6 +2,7 @@
 // Session: controlador de un proyecto abierto. Es la API que usan Android (JNI) y, en el futuro, iOS.
 // Todas las funciones son del hilo de control y están serializadas internamente con un mutex.
 // Ninguna se llama desde el hilo de audio.
+#include "cs/Composer.h"
 #include "cs/Engine.h"
 #include "cs/Project.h"
 
@@ -104,6 +105,7 @@ public:
     // --- Patrones de batería (con deshacer) -----------------------------------------------------------------
     OpResult addPattern (const std::string& trackId, const std::string& copyFromId = {});
     OpResult setPatternStep (const std::string& trackId, const std::string& patternId, int lane, int step, int velocity);
+    OpResult setPatternRoll (const std::string& trackId, const std::string& patternId, int lane, int step, int roll); // 1-4 golpes
     OpResult setPatternLength (const std::string& trackId, const std::string& patternId, int steps); // 16 <-> 32
     OpResult setPatternSwing (const std::string& trackId, const std::string& patternId, float swing);
     OpResult setPatternLanes (const std::string& trackId, const std::string& patternId, const std::vector<std::vector<int>>& lanes);
@@ -118,6 +120,13 @@ public:
     OpResult setMidiClipPattern (const std::string& clipId, const std::string& patternId);
     OpResult setClipNotes (const std::string& clipId, std::vector<MidiNote> notes);
     OpResult quantizeClip (const std::string& clipId, Tick grid, float strength, bool lengthsToo);
+
+    // --- Variaciones (compositor local, reproducibles por semilla; ver Composer.h) ---------------------------------
+    // part: "all", "drums", "bass", "chords", "melody" o "pad". seed = 0 conserva la semilla actual de cada parte (útil
+    // para cambiar solo la energía). setEnergy: además fija la energía global (-1 tranquila .. +1 enérgica).
+    // Respeta las pistas bloqueadas. Una sola entrada de deshacer: deshacer/rehacer sirve para comparar versiones.
+    OpResult varyPart (const std::string& part, uint32_t seed, float energy = 0, bool setEnergy = false);
+    OpResult setPartLocked (const std::string& trackId, bool locked);
 
     // --- Bucle --------------------------------------------------------------------------------------------------
     OpResult setLoop (bool on, Tick start, Tick end);
@@ -175,6 +184,7 @@ private:
     std::shared_ptr<Instrument> instrumentFor (const TrackModel& t);
     void applyLoopLocked();
     void applyTemplateLocked (const std::string& templateId);
+    void composeTrackLocked (TrackModel& t, const MusicPlan& plan, const std::string& role);
     TrackModel* instrumentTrack (const std::string& trackId, const char* kind, OpResult& err);
     void applyMixerParams();
     OpResult loadSourceLocked (const SourceRef& ref, bool* ok);

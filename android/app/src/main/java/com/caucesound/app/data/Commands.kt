@@ -25,6 +25,11 @@ object Cmd {
     fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) =
         c("setStep", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "velocity" to velocity)
     fun setPatternLength(trackId: String, patternId: String, steps: Int) = c("setPatternLength", "trackId" to trackId, "patternId" to patternId, "steps" to steps)
+    fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) =
+        c("setRoll", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "roll" to roll)
+    /** Variación local con semilla (misión 0.4). part: all, drums, bass, chords, melody, pad. energy null = la actual. */
+    fun varyPart(part: String, seed: Long, energy: Float?) = c("varyPart", "part" to part, "seed" to seed, "energy" to energy?.toDouble())
+    fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =
         c("setPatternLanes", "trackId" to trackId, "patternId" to patternId, "lanes" to JSONArray(lanes.map { JSONArray(it) }))

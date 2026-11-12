@@ -138,7 +138,7 @@ double inharmonicDb (const std::vector<float>& v, size_t a, double f0)
 TEST (synth_presets_are_in_tune_balanced_and_end_cleanly)
 {
     const auto& presets = synthPresets();
-    CHECK (presets.size() == 7);
+    CHECK (presets.size() == 17);
     // Grupos: los bajos se miden aparte (a igual RMS, los graves suenan más suaves; ir más fuertes es intencionado).
     double louder[2] = { -1e9, -1e9 }, quieter[2] = { 1e9, 1e9 };
     std::printf ("    measure: preset        | afinación (cents) | RMS máx 50 ms | pico   | DC       | cola final | salto al soltar\n");
@@ -174,7 +174,7 @@ TEST (synth_presets_are_in_tune_balanced_and_end_cleanly)
         CHECK_MSG (std::fabs (dc) < 0.01 * std::max (level, 0.01), p.id + " DC");
         CHECK_MSG (db (tailEnd) < -90.0, p.id + " la cola no termina");
         CHECK_MSG (typical == 0 || jump <= 1.5f * typical, p.id + " clic al soltar");
-        const int g = p.id.find ("bass") != std::string::npos ? 1 : 0;
+        const int g = p.category == "bass" ? 1 : 0; // por categoría (cauce_808 y cauce_sub son bajos sin «bass» en el id)
         louder[g] = std::max (louder[g], db (level));
         quieter[g] = std::min (quieter[g], db (level));
     }
@@ -223,7 +223,7 @@ TEST (synth_oscillators_have_low_aliasing_at_high_notes)
 TEST (drum_kits_are_balanced_short_and_clean)
 {
     const auto& kits = drumKits();
-    CHECK (kits.size() == 4);
+    CHECK (kits.size() == 8);
     for (int k = 0; k < (int) kits.size(); ++k)
     {
         auto inst = makeInstrument ("cs.drums", "{\"kit\":" + std::to_string (k) + "}");
