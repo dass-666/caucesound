@@ -769,3 +769,104 @@ TEST (ui_fixtures_from_engine)
         write ("projects.json", projects);
     }
 }
+
+// Flujo completo del §8 de la misión, de punta a punta en el motor (sin interfaz):
+// proyecto 140 BPM → beat trap → bucle → pista synth → melodía → grabar voz sobre la instrumental → mezclar →
+// guardar → cerrar → reabrir → exportar WAV (con colas) = reproducción en vivo.
+TEST (full_flow_beat_melody_vocal_mix_save_reopen_export)
+{
+    const std::string dir = cstest::tempDir ("full_flow");
+    const std::string folder = dir + "/cancion";
+    std::string voiceTrack, leadTrack, leadClip, drumsTrack, patternId;
+    std::vector<MidiNote> melody;
+    for (int i = 0; i < 16; ++i) melody.push_back ({ 64 + (i * 5) % 12, 90, 0, (Tick) i * kPpq / 2, kPpq / 2 - 60 });
+    {
+        Engine engine;
+        engine.prepare (kSr, 1024);
+        Session s (engine);
+        CHECK (s.createProject (folder, "Canción", 48000, "trap").ok);
+        CHECK (s.model().bpm == 140);
+        for (const auto& t : s.model().tracks)
+        {
+            if (t.kind == "audio") voiceTrack = t.id;
+            if (t.kind == "drums") { drumsTrack = t.id; patternId = t.patterns.front().id; }
+        }
+        // Beat: añade un clap en el paso 13 del patrón A.
+        CHECK (s.setPatternStep (drumsTrack, patternId, 2, 12, 110).ok);
+        // Bucle de 4 compases mientras se compone: la reproducción vuelve al inicio exactamente.
+        const Tick bar = 4 * kPpq;
+        CHECK (s.setLoop (true, 0, 4 * bar).ok);
+        const Frame loopEnd = s.model().ticksToFrames (4 * bar);
+        auto looped = playFrom (engine, loopEnd - 4800, 9600, 256);
+        CHECK (engine.position() < loopEnd && engine.position() > 0);
+        CHECK (allFinite (looped));
+        engine.stop();
+        // Pista synth nueva con melodía.
+        auto add = s.addTrack ("Lead", "synth");
+        CHECK (add.ok);
+        leadTrack = add.id;
+        CHECK (s.loadSynthPreset (leadTrack, "lead").ok);
+        leadClip = firstMidiClip (s, leadTrack);
+        CHECK (s.setClipNotes (leadClip, melody).ok);
+        // Grabar la voz sobre la instrumental (el bucle se ignora durante la grabación).
+        CHECK (s.setLoop (false, 0, 4 * bar).ok);
+        engine.seek (0);
+        CHECK (s.setTrackArmed (voiceTrack, true).ok);
+        CHECK (s.startRecording ("", 1, true).ok);
+        const Frame recFrames = kSr * 4;
+        std::vector<float> in (256), out (512);
+        float monitorPeak = 0;
+        for (Frame done = 0; done < recFrames; done += 256)
+        {
+            for (int i = 0; i < 256; ++i) in[(size_t) i] = 0.3f * std::sin (2.0 * M_PI * 220.0 * (double) (done + i) / kSr);
+            engine.process (in.data(), 1, out.data(), 2, 256);
+            for (float x : out) monitorPeak = std::max (monitorPeak, std::fabs (x));
+            std::this_thread::sleep_for (std::chrono::microseconds (150));
+        }
+        auto rec = s.stopRecording();
+        CHECK_MSG (rec.ok, rec.error);
+        CHECK (monitorPeak > 0.05f); // la instrumental sonaba mientras se grababa
+        // Mezcla.
+        CHECK (s.setTrackVolumeDb (voiceTrack, -3.0f).ok);
+        CHECK (s.setTrackPan (leadTrack, -0.3f).ok);
+        CHECK (s.setMasterDb (-1.0f).ok);
+        CHECK (s.save().ok);
+        s.close();
+    }
+    // Reabrir en un motor nuevo, como tras reiniciar la app.
+    Engine engine;
+    engine.prepare (kSr, 1024);
+    Session s (engine);
+    LoadReport report;
+    CHECK (s.openProject (folder, &report).ok);
+    auto m = s.model();
+    CHECK (m.bpm == 140 && ! m.loopEnabled);
+    TrackModel* voice = m.findTrack (voiceTrack);
+    CHECK (voice != nullptr && voice->clips.size() == 1 && std::fabs (voice->volumeDb + 3.0f) < 1e-6f);
+    if (voice && ! voice->clips.empty()) CHECK (voice->clips[0].start == 0 && voice->clips[0].length > kSr * 3);
+    const MidiClipModel* lc = m.findMidiClip (leadClip);
+    CHECK (lc != nullptr && lc->notes.size() == melody.size());
+    const DrumPattern* pat = m.findTrack (drumsTrack) ? m.findTrack (drumsTrack)->findPattern (patternId) : nullptr;
+    CHECK (pat != nullptr && pat->lanes[2][12] == 110);
+    CHECK (m.findTrack (leadTrack)->instrument.preset == "lead");
+    // Exportar y comparar con la reproducción en vivo.
+    const std::string wav = dir + "/cancion.wav";
+    long clipped = -1;
+    CHECK (s.exportMix (wav, 32, 0, &clipped).ok);
+    AudioData a;
+    std::string err;
+    CHECK (readWav (wav, a, err));
+    const Frame end = m.contentEnd();
+    CHECK (a.numFrames() > end);
+    CHECK (clipped == 0);
+    auto live = playFrom (engine, 0, end, 512);
+    double maxDiff = 0;
+    float voicePart = 0;
+    for (Frame i = 0; i < end; ++i)
+    {
+        maxDiff = std::max<double> (maxDiff, std::max (std::fabs (live[(size_t) i * 2] - a.channels[0][(size_t) i]), std::fabs (live[(size_t) i * 2 + 1] - a.channels[1][(size_t) i])));
+        voicePart = std::max (voicePart, std::fabs (a.channels[0][(size_t) i]));
+    }
+    MEASURE ("flujo completo: %lld frames exportados, pico %.3f, diferencia con la reproducción en vivo = %g", (long long) a.numFrames(), voicePart, maxDiff);
+    CHECK (maxDiff < 1e-6 && voicePart > 0.05f && voicePart < 1.0f);
+}

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,8 +15,9 @@ android {
         applicationId = "com.caucesound.app"
         minSdk = 26          // Android 8.0: AAudio disponible; Oboe elige AAudio u OpenSL ES según el dispositivo
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-fase1"
+        versionCode = 2
+        versionName = "0.2.0-fase1.2"
+        manifestPlaceholders["appLabel"] = "CAUCESOUND"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // teléfonos actuales + emulador
         externalNativeBuild {
@@ -25,11 +28,35 @@ android {
         }
     }
 
+    // Clave de PRUEBA persistente (no comercial, fuera de git). Ruta del .properties en CAUCE_SIGNING o -PcauceSigning.
+    // Sin ella, la variante preview se firma con la clave de depuración local (no se podrá actualizar entre máquinas).
+    val signingProps = (findProperty("cauceSigning") as String? ?: System.getenv("CAUCE_SIGNING"))
+        ?.let { file(it) }?.takeIf { it.exists() }
+        ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    signingConfigs {
+        if (signingProps != null) create("preview") {
+            storeFile = file(signingProps.getProperty("storeFile"))
+            storePassword = signingProps.getProperty("storePassword")
+            keyAlias = signingProps.getProperty("keyAlias")
+            keyPassword = signingProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Fase 1: se firma con la clave de depuración para poder instalarlo. Antes de publicar: clave propia.
+            // Antes de publicar: clave de subida propia y Play App Signing (decisión pendiente del propietario).
             signingConfig = signingConfigs.getByName("debug")
+        }
+        // APK de pruebas en el teléfono: otro applicationId para instalarse JUNTO a la app de la fase 1
+        // (aquella se firmó con una clave de depuración perdida y no se puede actualizar).
+        create("preview") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            manifestPlaceholders["appLabel"] = "CAUCESOUND Preview"
+            signingConfig = signingConfigs.findByName("preview") ?: signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
     externalNativeBuild {
