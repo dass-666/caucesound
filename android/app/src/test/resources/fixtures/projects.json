@@ -4,8 +4,8 @@
   {
    "bpm": 120.0,
    "folder": "/tmp/cs_test_ui_fixtures/vacio",
-   "id": "prj_be3fd159c736",
-   "modifiedAt": 1794467256531,
+   "id": "prj_4702bbcc3f25",
+   "modifiedAt": 1794471415663,
    "name": "Idea vacía",
    "template": "empty",
    "thumb": [],
@@ -14,8 +14,8 @@
   {
    "bpm": 140.0,
    "folder": "/tmp/cs_test_ui_fixtures/beat",
-   "id": "prj_d1890b29d168",
-   "modifiedAt": 1794467256529,
+   "id": "prj_80248f475108",
+   "modifiedAt": 1794471415661,
    "name": "Beat trap 140",
    "template": "trap",
    "thumb": [

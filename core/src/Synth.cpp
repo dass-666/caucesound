@@ -126,7 +126,10 @@ public:
         const double glideK = s.glide > 0 ? 1.0 - std::exp (-1.0 / (s.glide * 0.001 * sr / 4.0)) : 1.0;
         const double driveGain = 1.0 + s.drive * 8.0, driveNorm = 1.0 / std::tanh (driveGain);
         const double k = 2.0 - 2.0 * std::clamp ((double) s.res, 0.0, 0.95);
-        const double ratio2 = std::pow (2.0, s.oct2 + s.detune / 1200.0);
+        // Detune centrado: el osc 1 baja y el osc 2 sube en proporción a la mezcla, de modo que la afinación media
+        // percibida queda en la nota (antes solo subía el osc 2: el pad sonaba ~9 cents alto).
+        const double ratio1 = std::pow (2.0, -s.mix * s.detune / 1200.0);
+        const double ratio2 = std::pow (2.0, s.oct2 + (1.0 - s.mix) * s.detune / 1200.0) / ratio1;
         const float volStep = 1.0f / (float) (0.010 * sr);
         float* L = io[0];
         float* R = numChannels > 1 ? io[1] : io[0];
@@ -160,7 +163,7 @@ public:
                 }
                 ++v.age;
 
-                const double dt1 = v.freq / sr;
+                const double dt1 = v.freq * ratio1 / sr;
                 const double dt2 = dt1 * ratio2;
                 double o = osc (s.w1, v.ph1, dt1);
                 if (s.mix > 0.0f) o = o * (1.0 - s.mix) + osc (s.w2, v.ph2, dt2) * s.mix;
@@ -325,7 +328,7 @@ const std::vector<SynthPreset>& synthPresets()
         { "sub_bass", "Sub Bass", { { "osc1Wave", 0 }, { "osc2Wave", 1 }, { "osc2Mix", 0.15f }, { "octave", -1 }, { "attackMs", 4 }, { "decayMs", 400 },
                                     { "sustain", 0.9f }, { "releaseMs", 140 }, { "cutoffHz", 600 }, { "resonance", 0 }, { "volumeDb", -3 }, { "mono", 1 }, { "polyphony", 1 } } },
         { "bass_808", "808 Bass", { { "osc1Wave", 0 }, { "octave", -1 }, { "attackMs", 2 }, { "decayMs", 1800 }, { "sustain", 0.0f }, { "releaseMs", 350 },
-                                    { "cutoffHz", 2500 }, { "resonance", 0 }, { "drive", 0.45f }, { "volumeDb", -3 }, { "mono", 1 }, { "glideMs", 70 }, { "polyphony", 1 } } },
+                                    { "cutoffHz", 2500 }, { "resonance", 0 }, { "drive", 0.45f }, { "volumeDb", -5 }, { "mono", 1 }, { "glideMs", 70 }, { "polyphony", 1 } } },
         { "lead", "Lead", { { "osc1Wave", 2 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Detune", 12 }, { "attackMs", 6 }, { "decayMs", 400 }, { "sustain", 0.75f },
                             { "releaseMs", 220 }, { "cutoffHz", 2800 }, { "resonance", 0.3f }, { "filterEnv", 0.35f }, { "filterDecayMs", 350 }, { "volumeDb", -9 }, { "polyphony", 6 } } },
         { "soft_keys", "Soft Keys", { { "osc1Wave", 1 }, { "osc2Wave", 0 }, { "osc2Mix", 0.35f }, { "osc2Octave", 1 }, { "attackMs", 3 }, { "decayMs", 900 },
@@ -337,7 +340,7 @@ const std::vector<SynthPreset>& synthPresets()
                               { "cutoffHz", 500 }, { "resonance", 0.25f }, { "filterEnv", 0.6f }, { "filterDecayMs", 180 }, { "volumeDb", -6 }, { "polyphony", 8 } } },
         { "synth_bass", "Synth Bass", { { "osc1Wave", 3 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Octave", -1 }, { "octave", -1 }, { "attackMs", 2 }, { "decayMs", 300 },
                                         { "sustain", 0.6f }, { "releaseMs", 120 }, { "cutoffHz", 700 }, { "resonance", 0.4f }, { "filterEnv", 0.45f },
-                                        { "filterDecayMs", 220 }, { "volumeDb", -6 }, { "mono", 1 }, { "glideMs", 25 }, { "polyphony", 1 } } },
+                                        { "filterDecayMs", 220 }, { "volumeDb", -3 }, { "mono", 1 }, { "glideMs", 25 }, { "polyphony", 1 } } },
     };
     return p;
 }
