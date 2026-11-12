@@ -428,6 +428,7 @@ OpResult Session::openProject (const std::string& folderPath, LoadReport* report
         if (! ok) rep.missingSources.push_back (s.id);
     }
     recoverRecordingsLocked (&rep);
+    cleanStaleTempLocked();
     rebuildGraph();
     if (dirty) save();
     if (report) *report = rep;
@@ -505,6 +506,10 @@ OpResult Session::save()
 void Session::close()
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
+    // Trabajos offline del proyecto que se cierra: se cancelan y se espera a que suelten sus archivos. No hay bloqueo
+    // mutuo: un trabajo nunca espera el cerrojo de la sesión, lo intenta y vuelve a mirar si lo han cancelado.
+    jobs.cancelAll();
+    jobs.waitIdle();
     if (recorder) stopRecording();
     if (open && dirty) save();
     // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
@@ -527,6 +532,8 @@ void Session::close()
 void Session::abandonForTest()
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
+    jobs.cancelAll();
+    jobs.waitIdle();
     if (recorder) { recorder->abandon(); recorder.reset(); }
     // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
     // proyecto siguiente heredaba la posición del anterior (p. ej. compás 40 tras reproducir A un rato) y sonaba
@@ -561,6 +568,7 @@ std::string Session::stateJson() const
         for (const auto& c : t.clips)
             if (pool.find (c.sourceId) == pool.end()) missing.push_back (c.id);
     j["missingClips"] = missing;
+    j["missingPlugins"] = missingPlugins();
     return j.dump();
 }
 
@@ -770,6 +778,7 @@ OpResult Session::trimClip (const std::string& clipId, Frame newStart, Frame new
         return OpResult::fail ("recorte fuera de los límites del audio");
     pushUndo();
     c = proj.findClip (clipId);
+    c->clearProcess(); // recortar «acepta» la versión que suena (el original sigue en disco)
     c->sourceOffset = newOffset;
     c->start = newStart;
     c->length = newLength;
@@ -787,6 +796,7 @@ OpResult Session::splitClip (const std::string& clipId, Frame at)
     if (at <= c->start || at >= c->start + c->length) return OpResult::fail ("el punto de corte no está dentro del clip");
     pushUndo();
     c = proj.findClip (clipId, &owner);
+    c->clearProcess(); // dividir «acepta» la versión que suena
     ClipModel right = *c;
     const Frame leftLen = at - c->start;
     right.id = newId ("clp");

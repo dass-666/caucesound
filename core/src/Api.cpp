@@ -72,6 +72,7 @@ json listProjects (const std::string& root)
 
 namespace
 {
+json pluginDescriptors();
 json catalog()
 {
     json presets = json::array();
@@ -93,7 +94,23 @@ json catalog()
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
              { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl },
              // Plugins integrados: solo se anuncian los que están compilados (la interfaz no muestra los demás).
-             { "plugins", solo::available() ? json::array ({ { { "id", "solo.ai" }, { "version", solo::pinnedVersion() }, { "kind", "offline" } } }) : json::array() } };
+             { "plugins", pluginDescriptors() } };
+}
+
+// Contrato de plugins (docs/PLUGIN_CONTRACT.md): descriptor de cada plugin integrado. Solo aparecen los compilados.
+json pluginDescriptors()
+{
+    json arr = json::array();
+    if (solo::available())
+        arr.push_back ({ { "id", "solo.ai" }, { "name", "Solo AI" }, { "version", solo::pinnedVersion() }, { "category", "generator" },
+                         { "kind", "offline" }, { "realtime", false }, { "latencySamples", 0 }, { "wantsMidi", false }, { "wantsTransport", true },
+                         { "output", "midi" }, { "appliesTo", "song" }, { "cancellable", false } });
+    if (vocal::available())
+        arr.push_back ({ { "id", "vocalshift" }, { "name", "VocalShift" }, { "version", vocal::pinnedVersion() }, { "category", "effect" },
+                         { "kind", "offline" }, { "realtime", false }, { "latencyMs", 150 }, { "wantsMidi", false }, { "wantsTransport", true },
+                         { "output", "audio" }, { "appliesTo", "audioClip" }, { "cancellable", true }, { "maxSeconds", vocal::kMaxClipSeconds },
+                         { "presets", (int) vocal::presets().size() } });
+    return arr;
 }
 
 // Entero desde JSON sin conversiones fuera de rango (1e30 -> int es comportamiento indefinido en C++).
@@ -272,6 +289,33 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             j["millis"] = mr.millis;
             return j.dump();
         }
+        if (cmd == "vocalPresets")
+        {
+            json arr = json::array();
+            for (const auto& p : vocal::presets())
+                arr.push_back ({ { "id", p.id }, { "name", p.name }, { "description", p.description }, { "params", json::parse (p.params.toJson()) } });
+            return json { { "ok", true }, { "presets", arr } }.dump();
+        }
+        if (cmd == "vocalProcess")
+        {
+            vocal::Params p;
+            if (! vocal::Params::fromJson (q.value ("params", json::object()).dump(), p)) return result (OpResult::fail ("parámetros no válidos")).dump();
+            json j = result (s.vocalProcess (str ("clipId"), p));
+            if (j.value ("ok", false)) j["jobId"] = j.value ("id", std::string());
+            return j.dump();
+        }
+        if (cmd == "clipVersion") return result (s.setClipVersion (str ("clipId"), flag ("original"))).dump();
+        if (cmd == "discardProcess") return result (s.discardProcess (str ("clipId"))).dump();
+        if (cmd == "jobStatus")
+        {
+            JobInfo info;
+            if (! s.jobRunner().info (str ("jobId"), info)) return json { { "ok", false }, { "error", "trabajo no encontrado" } }.dump();
+            json j { { "ok", true }, { "jobId", info.id }, { "type", info.type }, { "state", info.state }, { "progress", info.progress },
+                     { "targetId", info.targetId }, { "error", info.error } };
+            if (! info.result.empty()) j["result"] = json::parse (info.result, nullptr, false);
+            return j.dump();
+        }
+        if (cmd == "jobCancel") return json { { "ok", s.jobRunner().cancel (str ("jobId")) } }.dump();
         if (cmd == "setPartLocked") return result (s.setPartLocked (str ("trackId"), flag ("on"))).dump();
         if (cmd == "setRoll") return result (s.setPatternRoll (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("roll"))).dump();
         if (cmd == "setStep") return result (s.setPatternStep (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("velocity"))).dump();

@@ -70,6 +70,10 @@ OpResult Session::addInsert (const std::string& trackId, const std::string& type
     if (std::find (types.begin(), types.end(), type) == types.end()) return OpResult::fail ("efecto desconocido: " + type);
     ProcessorPtr fx = createProcessor (type);
     if (! fx) return OpResult::fail ("efecto no disponible");
+    // PDC: el motor compensa la latencia de las inserciones en pistas, no en buses. Hasta que eso exista con pruebas,
+    // un efecto con latencia no se admite en un bus (sonaría desalineado con el resto de la mezcla).
+    fx->prepare (proj.sampleRate, 4096);
+    if (t->kind == "bus" && fx->latencySamples() > 0) return OpResult::fail ("este efecto tiene latencia y todavía no se puede usar en un bus: ponlo en la pista");
     pushUndo();
     t = proj.findTrack (trackId);
     InsertModel ins;

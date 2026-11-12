@@ -102,6 +102,14 @@ TEST (catalog_lists_only_compiled_plugins)
     Fx f ("solo_cat");
     const json c = f.cmd ({ { "cmd", "catalog" } });
     CHECK (c["plugins"].is_array());
-    CHECK (c["plugins"].size() == (solo::available() ? 1u : 0u));
-    if (! c["plugins"].empty()) CHECK (c["plugins"][0]["id"] == "solo.ai");
+    // Desde la 0.5 el catálogo lleva un descriptor por plugin compilado (Solo AI y VocalShift), y ninguno más.
+    size_t expected = 0;
+    for (const auto& p : c["plugins"])
+    {
+        const std::string id = p.value ("id", std::string());
+        CHECK (id == "solo.ai" || id == "vocalshift");
+        CHECK (p.contains ("version") && p.contains ("category") && p.value ("realtime", true) == false);
+        ++expected;
+    }
+    CHECK (expected == (solo::available() ? 1u : 0u) + (vocal::available() ? 1u : 0u));
 }

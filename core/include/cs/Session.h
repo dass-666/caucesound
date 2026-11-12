@@ -4,6 +4,8 @@
 // Ninguna se llama desde el hilo de audio.
 #include "cs/Composer.h"
 #include "cs/SoloBridge.h"
+#include "cs/Jobs.h"
+#include "cs/VocalBridge.h"
 #include "cs/Engine.h"
 #include "cs/Project.h"
 
@@ -133,6 +135,20 @@ public:
     OpResult soloRequest (int startBar, int bars, int keyRoot, bool minor, solo::MelodyRequest& out) const;
     OpResult addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset);
 
+    // --- Procesado offline no destructivo (SessionVocal.cpp, misión 0.5) ----------------------------------------
+    // vocalProcess lanza un trabajo (r.id = id del trabajo) que procesa el clip con VocalShift fuera del hilo de audio
+    // y sin el cerrojo de la sesión. Al terminar, el clip pasa a sonar con la versión procesada (un paso de deshacer);
+    // el audio original no se toca. Si el proyecto se cierra o cambia antes, el resultado se descarta y su archivo
+    // temporal se borra. Reprocesar parte siempre del original.
+    OpResult vocalProcess (const std::string& clipId, const vocal::Params& params);
+    // Comparación A/B: elige qué versión suena (original = true). Misma posición en el tiempo; no entra en deshacer.
+    OpResult setClipVersion (const std::string& clipId, bool original);
+    // Descarta el procesado: el clip vuelve a ser solo el original (con deshacer).
+    OpResult discardProcess (const std::string& clipId);
+    JobRunner& jobRunner() { return jobs; }
+    // Plugins que usa el proyecto y esta compilación no tiene (el proyecto se conserva tal cual; ver stateJson).
+    std::vector<std::string> missingPlugins() const;
+
     // --- Bucle --------------------------------------------------------------------------------------------------
     OpResult setLoop (bool on, Tick start, Tick end);
 
@@ -198,6 +214,9 @@ private:
     std::string absPath (const std::string& rel) const;
     OpResult finishEditLocked();
     void touchLocked();
+    OpResult applyVocalLocked (const std::string& projectId, const std::string& clipId, const std::string& sid, const std::string& tmpPath,
+                               AudioData&& audio, const vocal::Params& params);
+    void cleanStaleTempLocked();
 
     Engine& engine;
     mutable std::recursive_mutex mtx;
@@ -212,5 +231,6 @@ private:
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
     bool recordingCountIn = false; // la toma en curso empezó con cuenta previa
+    JobRunner jobs; // el último miembro: se destruye primero, así ningún trabajo sobrevive al resto de la sesión
 };
 } // namespace cs

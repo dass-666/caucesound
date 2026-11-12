@@ -114,9 +114,19 @@ std::string toJson (const ProjectModel& p, bool pretty)
                     { "solo", t.solo }, { "armed", t.armed }, { "color", t.color } };
         jt["clips"] = json::array();
         for (const auto& c : t.clips)
-            jt["clips"].push_back ({ { "id", c.id }, { "sourceId", c.sourceId }, { "name", c.name }, { "start", c.start },
-                                     { "sourceOffset", c.sourceOffset }, { "length", c.length }, { "fadeIn", c.fadeIn },
-                                     { "fadeOut", c.fadeOut }, { "gainDb", c.gainDb } });
+        {
+            json jc = { { "id", c.id }, { "sourceId", c.sourceId }, { "name", c.name }, { "start", c.start },
+                        { "sourceOffset", c.sourceOffset }, { "length", c.length }, { "fadeIn", c.fadeIn },
+                        { "fadeOut", c.fadeOut }, { "gainDb", c.gainDb } };
+            if (c.processed())
+            {
+                json pp = json::parse (c.procParams, nullptr, false);
+                jc["process"] = { { "plugin", c.procPlugin }, { "version", c.procVersion }, { "params", pp.is_discarded() ? json::object() : pp },
+                                  { "origSourceId", c.origSourceId }, { "origOffset", c.origOffset }, { "origLength", c.origLength },
+                                  { "procSourceId", c.procSourceId }, { "procLength", c.procLength } };
+            }
+            jt["clips"].push_back (jc);
+        }
         jt["inserts"] = json::array();
         for (const auto& i : t.inserts)
             jt["inserts"].push_back ({ { "id", i.id }, { "type", i.type }, { "state", i.state }, { "bypass", i.bypass } });
@@ -209,6 +219,18 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                 c.fadeIn = jc.value ("fadeIn", (Frame) 0);
                 c.fadeOut = jc.value ("fadeOut", (Frame) 0);
                 c.gainDb = jc.value ("gainDb", 0.0f);
+                if (jc.contains ("process") && jc["process"].is_object())
+                {
+                    const auto& jp = jc["process"];
+                    c.procPlugin = jp.value ("plugin", std::string());
+                    c.procVersion = jp.value ("version", std::string());
+                    c.procParams = jp.contains ("params") ? jp["params"].dump() : std::string ("{}");
+                    c.origSourceId = jp.value ("origSourceId", std::string());
+                    c.procSourceId = jp.value ("procSourceId", std::string());
+                    c.origOffset = jp.value ("origOffset", (Frame) 0);
+                    c.origLength = jp.value ("origLength", (Frame) 0);
+                    c.procLength = jp.value ("procLength", (Frame) 0);
+                }
                 t.clips.push_back (c);
             }
             if (jt.contains ("inserts"))
@@ -304,6 +326,15 @@ std::string validate (const ProjectModel& p)
             if (! s) return "clip que referencia una fuente inexistente";
             if (c.start < 0 || c.length <= 0 || c.sourceOffset < 0 || c.sourceOffset + c.length > s->frames) return "clip fuera de los límites de su audio";
             if (c.fadeIn < 0 || c.fadeOut < 0 || c.fadeIn + c.fadeOut > c.length) return "fundidos no válidos";
+            if (c.processed())
+            {
+                const SourceRef* o = p.findSource (c.origSourceId);
+                const SourceRef* b = p.findSource (c.procSourceId);
+                if (! o || ! b) return "clip procesado sin su audio original o procesado";
+                if (c.origOffset < 0 || c.origLength <= 0 || c.origOffset + c.origLength > o->frames) return "original del clip procesado fuera de límites";
+                if (c.procLength <= 0 || c.procLength > b->frames) return "versión procesada fuera de límites";
+                if (c.sourceId != c.origSourceId && c.sourceId != c.procSourceId) return "clip procesado incoherente";
+            }
             if (! std::isfinite (c.gainDb) || c.gainDb > 24) return "ganancia de clip no válida";
         }
         for (const auto& i : t.inserts)

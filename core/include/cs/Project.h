@@ -38,6 +38,18 @@ struct ClipModel
     Frame length = 0;
     Frame fadeIn = 0, fadeOut = 0;
     float gainDb = 0.0f;
+    // Procesado no destructivo por un plugin offline (VocalShift, misión 0.5). Si procPlugin no está vacío, el clip
+    // tiene dos versiones: A = original (origSourceId, origOffset, origLength) y B = procesada (procSourceId desde 0,
+    // procLength, que incluye la cola de reverb). sourceId/sourceOffset/length son siempre la versión que suena.
+    // El audio original nunca se modifica ni se borra. Recortar o dividir el clip «acepta» la versión que suena.
+    std::string procPlugin;   // "vocalshift"
+    std::string procVersion;  // versión del motor con la que se generó
+    std::string procParams;   // JSON de parámetros (para reproducir o seguir ajustando)
+    std::string origSourceId, procSourceId;
+    Frame origOffset = 0, origLength = 0, procLength = 0;
+    bool processed() const { return ! procPlugin.empty(); }
+    bool playingOriginal() const { return processed() && sourceId == origSourceId; }
+    void clearProcess() { procPlugin.clear(); procVersion.clear(); procParams.clear(); origSourceId.clear(); procSourceId.clear(); origOffset = origLength = procLength = 0; }
 };
 
 struct InstrumentModel
