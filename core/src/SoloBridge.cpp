@@ -104,6 +104,13 @@ MelodyResult generateMelody (const MelodyRequest& req)
             p = v.front();
             if (p.name.empty()) p.name = base + " · variación";
         }
+        if (req.endingSeed != 0)
+        {
+            const int bars = (int) req.chords.size();
+            const int from = std::max (0, bars - std::clamp (req.endingBars, 1, bars));
+            p.sequence = ::solo::MelodyExplorer::regenerateRegion (pr.ctx, p, from, bars - 1, req.endingSeed, {});
+            if (p.sequence.notes.empty()) { r.error = "Solo AI no pudo cambiar la frase final"; return r; }
+        }
         r = toResult (p, pr);
     }
     catch (const std::exception& e) { r.ok = false; r.error = std::string ("Solo AI: ") + e.what(); }

@@ -98,6 +98,10 @@ interface StudioActions {
     fun soloPick(index: Int) {}
     /** Variación relacionada de la alternativa elegida. */
     fun soloVary() {}
+    /** Cambia las notas de la melodía de Solo AI: simpler, intense, soft, octaveUp, octaveDown. Con deshacer. */
+    fun soloTransform(op: String) {}
+    /** Recompone solo la frase final (los dos últimos compases) y conserva el resto. */
+    fun soloNewEnding() {}
 
     // Instrumentos
     fun setParam(trackId: String, param: String, value: Float) {}

@@ -277,6 +277,8 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             req.proposal = (int) num ("proposal", 0);
             req.seed = (uint64_t) safeInt (q.value ("seed", json (1)));
             req.variation = (uint64_t) safeInt (q.value ("variation", json (0)));
+            req.endingSeed = (uint64_t) safeInt (q.value ("endingSeed", json (0)));
+            req.endingBars = std::clamp ((int) num ("endingBars", 2), 1, std::max (1, bars));
             auto describe = [] (const solo::MelodyResult& m)
             {
                 Tick end = 0;
@@ -300,13 +302,21 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             if (! mr.ok) return json { { "ok", false }, { "error", mr.error } }.dump();
             const auto bar = (Tick) kPpq * s.model().beatsPerBar;
             const std::string name = "Solo AI · " + mr.name;
-            auto r = s.addSoloTrack (projectId, (Tick) startBar * bar, name, mr.notes, q.value ("preset", std::string ("bright_lead")), str ("replaceTrackId"));
+            // Frase final nueva sobre una pista existente: se conserva lo anterior al corte (también lo editado a mano).
+            const Tick keepBefore = req.endingSeed != 0 && ! str ("replaceTrackId").empty() ? (Tick) (bars - req.endingBars) * bar : 0;
+            auto r = s.addSoloTrack (projectId, (Tick) startBar * bar, name, mr.notes, q.value ("preset", std::string ("bright_lead")), str ("replaceTrackId"), keepBefore);
             json j = result (r);
             j.update (describe (mr));
             j["name"] = name;
             j["millis"] = mr.millis;
             j["keyRoot"] = req.keyRoot;
             j["minor"] = req.minor;
+            return j.dump();
+        }
+        if (cmd == "soloTransform")
+        {
+            json j = result (s.soloTransform (str ("trackId"), str ("op")));
+            if (j.value ("ok", false)) { j["notes"] = std::atoi (j.value ("id", std::string ("0")).c_str()); j.erase ("id"); }
             return j.dump();
         }
         if (cmd == "soloAnalyze")

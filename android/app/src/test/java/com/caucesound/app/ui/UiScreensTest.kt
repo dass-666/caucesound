@@ -88,6 +88,8 @@ class UiScreensTest {
         override fun soloProposals(request: com.caucesound.app.data.SoloRequest) { calls += "proposals"; this.request = request }
         override fun soloPick(index: Int) { calls += "pick:$index" }
         override fun soloVary() { calls += "vary" }
+        override fun soloTransform(op: String) { calls += "transform:$op" }
+        override fun soloNewEnding() { calls += "ending" }
         override fun openPanel(panel: Panel) { calls += "panel:$panel" }
         override fun selectClip(id: String?) { calls += "selectClip:$id" }
         override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) { calls += "roll:$lane:$step:$roll" }
@@ -236,6 +238,11 @@ class UiScreensTest {
         compose.onNodeWithTag("solo_listen").performScrollTo().performClick()
         compose.onNodeWithTag("solo_open_piano").performScrollTo().performClick()
         assertEquals(listOf("pick:2", "vary", "play", "selectClip:${track.midiClips.first().id}", "panel:PIANO"), rec.calls)
+        // Controles creativos 0.6: cada botón envía su transformación real.
+        rec.calls.clear()
+        for (tag in listOf("solo_simpler", "solo_intense", "solo_soft", "solo_octave_up", "solo_octave_down", "solo_new_ending")) compose.onNodeWithTag(tag).performScrollTo().performClick()
+        assertEquals(listOf("transform:simpler", "transform:intense", "transform:soft", "transform:octaveUp", "transform:octaveDown", "ending"), rec.calls)
+        shot("29_solo_ai_adjust")
         compose.onNodeWithTag("solo_alt_0").performScrollTo()
         shot("24_solo_ai_alternatives")
     }

@@ -28,6 +28,10 @@ struct MelodyRequest
     double freedom = 35;             // 0..100
     int proposal = 0;                // 0 Sencilla, 1 Emotiva, 2 Rítmica, 3 Atrevida
     uint64_t seed = 1;
+    // Misión 0.6 («cambiar la frase final»): si endingSeed != 0, los últimos endingBars compases se vuelven a componer
+    // con esa semilla (MelodyExplorer::regenerateRegion) y el resto de la melodía se conserva tal cual.
+    uint64_t endingSeed = 0;
+    int endingBars = 2;
     uint64_t variation = 0;          // 0 = la propuesta tal cual; otro valor = variación relacionada (conserva el motivo
                                      // según 'freedom': 0-25 muy cerca, 26-50 misma identidad, 51-75 frases nuevas, 76+ libre)
 };

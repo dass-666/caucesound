@@ -461,6 +461,13 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             refresh()
         }
     }
+    private fun soloTrack(): String? = _plugins.value.family?.trackId?.takeIf { id -> _state.value?.tracks?.any { it.id == id } == true }
+    override fun soloTransform(op: String) { soloTrack()?.let { id -> edit(Cmd.soloTransform(id, op)) } }
+    override fun soloNewEnding() {
+        val fam = _plugins.value.family?.takeIf { it.selected >= 0 } ?: return
+        val id = soloTrack() ?: return
+        edit(Cmd.soloEnding(fam.request, fam.selected, fam.variation, id, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)))
+    }
     override fun soloPick(index: Int) = soloApply(index, 0)
     override fun soloVary() { _plugins.value.family?.takeIf { it.selected >= 0 }?.let { soloApply(it.selected, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)) } }
 

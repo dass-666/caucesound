@@ -47,6 +47,11 @@ object Cmd {
     fun soloProposals(r: SoloRequest) = solo("soloProposals", r)
     fun soloPick(r: SoloRequest, proposal: Int, variation: Long, replaceTrackId: String?) =
         solo("soloMelody", r, "proposal" to proposal, "variation" to variation, "replaceTrackId" to replaceTrackId)
+    /** Frase final nueva: recompone los últimos compases y conserva el resto de la pista (también lo editado a mano). */
+    fun soloEnding(r: SoloRequest, proposal: Int, variation: Long, trackId: String, endingSeed: Long) =
+        solo("soloMelody", r, "proposal" to proposal, "variation" to variation, "replaceTrackId" to trackId, "endingSeed" to endingSeed, "endingBars" to 2)
+    /** op: simpler, intense, soft, octaveUp, octaveDown. */
+    fun soloTransform(trackId: String, op: String) = c("soloTransform", "trackId" to trackId, "op" to op)
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =

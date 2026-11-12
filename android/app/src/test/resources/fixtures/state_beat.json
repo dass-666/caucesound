@@ -3,7 +3,7 @@
  "canUndo": true,
  "contentEnd": 2027478,
  "dirty": true,
- "folder": "/home/user/caucesound/build/../android/app/src/test/resources/fixtures/_proj05",
+ "folder": "/home/user/caucesound/android/app/src/test/resources/fixtures/_proj05",
  "listenMatchClip": "",
  "missingClips": [],
  "missingPlugins": [],
@@ -11,9 +11,9 @@
  "project": {
   "beatsPerBar": 4,
   "bpm": 120.0,
-  "createdAt": 1794510758266,
+  "createdAt": 1794516943815,
   "format": "caucesound-project",
-  "id": "prj_a91bc8889155",
+  "id": "prj_ad5e8052f056",
   "loop": {
    "enabled": false,
    "end": 15360,
@@ -21,7 +21,7 @@
   },
   "masterDb": 0.0,
   "metronome": false,
-  "modifiedAt": 1794510758741,
+  "modifiedAt": 1794516944255,
   "name": "Voz y beat",
   "ppq": 960,
   "recordLatencyOffset": 0,
@@ -29,16 +29,16 @@
   "sources": [
    {
     "channels": 1,
-    "file": "audio/src_03d1a38e3164.wav",
+    "file": "audio/src_9390f3ef919e.wav",
     "frames": 288000,
-    "id": "src_03d1a38e3164",
+    "id": "src_9390f3ef919e",
     "origin": "Toma de voz"
    },
    {
     "channels": 1,
-    "file": "audio/src_e2a77ba02359.wav",
+    "file": "audio/src_0db25522667f.wav",
     "frames": 2027478,
-    "id": "src_e2a77ba02359",
+    "id": "src_0db25522667f",
     "origin": "Beat importado"
    }
   ],
@@ -51,16 +51,16 @@
       "fadeIn": 0,
       "fadeOut": 0,
       "gainDb": 0.0,
-      "id": "clp_6dc6b4387022",
+      "id": "clp_a6bdd8b14251",
       "length": 288000,
       "name": "Toma de voz",
-      "sourceId": "src_03d1a38e3164",
+      "sourceId": "src_9390f3ef919e",
       "sourceOffset": 0,
       "start": 0
      }
     ],
     "color": 4287323382,
-    "id": "trk_bbd96fa7e435",
+    "id": "trk_4ba094701727",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],
@@ -78,16 +78,16 @@
       "fadeIn": 0,
       "fadeOut": 0,
       "gainDb": 0.0,
-      "id": "clp_687b1a9a4a66",
+      "id": "clp_a64fa21d92cf",
       "length": 2027478,
       "name": "Beat importado",
-      "sourceId": "src_e2a77ba02359",
+      "sourceId": "src_0db25522667f",
       "sourceOffset": 0,
       "start": 0
      }
     ],
     "color": 4282090230,
-    "id": "trk_9bc4d681ef80",
+    "id": "trk_6a4ca1f0bf88",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],

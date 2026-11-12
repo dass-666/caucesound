@@ -147,8 +147,13 @@ public:
     // Volumen inicial de una pista de Solo AI: el de la melodía de la canción si la hay (misma presencia en la
     // mezcla), o -3 dB. No toca la mezcla de las demás pistas.
     float soloVolumeDbLocked() const;
+    // Controles creativos sobre una melodía de Solo AI ya creada (misión 0.6). Transforman sus notas, que siguen siendo
+    // MIDI editable; un paso de deshacer. op: "simpler" (menos notas: quita las de adorno y deja las de apoyo),
+    // "intense" / "soft" (más o menos fuerza), "octaveUp" / "octaveDown" (registro). Nunca toca una pista que no sea
+    // de Solo AI ni una bloqueada. OpResult::id = número de notas que quedan.
+    OpResult soloTransform (const std::string& trackId, const std::string& op);
     OpResult addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset,
-                           const std::string& replaceTrackId = {});
+                           const std::string& replaceTrackId = {}, Tick keepBefore = 0);
     // Analiza un clip de audio (trabajo offline; r.id = id del trabajo). El resultado es una ESTIMACIÓN con confianza
     // que llega en jobStatus: no cambia el tempo ni nada del proyecto.
     OpResult soloAnalyze (const std::string& clipId);

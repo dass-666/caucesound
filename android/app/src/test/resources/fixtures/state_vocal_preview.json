@@ -3,15 +3,15 @@
  "canUndo": true,
  "contentEnd": 2027478,
  "dirty": true,
- "folder": "/home/user/caucesound/build/../android/app/src/test/resources/fixtures/_proj05",
- "listenMatchClip": "clp_6dc6b4387022",
+ "folder": "/home/user/caucesound/android/app/src/test/resources/fixtures/_proj05",
+ "listenMatchClip": "clp_a6bdd8b14251",
  "missingClips": [],
  "missingPlugins": [],
  "open": true,
  "project": {
   "beatsPerBar": 4,
   "bpm": 120.0,
-  "createdAt": 1794510758266,
+  "createdAt": 1794516943815,
   "format": "caucesound-project",
   "harmony": {
    "chords": [],
@@ -21,7 +21,7 @@
    "minor": true,
    "source": "analysis"
   },
-  "id": "prj_a91bc8889155",
+  "id": "prj_ad5e8052f056",
   "loop": {
    "enabled": false,
    "end": 15360,
@@ -29,7 +29,7 @@
   },
   "masterDb": 0.0,
   "metronome": false,
-  "modifiedAt": 1794510759312,
+  "modifiedAt": 1794516944836,
   "name": "Voz y beat",
   "ppq": 960,
   "recordLatencyOffset": 0,
@@ -37,23 +37,23 @@
   "sources": [
    {
     "channels": 1,
-    "file": "audio/src_03d1a38e3164.wav",
+    "file": "audio/src_9390f3ef919e.wav",
     "frames": 288000,
-    "id": "src_03d1a38e3164",
+    "id": "src_9390f3ef919e",
     "origin": "Toma de voz"
    },
    {
     "channels": 1,
-    "file": "audio/src_e2a77ba02359.wav",
+    "file": "audio/src_0db25522667f.wav",
     "frames": 2027478,
-    "id": "src_e2a77ba02359",
+    "id": "src_0db25522667f",
     "origin": "Beat importado"
    },
    {
     "channels": 2,
-    "file": "audio/src_02b39e96167b.wav",
+    "file": "audio/src_e3f3db3d35a1.wav",
     "frames": 324576,
-    "id": "src_02b39e96167b",
+    "id": "src_e3f3db3d35a1",
     "origin": "vocalshift"
    }
   ],
@@ -66,14 +66,14 @@
       "fadeIn": 0,
       "fadeOut": 0,
       "gainDb": 0.0,
-      "id": "clp_6dc6b4387022",
+      "id": "clp_a6bdd8b14251",
       "length": 324576,
       "name": "Toma de voz",
       "process": {
        "levelDb": 0.2561596632003784,
        "origLength": 288000,
        "origOffset": 0,
-       "origSourceId": "src_03d1a38e3164",
+       "origSourceId": "src_9390f3ef919e",
        "params": {
         "brightnessOffset": 0.0,
         "character": 65.0,
@@ -91,16 +91,16 @@
        },
        "plugin": "vocalshift",
        "procLength": 324576,
-       "procSourceId": "src_02b39e96167b",
+       "procSourceId": "src_e3f3db3d35a1",
        "version": "vocalshift-ai-studio@10e679c"
       },
-      "sourceId": "src_02b39e96167b",
+      "sourceId": "src_e3f3db3d35a1",
       "sourceOffset": 0,
       "start": 0
      }
     ],
     "color": 4287323382,
-    "id": "trk_bbd96fa7e435",
+    "id": "trk_4ba094701727",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],
@@ -118,16 +118,16 @@
       "fadeIn": 0,
       "fadeOut": 0,
       "gainDb": 0.0,
-      "id": "clp_687b1a9a4a66",
+      "id": "clp_a64fa21d92cf",
       "length": 2027478,
       "name": "Beat importado",
-      "sourceId": "src_e2a77ba02359",
+      "sourceId": "src_0db25522667f",
       "sourceOffset": 0,
       "start": 0
      }
     ],
     "color": 4282090230,
-    "id": "trk_9bc4d681ef80",
+    "id": "trk_6a4ca1f0bf88",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],
@@ -142,7 +142,7 @@
     "armed": false,
     "clips": [],
     "color": 4280472558,
-    "id": "trk_1e57e3ea8c07",
+    "id": "trk_da5a4ff320ef",
     "inserts": [],
     "instrument": {
      "preset": "bright_lead",
@@ -152,7 +152,7 @@
     "kind": "synth",
     "midiClips": [
      {
-      "id": "mcl_7f24bc95865d",
+      "id": "mcl_ef890151f515",
       "length": 30720,
       "name": "Solo AI · A · Sencilla y pegajosa",
       "notes": [
@@ -320,14 +320,14 @@
     "pan": 0.0,
     "patterns": [],
     "solo": false,
-    "volumeDb": -10.0
+    "volumeDb": -3.0
    }
   ],
   "version": 2
  },
  "recording": false,
  "vocalPreview": {
-  "clipId": "clp_6dc6b4387022",
+  "clipId": "clp_a6bdd8b14251",
   "from": 48000,
   "length": 96000,
   "listening": true,
@@ -346,6 +346,6 @@
    "semitones": 7.0,
    "spatial": true
   },
-  "seconds": 0.212534561
+  "seconds": 0.220933413
  }
 }

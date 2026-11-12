@@ -295,3 +295,111 @@ TEST (solo_ai_four_alternatives_are_distinct_reproducible_and_replace_only_their
     CHECK (emo.at ("proposals") != fam.at ("proposals"));
 }
 #endif
+
+// --- Misión 0.6: controles creativos de Solo AI 2.1 ----------------------------------------------------------------
+namespace
+{
+std::string soloTrackId (const ProjectModel& m)
+{
+    for (const auto& t : m.tracks) if (t.name.rfind ("Solo AI", 0) == 0) return t.id;
+    return {};
+}
+} // namespace
+
+TEST (solo_ai_transforms_are_real_edits_with_undo_and_refuse_other_tracks)
+{
+    Fx f ("solo_tf");
+    CHECK (f.session.createProject (f.dir + "/p", "x", 48000, "reggaeton").ok);
+    CHECK (f.cmd ({ { "cmd", "soloMelody" }, { "startBar", 2 }, { "bars", 8 }, { "seed", 42 }, { "proposal", 3 } }).value ("ok", false));
+    const std::string id = soloTrackId (f.session.model());
+    const std::vector<MidiNote> orig = soloNotes (f.session.model());
+    CHECK (! id.empty() && orig.size() > 8);
+
+    // Más sencilla: menos notas, todas las que quedan estaban (mismo sitio y altura), sin solapes, misma primera y última.
+    const json s = f.cmd ({ { "cmd", "soloTransform" }, { "trackId", id }, { "op", "simpler" } });
+    CHECK_MSG (s.value ("ok", false), s.dump());
+    const std::vector<MidiNote> simple = soloNotes (f.session.model());
+    MEASURE ("más sencilla: %zu -> %zu notas", orig.size(), simple.size());
+    CHECK (simple.size() < orig.size() && simple.size() >= orig.size() / 2 && (int) simple.size() == s.value ("notes", 0));
+    for (const auto& n : simple)
+    {
+        bool found = false;
+        for (const auto& o : orig) found = found || (o.start == n.start && o.key == n.key);
+        CHECK (found);
+    }
+    for (size_t i = 0; i + 1 < simple.size(); ++i) CHECK (simple[i].start + simple[i].length <= simple[i + 1].start);
+    CHECK (simple.front().start == orig.front().start && simple.back().start == orig.back().start);
+    CHECK (f.session.undo().ok);
+    CHECK (soloNotes (f.session.model()).size() == orig.size());
+
+    // Más intensa / más suave: cambia la fuerza, no las notas.
+    auto meanVel = [] (const std::vector<MidiNote>& v) { double a = 0; for (const auto& n : v) a += n.velocity; return a / v.size(); };
+    CHECK (f.cmd ({ { "cmd", "soloTransform" }, { "trackId", id }, { "op", "intense" } }).value ("ok", false));
+    const auto loud = soloNotes (f.session.model());
+    CHECK (loud.size() == orig.size() && meanVel (loud) > meanVel (orig) + 3);
+    CHECK (f.cmd ({ { "cmd", "soloTransform" }, { "trackId", id }, { "op", "soft" } }).value ("ok", false));
+    CHECK (meanVel (soloNotes (f.session.model())) < meanVel (loud) - 3);
+    MEASURE ("fuerza media: %.1f original, %.1f más intensa, %.1f tras suavizar", meanVel (orig), meanVel (loud), meanVel (soloNotes (f.session.model())));
+
+    // Registro: una octava arriba cambia todas las alturas 12 semitonos (sigue en la tonalidad).
+    const auto before = soloNotes (f.session.model());
+    CHECK (f.cmd ({ { "cmd", "soloTransform" }, { "trackId", id }, { "op", "octaveDown" } }).value ("ok", false));
+    const auto down = soloNotes (f.session.model());
+    for (size_t i = 0; i < before.size(); ++i) CHECK (down[i].key == before[i].key - 12 && down[i].start == before[i].start);
+    // Límite de registro: no deja la melodía fuera de un rango útil y lo dice.
+    json r;
+    for (int i = 0; i < 6; ++i) { r = f.cmd ({ { "cmd", "soloTransform" }, { "trackId", id }, { "op", "octaveDown" } }); if (! r.value ("ok", true)) break; }
+    CHECK (! r.value ("ok", true) && ! r.value ("error", std::string()).empty());
+
+    // No toca pistas que no son de Solo AI, ni acepta operaciones desconocidas.
+    const std::string other = f.session.model().tracks.at (1).id;
+    const std::string fpBefore = toJson (f.session.model());
+    CHECK (! f.cmd ({ { "cmd", "soloTransform" }, { "trackId", other }, { "op", "simpler" } }).value ("ok", true));
+    CHECK (! f.cmd ({ { "cmd", "soloTransform" }, { "trackId", id }, { "op", "magia" } }).value ("ok", true));
+    CHECK (! f.cmd ({ { "cmd", "soloTransform" }, { "trackId", "nope" }, { "op", "simpler" } }).value ("ok", true));
+    CHECK (toJson (f.session.model()) == fpBefore);
+}
+
+TEST (solo_ai_new_ending_keeps_everything_before_it_including_manual_edits)
+{
+    Fx f ("solo_end");
+    CHECK (f.session.createProject (f.dir + "/p", "x", 48000, "trap").ok);
+    const json base = { { "cmd", "soloMelody" }, { "startBar", 2 }, { "bars", 8 }, { "seed", 42 }, { "proposal", 1 } };
+    CHECK (f.cmd (base).value ("ok", false));
+    const std::string id = soloTrackId (f.session.model());
+    std::vector<MidiNote> edited = soloNotes (f.session.model());
+    const Tick bar = 4 * kPpq, cut = 6 * bar;
+    // Edición a mano en el primer compás (como en el piano roll).
+    edited.front().key += 2; edited.front().velocity = 77;
+    ProjectModel m0 = f.session.model();
+    const std::string clipId = m0.findTrack (id)->midiClips.front().id;
+    CHECK (f.session.setClipNotes (clipId, edited).ok);
+    edited = soloNotes (f.session.model());
+
+    json q = base;
+    q["endingSeed"] = 99; q["replaceTrackId"] = id;
+    const json r = f.cmd (q);
+    CHECK_MSG (r.value ("ok", false), r.dump());
+    const std::vector<MidiNote> out = soloNotes (f.session.model());
+    std::vector<MidiNote> headA, headB, tailA, tailB;
+    for (const auto& n : edited) (n.start < cut ? headA : tailA).push_back (n);
+    for (const auto& n : out) (n.start < cut ? headB : tailB).push_back (n);
+    CHECK (headA.size() == headB.size());
+    bool sameHead = headA.size() == headB.size();
+    for (size_t i = 0; sameHead && i < headA.size(); ++i)
+        sameHead = headA[i].start == headB[i].start && headA[i].key == headB[i].key && headA[i].velocity == headB[i].velocity;
+    CHECK_MSG (sameHead, "cambió algo antes de la frase final");
+    bool tailDiffers = tailA.size() != tailB.size();
+    for (size_t i = 0; ! tailDiffers && i < tailA.size(); ++i) tailDiffers = tailA[i].start != tailB[i].start || tailA[i].key != tailB[i].key;
+    MEASURE ("frase final nueva: %zu notas conservadas, final %zu -> %zu notas, distinto: %s", headB.size(), tailA.size(), tailB.size(), tailDiffers ? "sí" : "no");
+    CHECK (tailDiffers && ! tailB.empty());
+    for (const auto& n : out) CHECK (n.start + n.length <= 8 * bar && n.length > 0);
+    // Misma semilla = mismo final (reproducible). Un deshacer vuelve a la versión editada.
+    CHECK (f.session.undo().ok);
+    const auto back = soloNotes (f.session.model());
+    CHECK (back.size() == edited.size() && back.front().key == edited.front().key);
+    CHECK (f.cmd (q).value ("ok", false));
+    const auto again = soloNotes (f.session.model());
+    CHECK (again.size() == out.size());
+    for (size_t i = 0; i < std::min (again.size(), out.size()); ++i) CHECK (again[i].key == out[i].key && again[i].start == out[i].start);
+}

@@ -237,6 +237,7 @@ private fun ConfidenceChip(v: Double) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Alternatives(state: ProjectState, fam: SoloFamily, actions: StudioActions) {
     val track = state.tracks.firstOrNull { it.id == fam.trackId }
@@ -271,6 +272,17 @@ private fun Alternatives(state: ProjectState, fam: SoloFamily, actions: StudioAc
                 actions.seek(state.ticksToFrames(fam.request.startBar.toLong() * PPQ * state.beatsPerBar)); actions.play()
             }, Modifier.weight(1f).testTag("solo_listen"), icon = Icons.Default.PlayArrow, enabled = track != null)
             CauceButton(tr("Variación", "Variation"), actions::soloVary, Modifier.weight(1f).testTag("solo_vary"), icon = Icons.Default.Shuffle, enabled = track != null && fam.selected >= 0)
+        }
+        // Controles creativos (0.6): cada uno cambia de verdad las notas de la pista y se puede deshacer.
+        Text(tr("Ajustar esta melodía", "Adjust this melody"), color = Palette.TextDim, fontSize = 12.sp)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val ok = track != null && !state.recording
+            CauceButton(tr("Menos notas", "Fewer notes"), { actions.soloTransform("simpler") }, Modifier.testTag("solo_simpler"), enabled = ok, height = 44.dp)
+            CauceButton(tr("Más intensa", "More intense"), { actions.soloTransform("intense") }, Modifier.testTag("solo_intense"), enabled = ok, height = 44.dp)
+            CauceButton(tr("Más suave", "Softer"), { actions.soloTransform("soft") }, Modifier.testTag("solo_soft"), enabled = ok, height = 44.dp)
+            CauceButton(tr("Octava arriba", "Octave up"), { actions.soloTransform("octaveUp") }, Modifier.testTag("solo_octave_up"), enabled = ok, height = 44.dp)
+            CauceButton(tr("Octava abajo", "Octave down"), { actions.soloTransform("octaveDown") }, Modifier.testTag("solo_octave_down"), enabled = ok, height = 44.dp)
+            CauceButton(tr("Cambiar el final", "New ending"), actions::soloNewEnding, Modifier.testTag("solo_new_ending"), enabled = ok && fam.selected >= 0, height = 44.dp)
         }
         CauceButton(tr("Abrir en el Piano roll", "Open in Piano roll"), { track?.let { t -> actions.selectTrack(t.id); t.midiClips.firstOrNull()?.let { actions.selectClip(it.id) }; actions.openPanel(Panel.PIANO) } },
             Modifier.fillMaxWidth().testTag("solo_open_piano"), kind = ButtonKind.Primary, icon = Icons.Default.Piano, enabled = track != null)

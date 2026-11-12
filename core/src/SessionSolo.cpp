@@ -93,7 +93,7 @@ float Session::soloVolumeDbLocked() const
 }
 
 OpResult Session::addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset,
-                                const std::string& replaceTrackId)
+                                const std::string& replaceTrackId, Tick keepBefore)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open || proj.id != projectId) return OpResult::fail ("el proyecto cambió mientras se generaba la melodía");
@@ -119,7 +119,18 @@ OpResult Session::addSoloTrack (const std::string& projectId, Tick start, const 
         c.name = name;
         c.start = start;
         c.length = std::max (bar, (end + bar - 1) / bar * bar);
-        c.notes = notes;
+        if (keepBefore > 0)
+        {
+            // «Cambiar la frase final»: se conservan las notas actuales de la pista (incluidas las ediciones a mano)
+            // hasta keepBefore y solo entra lo nuevo a partir de ahí.
+            std::vector<MidiNote> merged;
+            for (MidiNote n : c.notes)
+                if (n.start < keepBefore) { n.length = std::min (n.length, keepBefore - n.start); merged.push_back (n); }
+            for (const MidiNote& n : notes) if (n.start >= keepBefore) merged.push_back (n);
+            sortNotes (merged);
+            c.notes = merged;
+        }
+        else c.notes = notes;
         t->name = name;
         if (t->instrument.preset != preset)
         {
@@ -151,6 +162,81 @@ OpResult Session::addSoloTrack (const std::string& projectId, Tick start, const 
     t->volumeDb = soloVolumeDbLocked();
     if (auto inst = instrumentFor (*t)) inst->loadState (state);
     finishEditLocked();
+    return r;
+}
+
+OpResult Session::soloTransform (const std::string& trackId, const std::string& op)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    const TrackModel* t0 = proj.findTrack (trackId);
+    if (! t0) return OpResult::fail ("la pista de Solo AI ya no existe");
+    if (t0->kind != "synth" || t0->name.rfind ("Solo AI", 0) != 0 || t0->midiClips.size() != 1)
+        return OpResult::fail ("esa pista no es una melodía de Solo AI");
+    MusicPlan plan;
+    if (! proj.music.empty() && MusicPlan::fromJson (proj.music, plan) && std::find (plan.locked.begin(), plan.locked.end(), trackId) != plan.locked.end())
+        return OpResult::fail ("la pista está bloqueada: desbloquéala para cambiar su melodía");
+    std::vector<MidiNote> notes = t0->midiClips.front().notes;
+    if (notes.empty()) return OpResult::fail ("la melodía no tiene notas");
+    sortNotes (notes);
+    const Tick beat = kPpq, eighth = kPpq / 2;
+
+    if (op == "simpler")
+    {
+        // Quita notas de adorno: las que no caen en un tiempo (negra) y son cortas. Primero las de semicorchea, luego
+        // las de corchea, hasta quitar alrededor de un tercio. Nunca la primera ni la última. La nota anterior se
+        // alarga hasta donde empezaba la que se quita, para no dejar un hueco.
+        if (notes.size() <= 4) return OpResult::fail ("la melodía ya es muy sencilla");
+        const size_t target = std::max<size_t> (1, notes.size() / 3);
+        std::vector<bool> drop (notes.size(), false);
+        size_t dropped = 0;
+        for (int pass = 0; pass < 3 && dropped < target; ++pass)
+            for (size_t i = 1; i + 1 < notes.size() && dropped < target; ++i)
+            {
+                if (drop[i] || drop[i - 1]) continue; // no dos seguidas: se conserva el dibujo
+                const MidiNote& n = notes[i];
+                const bool onBeat = n.start % beat == 0, onEighth = n.start % eighth == 0;
+                const bool candidate = pass == 0 ? (! onEighth) : pass == 1 ? (! onBeat && n.length <= eighth) : (! onBeat);
+                if (candidate) { drop[i] = true; ++dropped; }
+            }
+        if (dropped == 0) return OpResult::fail ("no quedan notas de adorno que quitar");
+        std::vector<MidiNote> out;
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            if (! drop[i]) { out.push_back (notes[i]); continue; }
+            if (! out.empty()) out.back().length = std::max (out.back().length, std::min (notes[i].start + notes[i].length, notes[i].start + eighth) - out.back().start);
+        }
+        // sin solapes con la siguiente nota
+        for (size_t i = 0; i + 1 < out.size(); ++i) out[i].length = std::max<Tick> (1, std::min (out[i].length, out[i + 1].start - out[i].start));
+        notes = out;
+    }
+    else if (op == "intense" || op == "soft")
+    {
+        bool changed = false;
+        for (auto& n : notes)
+        {
+            const bool strong = n.start % beat == 0;
+            const int v = op == "intense" ? (int) std::lround (n.velocity * 1.10 + (strong ? 8 : 4)) : (int) std::lround (n.velocity * 0.90 - (strong ? 2 : 5));
+            const int nv = std::clamp (v, 20, 127);
+            changed = changed || nv != n.velocity;
+            n.velocity = nv;
+        }
+        if (! changed) return OpResult::fail (op == "intense" ? "la melodía ya está al máximo de fuerza" : "la melodía ya está al mínimo de fuerza");
+    }
+    else if (op == "octaveUp" || op == "octaveDown")
+    {
+        const int d = op == "octaveUp" ? 12 : -12;
+        for (const auto& n : notes)
+            if (n.key + d < 36 || n.key + d > 96) return OpResult::fail (d > 0 ? "no se puede subir más: quedaría demasiado aguda" : "no se puede bajar más: quedaría demasiado grave");
+        for (auto& n : notes) n.key += d;
+    }
+    else return OpResult::fail ("transformación desconocida: " + op);
+
+    pushUndo();
+    proj.findTrack (trackId)->midiClips.front().notes = notes;
+    finishEditLocked();
+    OpResult r;
+    r.id = std::to_string (notes.size());
     return r;
 }
 
