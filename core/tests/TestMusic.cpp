@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <cstdlib>
 #include <random>
 #include <thread>
 
@@ -539,7 +541,14 @@ TEST (templates_create_real_playable_content)
         for (const auto& t : m.tracks)
         {
             drums += t.kind == "drums"; synths += t.kind == "synth"; audio += t.kind == "audio";
-            if (t.kind == "synth") CHECK (! t.instrument.preset.empty() && ! synthPresetState (t.instrument.preset).empty());
+            if (t.kind == "synth")
+            {
+                CHECK (! t.instrument.preset.empty() && ! synthPresetState (t.instrument.preset).empty());
+                // Material musical propio en los 8 compases, notas válidas y dentro del clip.
+                CHECK (t.midiClips.size() == 1 && t.midiClips[0].notes.size() >= 8);
+                for (const auto& n : t.midiClips[0].notes)
+                    CHECK (validateNote (n).empty() && n.start >= 0 && n.start + n.length <= t.midiClips[0].length);
+            }
             if (t.kind == "drums")
             {
                 int hits = 0;
@@ -551,7 +560,8 @@ TEST (templates_create_real_playable_content)
         if (std::string (tpl) == "trap") CHECK (m.bpm == 140);
         if (std::string (tpl) == "reggaeton") CHECK (m.bpm == 95);
         // Suena: el beat de partida produce audio desde el primer compás.
-        auto out = playFrom (f.engine, 0, kSr * 2, 512);
+        auto out = playFrom (f.engine, 0, kSr * 8, 512);
+        std::printf ("    measure: plantilla %s, pico del máster en 8 s = %.3f\n", tpl, peakOf (out));
         CHECK (peakOf (out) > 0.05f && peakOf (out) < 1.0f && allFinite (out));
         CHECK (f.session.save().ok);
     }
@@ -729,4 +739,33 @@ TEST (api_music_commands_end_to_end)
     CHECK (cmd ({ { "cmd", "openProject" }, { "folder", f.dir + "/p2" } })["ok"] == true);
     CHECK (f.session.model().name == "Copia");
     CHECK (f.session.model().findMidiClip (clipId) != nullptr);
+}
+
+// Genera los datos de prueba de la interfaz Android (JSON real del motor, no escrito a mano).
+// CS_FIXTURE_DIR=android/app/src/test/resources/fixtures ./build/cs_core_tests ui_fixtures
+TEST (ui_fixtures_from_engine)
+{
+    Fx f ("ui_fixtures", 1024);
+    auto cmd = [&] (const json& j) { return handleCommand (f.session, f.engine, j.dump()); };
+    CHECK (json::parse (cmd ({ { "cmd", "createProject" }, { "folder", f.dir + "/beat" }, { "name", "Beat trap 140" }, { "template", "trap" } }))["ok"] == true);
+    const auto st = json::parse (f.session.stateJson());
+    std::string synthClip;
+    for (const auto& t : st["project"]["tracks"])
+        if (t["kind"] == "synth" && ! t["midiClips"].empty() && synthClip.empty()) synthClip = t["midiClips"][0]["id"];
+    CHECK (! synthClip.empty());
+    CHECK (json::parse (cmd ({ { "cmd", "save" } }))["ok"] == true);
+    const std::string state = f.session.stateJson();
+    const std::string catalog = cmd ({ { "cmd", "catalog" } });
+    CHECK (json::parse (cmd ({ { "cmd", "createProject" }, { "folder", f.dir + "/vacio" }, { "name", "Idea vacía" }, { "template", "empty" } }))["ok"] == true);
+    CHECK (json::parse (cmd ({ { "cmd", "save" } }))["ok"] == true);
+    const std::string projects = cmd ({ { "cmd", "listProjects" }, { "root", f.dir } });
+    CHECK (json::parse (projects)["projects"].size() == 2);
+    if (const char* out = std::getenv ("CS_FIXTURE_DIR"))
+    {
+        std::filesystem::create_directories (out);
+        auto write = [&] (const char* name, const std::string& s) { std::ofstream (std::filesystem::path (out) / name) << json::parse (s).dump (1) << "\n"; };
+        write ("state_trap.json", state);
+        write ("catalog.json", catalog);
+        write ("projects.json", projects);
+    }
 }

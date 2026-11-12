@@ -47,6 +47,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -108,8 +109,9 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
     val rowH = with(density) { 26.dp.toPx() }
     var offX by remember { mutableFloatStateOf(0f) }
     var offY by remember(clip.id) {
-        val center = if (clip.notes.isNotEmpty()) clip.notes.map { it.key }.sorted()[clip.notes.size / 2] else 60
-        mutableFloatStateOf(((127 - center) * rowH - with(density) { 160.dp.toPx() }).coerceAtLeast(0f))
+        // La nota más aguda queda dos filas bajo el borde superior (sin notas: C5 arriba, C4 visible).
+        val top = clip.notes.maxOfOrNull { it.key }?.let { it + 2 } ?: 74
+        mutableFloatStateOf(((127 - top) * rowH).coerceAtLeast(0f))
     }
     var rect by remember { mutableStateOf<Rect?>(null) }
     val text = rememberTextMeasurer()
@@ -182,9 +184,9 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
             }
         }
 
-        Row(Modifier.fillMaxWidth().weight(1f)) {
+        Row(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
             // --- Teclado: toca para oír, arrastra para desplazarte entre octavas ---
-            Canvas(Modifier.width(KEYS_W).fillMaxSize().pointerInput(clip.id) {
+            Canvas(Modifier.width(KEYS_W).fillMaxSize().clipToBounds().pointerInput(clip.id) {
                 awaitEachGesture {
                     val d = awaitFirstDown()
                     val key = 127 - ((d.position.y + offY) / rowH).toInt()

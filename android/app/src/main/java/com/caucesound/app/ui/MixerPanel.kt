@@ -80,7 +80,7 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, actions:
         if (t.isAudio) {
             Spacer(Modifier.height(4.dp))
             PillToggle("REC", t.armed, { actions.setArmed(t.id, !t.armed) }, color = Palette.Record, height = 32.dp, minWidth = 76.dp)
-        }
+        } else Spacer(Modifier.height(36.dp)) // misma altura de fader en todas las tiras
     }
 }
 

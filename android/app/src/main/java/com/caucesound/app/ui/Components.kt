@@ -139,7 +139,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
 /** Tarjeta de sección con título discreto. */
 @Composable
 fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.clip(RoundedCornerShape(Dims.Radius)).background(Palette.Surface).border(1.dp, Palette.Grid, RoundedCornerShape(Dims.Radius)).padding(12.dp)) {
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(Dims.Radius)).background(Palette.Surface).border(1.dp, Palette.Grid, RoundedCornerShape(Dims.Radius)).padding(12.dp)) {
         Text(title.uppercase(), style = MaterialTheme.typography.labelSmall, color = Palette.TextFaint)
         Spacer(Modifier.height(8.dp))
         content()

@@ -337,26 +337,66 @@ struct TemplateDef
     float swing;
     const char* lanes[kDrumLanes];
     std::vector<std::pair<const char*, const char*>> synths; // nombre, preset
+    int prog[4][2];                                          // acordes por compás: {raíz MIDI, 1 = menor}
 };
+
+// Rellena un clip de 8 compases con material básico propio (progresión de 4 acordes repetida), según el papel
+// del preset: bajos = raíz; pad/keys = acordes; pluck/lead = arpegio. Son patrones genéricos, no citas de obras.
+void fillTemplateClip (MidiClipModel& c, const std::string& preset, const int (&prog)[4][2], int beatsPerBar)
+{
+    const Tick beat = kPpq, bar = beat * beatsPerBar;
+    c.notes.clear();
+    auto norm = [] (int k, int lo) { k %= 12; while (k < lo) k += 12; return k; };
+    for (int b = 0; b < 8; ++b)
+    {
+        const int root = prog[b % 4][0];
+        const bool minor = prog[b % 4][1] != 0;
+        const Tick t0 = b * bar;
+        const int bass = norm (root, 36);
+        const int r4 = norm (root, 60);
+        const int chord[3] = { r4, r4 + (minor ? 3 : 4), r4 + 7 };
+        if (preset == "bass_808")
+            c.notes.push_back ({ bass, 110, 0, t0, bar - beat / 2 });
+        else if (preset == "sub_bass")
+        {
+            c.notes.push_back ({ bass, 105, 0, t0, beat * 2 - kStepTicks });
+            c.notes.push_back ({ bass, 95, 0, t0 + beat * 2 + beat / 2, beat - kStepTicks });
+        }
+        else if (preset == "synth_bass")
+            for (int i = 0; i < beatsPerBar * 2; ++i) c.notes.push_back ({ bass, i % 2 == 0 ? 108 : 84, 0, t0 + i * beat / 2, beat / 2 - kStepTicks / 2 });
+        else if (preset == "pad")
+            for (int k : chord) c.notes.push_back ({ k, 80, 0, t0, bar - kStepTicks });
+        else if (preset == "soft_keys")
+            for (int h = 0; h < 2; ++h)
+                for (int k : chord) c.notes.push_back ({ k, h == 0 ? 92 : 76, 0, t0 + h * bar / 2 + (h ? beat / 2 : 0), bar / 2 - beat / 2 - kStepTicks });
+        else // pluck, lead: arpegio en corcheas, una octava arriba en la segunda mitad del compás
+            for (int i = 0; i < beatsPerBar * 2; ++i)
+            {
+                const int k = chord[(size_t) (i % 3)] + (i >= beatsPerBar ? 12 : 0);
+                c.notes.push_back ({ k, 96 - (i % 2) * 14, 0, t0 + i * beat / 2, beat / 2 - kStepTicks / 4 });
+            }
+    }
+    sortNotes (c.notes);
+}
 
 const std::vector<TemplateDef>& templates()
 {
     static const std::vector<TemplateDef> t = {
         { "trap", 140, 0, 0.0f,
           { "X......x..x.....", "........X.......", "........x.......", "x.x.x.x.x.xxx.x.", "................", "...............o", "................", "................" },
-          { { "808", "bass_808" }, { "Melodía", "pluck" } } },
+          { { "808", "bass_808" }, { "Melodía", "pluck" } }, { { 57, 1 }, { 53, 0 }, { 48, 0 }, { 55, 0 } } },
         { "reggaeton", 95, 1, 0.0f,
           { "X...x...X...x...", "...x..x....x..x.", "................", "x.x.x.x.x.x.x.x.", "................", "......o.......o.", "..o.......o.....", "o.o.o.o.o.o.o.o." },
-          { { "Bajo", "synth_bass" }, { "Keys", "soft_keys" } } },
+          { { "Bajo", "synth_bass" }, { "Keys", "soft_keys" } }, { { 50, 1 }, { 46, 0 }, { 53, 0 }, { 48, 0 } } },
         { "hiphop", 90, 2, 0.3f,
           { "X......x.xX.....", "....X.......X...", "................", "x.x.x.x.x.x.x.x.", "................", "..............o.", "................", "................" },
-          { { "Bajo", "sub_bass" }, { "Keys", "soft_keys" } } },
+          { { "Bajo", "sub_bass" }, { "Keys", "soft_keys" } }, { { 50, 1 }, { 57, 1 }, { 46, 0 }, { 45, 0 } } },
         { "pop", 105, 3, 0.0f,
           { "X.......X.x.....", "....X.......X...", "....x.......x...", "x.x.x.x.x.x.x.x.", "................", "................", "................", "................" },
-          { { "Bajo", "synth_bass" }, { "Pad", "pad" }, { "Keys", "soft_keys" } } },
+          { { "Bajo", "synth_bass" }, { "Pad", "pad" }, { "Keys", "soft_keys" } }, { { 48, 0 }, { 55, 0 }, { 57, 1 }, { 53, 0 } } },
         { "electronic", 124, 3, 0.0f,
           { "X...X...X...X...", "................", "....x.......x...", "oooooooooooooooo", "..x...x...x...x.", "................", "................", "................" },
-          { { "Bajo", "synth_bass" }, { "Lead", "lead" }, { "Pad", "pad" } } },
+          { { "Bajo", "synth_bass" }, { "Lead", "lead" }, { "Pad", "pad" } }, { { 53, 1 }, { 49, 0 }, { 56, 0 }, { 51, 0 } } },
     };
     return t;
 }
@@ -402,6 +442,7 @@ void Session::applyTemplateLocked (const std::string& templateId)
     for (int l = 0; l < kDrumLanes; ++l) p.lanes[(size_t) l] = steps (def->lanes[l]);
     p.swing = def->swing;
     d.midiClips.front().length = 8 * bar;
+    d.volumeDb = -4.0f;
     for (const auto& [name, preset] : def->synths)
     {
         addTrack (name, "synth");
@@ -409,6 +450,8 @@ void Session::applyTemplateLocked (const std::string& templateId)
         s.instrument.state = synthPresetState (preset);
         s.instrument.preset = preset;
         s.midiClips.front().length = 8 * bar;
+        fillTemplateClip (s.midiClips.front(), preset, def->prog, proj.beatsPerBar);
+        s.volumeDb = -9.0f; // margen: batería + 2-3 synths a 0 dB saturaban el máster (detectado por la prueba de plantillas)
     }
     addTrack ("Voz", "audio");
     proj.tracks.back().armed = true;

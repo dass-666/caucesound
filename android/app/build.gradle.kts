@@ -47,7 +47,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    testOptions { unitTests.isReturnDefaultValues = true }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true // Robolectric: pruebas de interfaz Compose en la JVM
+        unitTests.all { t ->
+            // Capturas de pantalla reales (renderizadas por Robolectric en modo nativo de gráficos) solo si se piden:
+            //   ./gradlew testDebugUnitTest -Pscreenshots   → app/build/outputs/roborazzi/*.png
+            if (project.hasProperty("screenshots")) t.systemProperty("roborazzi.test.record", "true")
+            // Espejo opcional para descargar android-all en entornos sin acceso a Maven Central.
+            System.getenv("ROBOLECTRIC_REPO_URL")?.let { t.systemProperty("robolectric.dependency.repo.url", it) }
+            t.maxHeapSize = "2g"
+        }
+    }
 }
 
 dependencies {
@@ -62,4 +73,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.70.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.70.0")
+    testImplementation(platform("androidx.compose:compose-bom:2025.12.01"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
