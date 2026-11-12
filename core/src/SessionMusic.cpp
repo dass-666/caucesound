@@ -458,7 +458,7 @@ OpResult Session::setLoop (bool on, Tick start, Tick end)
 }
 
 // --- Plantillas (misión 0.4: «Cauce Signature Sound») -----------------------------------------------------------
-// Cada plantilla es un arreglo de 16 compases (Intro, A, B, Break, Final) creado por el compositor local
+// Cada plantilla es un arreglo de 17 compases (Intro, A, B, Break, Final y un compás de Cierre) creado por el compositor local
 // (Composer.cpp) con un plan guardado en el proyecto, así que cada parte se puede regenerar después con otra
 // semilla o energía (varyPart). Los proyectos creados con plantillas anteriores no cambian.
 namespace
@@ -479,27 +479,31 @@ struct GenreDef
 const std::vector<GenreDef>& genreDefs()
 {
     static const std::vector<GenreDef> d = {
-        { "trap", 140, 5, -3.0f, 0.06f,
-          { { "808", "cauce_808", "bass", -5.0f, 0.0f, 0.0f }, { "Melodía", "dark_bell", "melody", -10.0f, 0.12f, 0.32f }, { "Pad", "air_pad", "pad", -15.0f, 0.0f, 0.35f } },
-          0.78f, 0.45f, { 0, 0, 0.05f, 0.22f, 0.28f, -0.3f, 0.3f, -0.12f }, { 0, -1, -2, -4, -6, -6, -5, -8 } },
-        { "reggaeton", 95, 4, -3.0f, 0.07f,
-          { { "Bajo", "dembow_bass", "bass", -5.0f, 0.0f, 0.0f }, { "Keys", "urban_pluck", "chords", -12.0f, -0.18f, 0.22f },
-            { "Melodía", "dark_bell", "melody", -11.0f, 0.15f, 0.3f }, { "Pad", "air_pad", "pad", -17.0f, 0.0f, 0.3f } },
-          0.62f, 0.5f, { 0, 0, 0.05f, 0.2f, 0.25f, -0.35f, 0.32f, 0.4f }, { 0, -1, -3, -5, -7, -4, -4, -9 } },
-        { "hiphop", 88, 6, -3.0f, 0.08f,
-          // Bajo 2 dB por debajo de los otros géneros y charles más presentes: el primer render salía con un 95 % de la
-          // energía bajo 250 Hz y casi nada por encima de 8 kHz (sonido apagado).
-          { { "Bajo", "cauce_sub", "bass", -7.5f, 0.0f, 0.0f }, { "Keys", "warm_keys", "chords", -8.0f, -0.12f, 0.25f },
-            { "Melodía", "urban_pluck", "melody", -11.0f, 0.2f, 0.3f } },
-          0.55f, 0.6f, { 0, 0, -0.1f, 0.18f, 0.22f, -0.25f, 0.35f, -0.15f }, { 0, -1, -4, -1, -4, -5, -6, -9 } },
-        { "pop", 108, 7, -3.0f, 0.06f,
-          { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Keys", "bright_pluck", "chords", -12.0f, -0.2f, 0.25f },
-            { "Melodía", "bright_lead", "melody", -12.0f, 0.15f, 0.25f }, { "Pad", "air_pad", "pad", -17.0f, 0.0f, 0.3f } },
-          0.6f, 0.4f, { 0, 0, 0.0f, 0.2f, 0.25f, -0.3f, 0.35f, -0.15f }, { 0, -1, -3, -4, -6, -5, -7, -8 } },
-        { "electronic", 124, 7, -3.0f, 0.05f,
-          { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Stabs", "bright_pluck", "chords", -13.0f, -0.2f, 0.25f },
-            { "Arp", "electro_arp", "melody", -13.0f, 0.2f, 0.28f }, { "Pad", "air_pad", "pad", -16.0f, 0.0f, 0.35f } },
-          0.72f, 0.45f, { 0, 0, 0.0f, 0.2f, 0.25f, -0.3f, 0.3f, -0.15f }, { 0, -1, -3, -5, -6, -5, -7, -8 } },
+        // Mezcla 3.0 (misión 0.6). Medido por pistas con la exportación para DAW: en la 0.5 la batería sonaba ~25 dB por
+        // encima de la melodía y entre el 88 y el 94 % de la energía quedaba por debajo de 250 Hz (el bombo lo tapaba
+        // todo y en un altavoz pequeño no se oía la música). Ahora: bombo 3 dB más bajo dentro del kit, caja y charles
+        // más presentes, y melodías y acordes entre 8 y 10 dB más altos. (Se probó añadir saturación al bajo: medido, no
+        // aportaba armónicos por encima de 150 Hz —el 808 ya los tiene— y solo subía su nivel, así que se retiró.) Solo afecta a canciones nuevas: los valores se guardan
+        // en cada proyecto, así que los proyectos existentes suenan igual que antes.
+        { "trap", 140, 5, -3.0f, 0.05f,
+          { { "808", "cauce_808", "bass", -5.0f, 0.0f, 0.0f }, { "Melodía", "dark_bell", "melody", -1.0f, 0.12f, 0.30f }, { "Pad", "air_pad", "pad", -8.0f, 0.0f, 0.32f } },
+          0.78f, 0.45f, { 0, 0, 0.05f, 0.22f, 0.28f, -0.3f, 0.3f, -0.12f }, { -5, 0, -1, -2, -4, -5, -4, -7 } },
+        { "reggaeton", 95, 4, -3.0f, 0.06f,
+          { { "Bajo", "dembow_bass", "bass", -5.0f, 0.0f, 0.0f }, { "Keys", "urban_pluck", "chords", -3.0f, -0.18f, 0.22f },
+            { "Melodía", "dark_bell", "melody", -2.0f, 0.15f, 0.28f }, { "Pad", "air_pad", "pad", -10.0f, 0.0f, 0.3f } },
+          0.62f, 0.5f, { 0, 0, 0.05f, 0.2f, 0.25f, -0.35f, 0.32f, 0.4f }, { -5, 0, -2, -3, -5, -2, -2, -6 } },
+        { "hiphop", 88, 6, -3.0f, 0.07f,
+          { { "Bajo", "cauce_sub", "bass", -9.5f, 0.0f, 0.0f }, { "Keys", "warm_keys", "chords", -1.0f, -0.12f, 0.25f },
+            { "Melodía", "urban_pluck", "melody", 3.0f, 0.2f, 0.28f } },
+          0.55f, 0.6f, { 0, 0, -0.1f, 0.18f, 0.22f, -0.25f, 0.35f, -0.15f }, { -7, 0, -3, 0, -3, -4, -4, -8 } },
+        { "pop", 108, 7, -4.0f, 0.06f,
+          { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Keys", "bright_pluck", "chords", -5.0f, -0.2f, 0.25f },
+            { "Melodía", "bright_lead", "melody", -5.0f, 0.15f, 0.25f }, { "Pad", "air_pad", "pad", -11.0f, 0.0f, 0.3f } },
+          0.6f, 0.4f, { 0, 0, 0.0f, 0.2f, 0.25f, -0.3f, 0.35f, -0.15f }, { -3, 0, -2, -3, -5, -4, -6, -7 } },
+        { "electronic", 124, 7, -4.0f, 0.05f,
+          { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Stabs", "bright_pluck", "chords", -6.0f, -0.2f, 0.25f },
+            { "Arp", "electro_arp", "melody", -6.0f, 0.2f, 0.28f }, { "Pad", "air_pad", "pad", -10.0f, 0.0f, 0.35f } },
+          0.72f, 0.45f, { 0, 0, 0.0f, 0.2f, 0.25f, -0.3f, 0.3f, -0.15f }, { -3, 0, -2, -4, -5, -4, -6, -7 } },
     };
     return d;
 }
@@ -613,6 +617,10 @@ void Session::applyTemplateLocked (const std::string& templateId)
     {
         TrackModel& b = proj.tracks.back();
         ProcessorPtr rev = configured ("cs.reverb", { { "size", def->reverbSize }, { "damping", def->reverbDamping }, { "mix", 1.0f }, { "width", 1.0f } });
+        // Paso alto antes de la reverb: el bombo y el bajo no entran en ella (una reverb con graves emborrona la mezcla).
+        ProcessorPtr hp = configured ("cs.filter", { { "mode", 1.0f }, { "cutoffHz", 240.0f }, { "resonance", 0.0f } });
+        InsertModel cut; cut.id = newId ("fx"); cut.type = "cs.filter"; cut.state = hp->saveState();
+        b.inserts.push_back (cut);
         InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.reverb"; ins.state = rev->saveState();
         b.inserts.push_back (ins);
         b.volumeDb = -4.0f;
@@ -632,14 +640,14 @@ void Session::applyTemplateLocked (const std::string& templateId)
         d.patterns.clear();
         d.midiClips.clear();
         const auto pats = composer::drumPatterns (plan, plan.seeds["drums"]);
-        static const char* order[] = { "intro", "main", "var", "varCrash", "fill", "break" };
+        static const char* order[] = { "intro", "main", "var", "varCrash", "fill", "break", "end" };
         for (const char* key : order)
         {
             auto it = pats.find (key);
             if (it == pats.end()) continue;
             DrumPattern p = it->second;
             p.id = newId ("pat");
-            static const std::map<std::string, std::string> names = { { "intro", "Intro" }, { "main", "A" }, { "var", "B" }, { "varCrash", "B + crash" }, { "fill", "Remate" }, { "break", "Break" } };
+            static const std::map<std::string, std::string> names = { { "intro", "Intro" }, { "main", "A" }, { "var", "B" }, { "varCrash", "B + crash" }, { "fill", "Remate" }, { "break", "Break" }, { "end", "Cierre" } };
             p.name = names.at (key);
             plan.patternIds[key] = p.id;
             d.patterns.push_back (p);
@@ -694,6 +702,14 @@ void Session::applyTemplateLocked (const std::string& templateId)
             const float dotted8 = (float) (0.75 * 60000.0 / def->bpm);
             ProcessorPtr dly = configured ("cs.delay", { { "timeMs", dotted8 }, { "feedback", 0.28f }, { "mix", 0.16f }, { "toneHz", 4200 }, { "pingPong", 1 } });
             InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.delay"; ins.state = dly->saveState();
+            s.inserts.push_back (ins);
+        }
+        const std::string role = part.role;
+        if (role == "pad" || role == "chords")
+        {
+            // Menos graves en acordes y colchón: dejan sitio al bajo y al bombo.
+            ProcessorPtr eq = configured ("cs.eq", { { "lowDb", role == "pad" ? -7.0f : -4.0f } });
+            InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.eq"; ins.state = eq->saveState();
             s.inserts.push_back (ins);
         }
         plan.roles[s.id] = part.role;

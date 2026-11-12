@@ -144,6 +144,9 @@ public:
     OpResult soloRequest (int startBar, int bars, int keyRoot, bool minor, solo::MelodyRequest& out) const;
     // replaceTrackId: si se da, sustituye las notas de esa pista de Solo AI (para escuchar otra alternativa) en vez
     // de crear otra pista. Nunca sustituye una pista que no sea de Solo AI ni una bloqueada.
+    // Volumen inicial de una pista de Solo AI: el de la melodía de la canción si la hay (misma presencia en la
+    // mezcla), o -3 dB. No toca la mezcla de las demás pistas.
+    float soloVolumeDbLocked() const;
     OpResult addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset,
                            const std::string& replaceTrackId = {});
     // Analiza un clip de audio (trabajo offline; r.id = id del trabajo). El resultado es una ESTIMACIÓN con confianza

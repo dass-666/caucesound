@@ -131,7 +131,7 @@ TEST (composer_sections_cover_sixteen_bars_and_energy_changes_density)
     const MusicPlan plan = composer::defaultPlan ("reggaeton");
     int bar = 0;
     for (const auto& s : plan.sections) { CHECK (s.startBar == bar); bar += s.bars; }
-    CHECK (bar == 16);
+    CHECK (bar == 17); // 16 compases + el compás de cierre (misión 0.6)
     MusicPlan calm = plan, hot = plan;
     calm.energy = -1;
     hot.energy = 1;
@@ -265,5 +265,130 @@ TEST (template_renders_have_headroom_and_no_clipping)
         CHECK (clipped == 0);
         CHECK_MSG (peakDb < -1.0 && peakDb > -12.0, g + ": pico fuera de -12..-1 dBFS");
         CHECK_MSG (sideDb > -40.0, g + ": la mezcla sigue siendo mono");
+    }
+}
+
+// --- Misión 0.6: mezcla 3.0 y final de canción ------------------------------------------------------------------
+namespace
+{
+struct Lp2 // paso bajo de 2.º orden (RBJ)
+{
+    double b0, b1, b2, a1, a2, z1 = 0, z2 = 0;
+    Lp2 (double sr, double hz)
+    {
+        const double w = 2 * 3.14159265358979 * hz / sr, c = std::cos (w), al = std::sin (w) / (2 * 0.7071), a0 = 1 + al;
+        b0 = (1 - c) / 2 / a0; b1 = (1 - c) / a0; b2 = b0; a1 = -2 * c / a0; a2 = (1 - al) / a0;
+    }
+    double run (double x) { const double y = b0 * x + z1; z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y; return y; }
+};
+
+AudioData renderMix (Fx& f, const std::string& name)
+{
+    AudioData a;
+    std::string err;
+    CHECK (f.session.exportMix (f.dir + "/" + name, 32).ok);
+    CHECK (readWav (f.dir + "/" + name, a, err));
+    return a;
+}
+
+double rmsDb (const AudioData& a, Frame from, Frame to)
+{
+    double s = 0;
+    for (Frame i = from; i < to; ++i) s += 0.5 * ((double) a.channels[0][(size_t) i] * a.channels[0][(size_t) i] + (double) a.channels[1][(size_t) i] * a.channels[1][(size_t) i]);
+    return 10.0 * std::log10 (s / std::max<Frame> (1, to - from) + 1e-30);
+}
+} // namespace
+
+// Lo que se midió en la 0.5 con la exportación por pistas: la batería sonaba ~25 dB por encima de la melodía y entre
+// el 88 y el 94 % de la energía estaba por debajo de 250 Hz. Esta prueba fija el equilibrio nuevo con márgenes
+// amplios: no dice que «suene bien» (eso se escucha), sino que la melodía no vuelve a quedar enterrada.
+TEST (templates_mix_keeps_melody_audible_and_low_end_under_control)
+{
+    for (const std::string g : { "trap", "reggaeton", "hiphop" })
+    {
+        Fx f ("mix3_" + g);
+        CHECK (f.session.createProject (f.dir + "/p", "x", kSr, g).ok);
+        const ProjectModel m = f.session.model();
+        MusicPlan plan;
+        CHECK (MusicPlan::fromJson (m.music, plan));
+        const Frame end = m.contentEnd();
+        const AudioData mix = renderMix (f, "mix.wav");
+        Lp2 l1 (kSr, 250), l2 (kSr, 250);
+        double low = 0, all = 0;
+        long over = 0;
+        for (Frame i = 0; i < mix.numFrames(); ++i)
+        {
+            const double x = 0.5 * (mix.channels[0][(size_t) i] + mix.channels[1][(size_t) i]);
+            const double y = l2.run (l1.run (x));
+            low += y * y; all += x * x;
+            over += std::fabs (mix.channels[0][(size_t) i]) >= 0.999f || std::fabs (mix.channels[1][(size_t) i]) >= 0.999f;
+        }
+        std::string drumsId, melodyId;
+        for (const auto& [id, role] : plan.roles) { if (role == "drums") drumsId = id; if (role == "melody") melodyId = id; }
+        CHECK (! drumsId.empty() && ! melodyId.empty());
+        CHECK (f.session.setTrackSolo (drumsId, true).ok);
+        const double drums = rmsDb (renderMix (f, "d.wav"), 0, end);
+        CHECK (f.session.setTrackSolo (drumsId, false).ok && f.session.setTrackSolo (melodyId, true).ok);
+        const double melody = rmsDb (renderMix (f, "m.wav"), 0, end);
+        CHECK (f.session.setTrackSolo (melodyId, false).ok);
+        MEASURE ("%s: energía por debajo de 250 Hz %.0f %%; melodía %.1f dB respecto a la batería; muestras al límite %ld", g.c_str(), 100.0 * low / all, melody - drums, over);
+        CHECK_MSG (low / all < 0.86 && low / all > 0.45, g + ": equilibrio de graves fuera de margen");
+        CHECK_MSG (melody - drums > -20.0 && melody - drums < -6.0, g + ": melodía fuera de margen respecto a la batería");
+        CHECK (over == 0);
+    }
+}
+
+TEST (templates_end_with_a_closing_bar_on_the_tonic)
+{
+    for (const std::string g : { "trap", "reggaeton", "hiphop", "pop", "electronic" })
+    {
+        Fx f ("end_" + g);
+        CHECK (f.session.createProject (f.dir + "/p", "x", kSr, g).ok);
+        const ProjectModel m = f.session.model();
+        MusicPlan plan;
+        CHECK (MusicPlan::fromJson (m.music, plan));
+        CHECK (plan.sections.back().name == "Cierre" && plan.sections.back().startBar == 16 && plan.sections.back().bars == 1);
+        const Tick bar = 4 * kPpq;
+        for (const auto& t : m.tracks)
+        {
+            auto it = plan.roles.find (t.id);
+            if (it == plan.roles.end()) continue;
+            const MidiClipModel& last = t.midiClips.back();
+            CHECK_MSG (last.name == "Cierre" && last.start == 16 * bar && last.length == bar, g + ": " + t.name);
+            if (it->second == "drums") { CHECK (! last.patternId.empty()); continue; }
+            CHECK_MSG (! last.notes.empty(), g + ": " + t.name + " no cierra");
+            // Bajo y melodía se posan en la tónica; todo empieza en el primer tiempo y se deja sonar.
+            for (const auto& n : last.notes) { CHECK (n.start == 0); CHECK (n.length >= bar / 2); }
+            if (it->second == "bass" || it->second == "melody") CHECK (last.notes.size() == 1 && last.notes[0].key % 12 == plan.keyRoot);
+        }
+        // El audio se apaga: el último medio segundo del archivo está muy por debajo del cuerpo de la canción.
+        const AudioData mix = renderMix (f, "mix.wav");
+        const double body = rmsDb (mix, 0, m.contentEnd()), tail = rmsDb (mix, mix.numFrames() - kSr / 2, mix.numFrames());
+        MEASURE ("%s: cuerpo %.1f dB, último medio segundo %.1f dB", g.c_str(), body, tail);
+        CHECK (tail < body - 40.0);
+    }
+}
+
+// La melodía del Final repite el ritmo del motivo de A (reconocible) y lo refuerza con octavas en los tiempos fuertes.
+TEST (final_section_restates_the_motif_with_octave_doubling)
+{
+    for (const std::string g : { "trap", "reggaeton", "hiphop" })
+    {
+        const MusicPlan plan = composer::defaultPlan (g);
+        SongSection a, fin;
+        for (const auto& s : plan.sections) { if (s.name == "A") a = s; if (s.name == "Final") fin = s; }
+        const auto na = composer::partNotes (plan, "melody", a, plan.seeds.at ("melody"), 4);
+        const auto nf = composer::partNotes (plan, "melody", fin, plan.seeds.at ("melody"), 4);
+        // Todas las notas de A tienen su nota en el mismo sitio del Final: el ritmo del motivo es el mismo. (Las
+        // alturas se adaptan a los acordes, que caen en otro punto de la progresión; el Final añade adornos y octavas.)
+        std::set<Tick> startsF;
+        for (const auto& n : nf) startsF.insert (n.start);
+        int same = 0;
+        for (const auto& n : na) same += (int) startsF.count (n.start);
+        CHECK_MSG (same == (int) na.size(), g + ": el Final no repite el ritmo del motivo de A (" + std::to_string (same) + " de " + std::to_string (na.size()) + ")");
+        int doubled = 0;
+        for (const auto& n : nf) for (const auto& o : nf) doubled += o.start == n.start && o.key == n.key + 12;
+        MEASURE ("%s: A %zu notas, Final %zu notas, %d dobladas a la octava", g.c_str(), na.size(), nf.size(), doubled);
+        CHECK (doubled >= 2 && nf.size() > na.size());
     }
 }

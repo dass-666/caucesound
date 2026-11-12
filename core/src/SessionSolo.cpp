@@ -80,6 +80,18 @@ OpResult Session::soloRequest (int startBar, int bars, int keyRoot, bool minor, 
     return {};
 }
 
+float Session::soloVolumeDbLocked() const
+{
+    MusicPlan plan;
+    if (! proj.music.empty() && MusicPlan::fromJson (proj.music, plan))
+        for (const auto& t : proj.tracks)
+        {
+            auto it = plan.roles.find (t.id);
+            if (it != plan.roles.end() && it->second == "melody") return std::clamp (t.volumeDb, -12.0f, 0.0f);
+        }
+    return -3.0f;
+}
+
 OpResult Session::addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset,
                                 const std::string& replaceTrackId)
 {
@@ -136,7 +148,7 @@ OpResult Session::addSoloTrack (const std::string& projectId, Tick start, const 
     t->midiClips.push_back (c);
     t->instrument.state = state;
     t->instrument.preset = preset;
-    t->volumeDb = -10.0f;
+    t->volumeDb = soloVolumeDbLocked();
     if (auto inst = instrumentFor (*t)) inst->loadState (state);
     finishEditLocked();
     return r;

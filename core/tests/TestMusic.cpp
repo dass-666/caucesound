@@ -545,8 +545,8 @@ TEST (templates_create_real_playable_content)
             if (t.kind == "synth")
             {
                 CHECK (! t.instrument.preset.empty() && ! synthPresetState (t.instrument.preset).empty());
-                // Arreglo de 16 compases: un clip por sección (Intro, A, B, Break, Final), notas válidas y dentro del clip.
-                CHECK (t.midiClips.size() == 5);
+                // Arreglo de 17 compases: un clip por sección (Intro, A, B, Break, Final, Cierre), notas válidas y dentro del clip.
+                CHECK (t.midiClips.size() == 6);
                 size_t notes = 0;
                 for (const auto& c : t.midiClips)
                 {
