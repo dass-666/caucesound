@@ -38,6 +38,9 @@ struct TrackRT
     std::shared_ptr<Instrument> instrument;  // pistas de instrumento (Cauce Synth / Cauce Drums); ya preparado
     std::vector<SchedEvent> events;          // eventos MIDI planificados en frames absolutos, ordenados
     uint64_t eventsHash = 0;                 // huella de 'events' (calculada en el hilo de control)
+    // Compensación de latencia (PDC): suma de latencySamples() de las inserciones. La calcula publish().
+    // La pista lee su contenido (clips y eventos) adelantado esa cantidad, así su salida procesada queda alineada.
+    Frame latency = 0;
 };
 uint64_t hashEvents (const std::vector<SchedEvent>& ev);
 
@@ -118,6 +121,10 @@ private:
     void renderBlock (const RenderGraph* g, Frame pos, bool rolling, float* L, float* R, int n);
     void renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n);
     void notesOff (const RenderGraph* g, bool hard);
+    void loopNotesOff (const RenderGraph* g);
+    // Estado del bucle para el bloque en curso (solo hilo de audio; renderOffline lo deja desactivado).
+    bool blockLooping = false;
+    Frame blockLoopStart = 0, blockLoopEnd = 0;
     void drainLive (const RenderGraph* g);
     void adoptPendingGraph();
     void snapSmoothersToTargets();

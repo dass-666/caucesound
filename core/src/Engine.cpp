@@ -56,6 +56,12 @@ void Engine::prepare (int sampleRate, int maxBlockSize)
 void Engine::publish (std::unique_ptr<RenderGraph> graph)
 {
     collectGarbage();
+    if (graph)
+        for (auto& t : graph->tracks)
+        {
+            t.latency = 0;
+            for (const auto& fx : t.inserts) if (fx) t.latency += std::max (0, fx->latencySamples());
+        }
     // Si el hilo de audio no llegó a tomar el anterior, nunca lo vio: podemos liberarlo aquí.
     delete pending.exchange (graph.release(), std::memory_order_acq_rel);
 }
@@ -117,6 +123,13 @@ void Engine::notesOff (const RenderGraph* g, bool hard)
 {
     if (! g) return;
     for (const auto& t : g->tracks) if (t.instrument) t.instrument->allNotesOff (hard);
+}
+
+void Engine::loopNotesOff (const RenderGraph* g)
+{
+    // Pistas sin latencia: reinicio del bucle. Las latentes ya soltaron sus notas en su propio punto (renderBlock).
+    if (! g) return;
+    for (const auto& t : g->tracks) if (t.instrument && t.latency == 0) t.instrument->allNotesOff (false);
 }
 
 void Engine::drainLive (const RenderGraph* g)
@@ -246,31 +259,58 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         std::fill (tl, tl + n, 0.0f);
         std::fill (tr, tr + n, 0.0f);
         bool any = false;
-        for (const auto& c : t.clips)
+        // PDC: la pista con latencia L lee su contenido L frames por delante (ver TrackRT::latency). Con el bucle
+        // activo, la lectura adelantada también da la vuelta (y suelta sus notas en su propio punto de reinicio).
+        auto renderContent = [&] (Frame from, int count, int offset)
         {
-            if (c.start >= blockEnd) break; // ordenados por inicio
-            const Frame cEnd = c.start + c.length;
-            if (cEnd <= position || ! c.data) continue;
-            const Frame from = std::max (position, c.start), to = std::min (blockEnd, cEnd);
-            const AudioData& d = *c.data;
-            const Frame srcFrames = d.numFrames();
-            const float* s0 = d.channels[0].data();
-            const float* s1 = d.numChannels() > 1 ? d.channels[1].data() : s0;
-            for (Frame x = from; x < to; ++x)
+            const Frame to = from + count;
+            for (const auto& c : t.clips)
             {
-                const Frame rel = x - c.start;
-                const Frame src = c.sourceOffset + rel;
-                if (src < 0 || src >= srcFrames) continue;
-                float gn = c.gain;
-                if (rel < c.fadeIn) gn *= (float) rel / (float) c.fadeIn;
-                if (c.fadeOut > 0 && rel >= c.length - c.fadeOut) gn *= (float) (c.length - 1 - rel) / (float) c.fadeOut;
-                const int i = (int) (x - position);
-                tl[i] += s0[src] * gn;
-                tr[i] += s1[src] * gn;
+                if (c.start >= to) break; // ordenados por inicio
+                const Frame cEnd = c.start + c.length;
+                if (cEnd <= from || ! c.data) continue;
+                const Frame a0 = std::max (from, c.start), a1 = std::min (to, cEnd);
+                const AudioData& d = *c.data;
+                const Frame srcFrames = d.numFrames();
+                const float* s0 = d.channels[0].data();
+                const float* s1 = d.numChannels() > 1 ? d.channels[1].data() : s0;
+                for (Frame x = a0; x < a1; ++x)
+                {
+                    const Frame rel = x - c.start;
+                    const Frame src = c.sourceOffset + rel;
+                    if (src < 0 || src >= srcFrames) continue;
+                    float gn = c.gain;
+                    if (rel < c.fadeIn) gn *= (float) rel / (float) c.fadeIn;
+                    if (c.fadeOut > 0 && rel >= c.length - c.fadeOut) gn *= (float) (c.length - 1 - rel) / (float) c.fadeOut;
+                    const int i = offset + (int) (x - from);
+                    tl[i] += s0[src] * gn;
+                    tr[i] += s1[src] * gn;
+                }
+                any = true;
             }
-            any = true;
+            if (t.instrument) { renderInstrument (t, from, true, tl + offset, tr + offset, count); any = true; }
+        };
+        if (t.latency == 0 || ! blockLooping || position >= blockLoopEnd)
+            renderContent (position + t.latency, n, 0);
+        else
+        {
+            const Frame len = blockLoopEnd - blockLoopStart;
+            Frame rp = position + t.latency;
+            while (rp >= blockLoopEnd && len > 0) rp -= len;
+            int done = 0;
+            while (done < n)
+            {
+                const int k = (int) std::min<Frame> (n - done, blockLoopEnd - rp);
+                renderContent (rp, k, done);
+                done += k;
+                rp += k;
+                if (rp >= blockLoopEnd && len > 0)
+                {
+                    rp = blockLoopStart;
+                    if (t.instrument) t.instrument->allNotesOff (false);
+                }
+            }
         }
-        if (t.instrument) { renderInstrument (t, position, true, tl, tr, n); any = true; }
 
         float* io[2] = { tl, tr };
         for (const auto& fx : t.inserts) fx->process (io, 2, n);
@@ -335,6 +375,9 @@ void Engine::process (const float* input, int inChannels, float* output, int out
         if (looping && pos < lEnd && pos + n > lEnd) n = (int) (lEnd - pos);
         float* L = mixL.data();
         float* R = mixR.data();
+        blockLooping = looping;
+        blockLoopStart = loopStart.load (std::memory_order_relaxed);
+        blockLoopEnd = lEnd;
         renderBlock (g, pos, rolling, L, R, n);
 
         // Metrónomo (solo en vivo, no en la exportación)
@@ -409,7 +452,7 @@ void Engine::process (const float* input, int inChannels, float* output, int out
             if (looping && pos == lEnd)
             {
                 pos = loopStart.load (std::memory_order_relaxed);
-                notesOff (g, false); // ninguna nota cruza el reinicio del bucle
+                loopNotesOff (g); // ninguna nota cruza el reinicio del bucle
             }
         }
         done += n;
@@ -429,6 +472,7 @@ void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
             for (const auto& fx : t.inserts) fx->reset();
             if (t.instrument) t.instrument->reset();
         }
+    blockLooping = false; // la exportación es lineal
     Frame done = 0;
     while (done < frames)
     {

@@ -15,10 +15,10 @@
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 58/58 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 58/58 |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 58/58 |
-| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 58/58 |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 60/60 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 60/60 |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 60/60 |
+| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 60/60 |
 | App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 21/21 |
 | Lint | `./gradlew lintDebug` | 0 errores |
 | Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 4,4 % (Xeon; no es un teléfono) |
@@ -37,7 +37,8 @@ Datos de prueba de la interfaz: JSON real del motor, se regeneran con
 ## Problemas conocidos
 
 1. Nada probado en un teléfono: latencia de pads/teclado, gestos multitáctiles, CPU y temperatura sin medir.
-2. Sin PDC (necesario para VocalShift). Propuesta en PLUGINS.md §5.
+2. PDC hecha y probada solo con un efecto sintético (`LatencyFx` en TestEffects.cpp); falta validarla con VocalShift
+   real. Tras arrancar/seek, los primeros L frames de la pista latente son el retardo del efecto.
 3. Los proyectos de la app fase 1 no son accesibles desde la Preview (apps distintas). Falta una vía de
    exportar/importar proyectos completos (por ejemplo, ZIP del proyecto con el selector de archivos del sistema).
 4. Giros de perillas (synth, FX, mezclador) no entran en deshacer.
@@ -50,7 +51,7 @@ Datos de prueba de la interfaz: JSON real del motor, se regeneran con
 1. **Probar en el Samsung** con el protocolo de TESTING_ON_DEVICE.md y corregir lo que salga (prioridad absoluta:
    latencia de pads, notas colgadas, CPU).
 2. Exportar/importar proyecto completo (ZIP) para rescatar proyectos y compartirlos.
-3. PDC en el motor (con la prueba de impulso descrita en PLUGINS.md) → requisito para VocalShift.
+3. Integrar VocalShift como `cs::AudioProcessor` (requiere decidir licencia y forma de dependencia).
 4. Deshacer agrupado para perillas (una entrada por gesto).
 5. Automatización básica (volumen y corte del filtro) y pitch bend en el piano roll.
 6. Servicio en primer plano para grabar con la pantalla apagada.

@@ -10,9 +10,9 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 
 | Conjunto | Resultado |
 |---|---|
-| Pruebas del motor `cs_core_tests` (x86-64 Release) | **58/58** (28 de la fase 1 + 30 nuevas) |
-| Mismas pruebas con ASan + UBSan / con TSan | **58/58** / **58/58** |
-| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **58/58**: portabilidad y resultados numéricos, no rendimiento |
+| Pruebas del motor `cs_core_tests` (x86-64 Release) | **60/60** (28 de la fase 1 + 32 nuevas) |
+| Mismas pruebas con ASan + UBSan / con TSan | **60/60** / **60/60** |
+| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **60/60**: portabilidad y resultados numéricos, no rendimiento |
 | Pruebas JVM de la app (`testDebugUnitTest`) | **21/21**: 5 de modelos (fase 1), 6 del modelo musical, 10 de interfaz con Robolectric |
 | `lintDebug` | 0 errores (avisos: versiones nuevas de dependencias, plurales, icono monocromo) |
 | APK `0.2.0-fase1.2-preview` (`assemblePreview`) | Compila, firmado con clave de prueba persistente, `com.caucesound.app.preview` |
@@ -46,8 +46,10 @@ pantalla en vertical y solo 1,5 pistas visibles en horizontal.
 
 - **Validación física pendiente en todo**: latencia de pads y teclado, gestos multitáctiles, CPU, temperatura.
 - La pantalla de ajustes, diálogos y selector de archivos no tienen captura (dependen del sistema o del motor).
-- Sin compensación de latencia de inserciones (PDC): necesaria antes de VocalShift (150 ms). Los efectos propios
-  tienen latencia 0, así que hoy no hace falta.
+- PDC implementada (la pista latente lee su contenido adelantado; probado a la muestra en vivo, en bucle y en
+  exportación con un efecto de prueba de 7200 muestras). Límites: tras arrancar o hacer seek, los primeros L frames
+  de esa pista son el retardo del efecto, y la entrada en vivo no se puede compensar. Ningún efecto propio tiene
+  latencia, así que hoy no cambia nada audible; validar con VocalShift real.
 - Sin automatización, pitch bend, CC, aftertouch, MIDI externo ni importación/exportación de archivos MIDI
   (el modelo admite añadirlos: ver ARCHITECTURE.md §6).
 - Sin deshacer para giros de perillas (igual que el mezclador en la fase 1): sí para estructura (patrones, clips,
@@ -101,7 +103,7 @@ afirmaciones de «probado» se refieren a pruebas automáticas en Linux x86-64 y
 
 - El audio de los proyectos se carga entero en memoria (ver ARCHITECTURE.md §4).
 - Sin servicio en primer plano: no se graba con la app en segundo plano.
-- Monitorización sin efectos y sin compensar la latencia de las inserciones.
+- Monitorización sin efectos (la entrada en vivo no se compensa con PDC).
 - Sin bucle (loop), sin cuenta atrás antes de grabar, sin tomas alternativas/comping, sin time-stretch.
 - La primera vez que se pulsa grabar sin permiso, Android pide el permiso y hay que volver a pulsar grabar si se
   rechaza; si se concede, la grabación arranca sola.

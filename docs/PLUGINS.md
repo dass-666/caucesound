@@ -43,8 +43,8 @@ Trabajo offline     ◄── generación de solos/melodías/armonías → produ
 ```
 
 Trabajo necesario (estimación, no medida):
-1. **Compensación de latencia de inserciones (PDC)** en el motor: VocalShift declara 150 ms. Sin PDC, la pista se
-   desalinearía. Es el requisito técnico número uno antes de integrar VocalShift.
+1. **Compensación de latencia de inserciones (PDC)** en el motor: VocalShift declara 150 ms. **Hecha en la fase 1.2**
+   (ver §5); falta validarla con VocalShift real.
 2. **Pistas MIDI y piano roll** para que Solo AI entregue MIDI editable (requisito de producto: resultados editables).
 3. Contexto de transporte para instrumentos (`TransportState`: tempo, posición, reproducción).
 4. Spatial Echo: es el que más trabajo pide (sustituir `juce::AudioBuffer`, `juce::Thread`, `juce::var`/JSON).
@@ -85,10 +85,10 @@ No se ha modificado ni copiado código de VocalShift, Solo AI ni Spatial Echo. L
 | Contexto de transporte (tempo, compás, posición en negras, reproducción) | **Definido** (`cs::TransportInfo`); falta pasarlo a cada instrumento por bloque cuando un plugin lo necesite | `Processor.h` |
 | Efectos de inserción con estado, bypass, orden y deshacer | **Hecho** (Cauce FX los usa) | `Session.h` (`addInsert`…) |
 | Colas en la exportación | **Hecho** (`tailSamples` en la clase base) | `Session::exportMix` |
-| **Compensación de latencia (PDC)** | **Falta**. Imprescindible para VocalShift (150 ms) | ver propuesta |
+| **Compensación de latencia (PDC)** | **Hecho** (lectura adelantada por pista); probado con un efecto sintético, no con VocalShift | `Engine.cpp` (`TrackRT::latency`) |
 | Generación offline (solos, armonías) sin bloquear | Falta un hilo de trabajo con progreso y cancelación; el resultado entraría como clip MIDI (`setClipNotes`) o audio (como una importación) | — |
 
-### Propuesta de PDC (para validar antes de implementar)
+### PDC: diseño implementado
 
 1. Cada pista declara su latencia = suma de `latencySamples()` de sus inserciones activas (las de bypass no cuentan).
 2. La latencia máxima `Lmax` del proyecto se calcula al publicar el grafo.
@@ -102,6 +102,12 @@ No se ha modificado ni copiado código de VocalShift, Solo AI ni Spatial Echo. L
    avisar en la interfaz y ofrecer monitorizar sin el efecto.
 6. Pruebas: impulso en una pista con un efecto de prueba de latencia conocida → debe coincidir a la muestra con un
    impulso en otra pista, en vivo y en la exportación; con bucle y con seek.
+
+Estado: implementado. Las inserciones en bypass no se publican, así que no suman latencia. En el bucle, cada pista
+latente da la vuelta en su propia posición de lectura y corta sus notas en ese punto. En el punto 4 se eligió la
+opción simple: no hay precarga, los primeros L frames tras arrancar o hacer seek son el retardo propio del efecto.
+Pruebas: `pdc_latent_track_stays_aligned_live_with_any_block_and_in_loop` (7200 muestras, bloques de 64/192/1000,
+4 vueltas de bucle) y `pdc_export_matches_live_with_latent_insert`.
 
 ### Choir
 

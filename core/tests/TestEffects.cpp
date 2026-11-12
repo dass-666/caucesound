@@ -3,6 +3,7 @@
 #include "Test.h"
 
 #include "cs/Api.h"
+#include "cs/Engine.h"
 #include "cs/Instruments.h"
 #include "cs/Processor.h"
 #include "cs/Session.h"
@@ -249,4 +250,121 @@ TEST (fx_inserts_in_session_persist_undo_bypass_and_export_with_tail)
     CHECK (r["ok"] == true);
     const auto cat = json::parse (handleCommand (s2, engine, R"({"cmd":"catalog"})"));
     CHECK (cat["effects"].size() == 7);
+}
+
+namespace
+{
+// Efecto de prueba con latencia conocida: retardo puro de L muestras (como un procesador con look-ahead).
+class LatencyFx final : public AudioProcessor
+{
+public:
+    explicit LatencyFx (int l) : lat (l) {}
+    std::string typeId() const override { return "test.latency"; }
+    void prepare (double, int) override { buf.assign ((size_t) lat * 2, 0.0f); reset(); }
+    void reset() override { std::fill (buf.begin(), buf.end(), 0.0f); w = 0; }
+    int latencySamples() const override { return lat; }
+    void process (float* const* io, int nch, int n) override
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            for (int c = 0; c < 2; ++c)
+            {
+                float& slot = buf[(size_t) (w * 2 + c)];
+                const float x = c < nch ? io[c][i] : 0.0f;
+                const float y = slot;
+                slot = x;
+                if (c < nch) io[c][i] = y;
+            }
+            w = (w + 1) % lat;
+        }
+    }
+    int lat;
+    std::vector<float> buf;
+    int w = 0;
+};
+
+std::unique_ptr<RenderGraph> impulseGraph (const std::shared_ptr<AudioData>& a, int latencyB, Frame at)
+{
+    auto g = std::make_unique<RenderGraph>();
+    g->keepAlive.push_back (a);
+    for (int t = 0; t < 2; ++t)
+    {
+        TrackRT tr;
+        tr.slot = t;
+        ClipRT c;
+        c.data = a.get(); c.start = at; c.length = a->numFrames(); c.gain = 1.0f;
+        tr.clips.push_back (c);
+        if (t == 1 && latencyB > 0) { auto fx = std::make_shared<LatencyFx> (latencyB); fx->prepare (kSr, 1024); tr.inserts.push_back (fx); }
+        g->tracks.push_back (tr);
+    }
+    return g;
+}
+
+std::vector<size_t> peaks (const std::vector<float>& lr, float thr)
+{
+    std::vector<size_t> p;
+    for (size_t i = 0; i < lr.size() / 2; ++i) if (std::fabs (lr[i * 2]) > thr) p.push_back (i);
+    return p;
+}
+} // namespace
+
+TEST (pdc_latent_track_stays_aligned_live_with_any_block_and_in_loop)
+{
+    auto a = std::make_shared<AudioData>();
+    a->allocate (1, 4800);
+    a->channels[0][0] = 0.5f; // impulso al inicio del clip
+    const int L = 7200;       // 150 ms, como VocalShift
+    for (int block : { 64, 192, 1000 })
+    {
+        Engine e;
+        e.prepare (kSr, 1024);
+        e.publish (impulseGraph (a, L, 48000));
+        e.seek (0);
+        e.play();
+        std::vector<float> out ((size_t) kSr * 2 * 2), buf ((size_t) block * 2);
+        for (size_t done = 0; done < out.size() / 2; done += (size_t) block)
+        {
+            const int n = (int) std::min<size_t> ((size_t) block, out.size() / 2 - done);
+            e.process (nullptr, 0, buf.data(), 2, n);
+            std::copy (buf.begin(), buf.begin() + n * 2, out.begin() + (long) done * 2);
+        }
+        const auto p = peaks (out, 0.1f);
+        // Ambas pistas suman su impulso en el mismo frame (0,5 + 0,5): una sola muestra no nula.
+        CHECK_MSG (p.size() == 1 && p[0] == 48000 && std::fabs (out[48000 * 2] - 1.0f) < 1e-6f,
+                   "bloque " + std::to_string (block) + ": " + std::to_string (p.size()) + " picos, primero en " + std::to_string (p.empty() ? 0 : p[0]));
+    }
+    // Bucle [0, 1 s) con el impulso en 0,5 s: tras varias vueltas, las dos pistas siguen alineadas.
+    Engine e;
+    e.prepare (kSr, 1024);
+    e.publish (impulseGraph (a, L, 24000));
+    e.setLoop (true, 0, 48000);
+    e.seek (0);
+    e.play();
+    std::vector<float> out ((size_t) kSr * 4 * 2), buf (512 * 2);
+    for (size_t done = 0; done < out.size() / 2; done += 512)
+    {
+        e.process (nullptr, 0, buf.data(), 2, 512);
+        std::copy (buf.begin(), buf.end(), out.begin() + (long) done * 2);
+    }
+    const auto p = peaks (out, 0.1f);
+    bool aligned = p.size() >= 3;
+    for (size_t k = 0; k < p.size(); ++k) aligned = aligned && p[k] == 24000 + k * 48000 && std::fabs (out[p[k] * 2] - 1.0f) < 1e-6f;
+    MEASURE ("PDC: pista con %d muestras de latencia alineada a la muestra (bloques 64/192/1000 y %zu vueltas de bucle)", L, p.size());
+    CHECK (aligned);
+}
+
+TEST (pdc_export_matches_live_with_latent_insert)
+{
+    auto a = std::make_shared<AudioData>();
+    a->allocate (1, 4800);
+    a->channels[0][0] = 0.5f;
+    Engine e;
+    e.prepare (kSr, 1024);
+    e.publish (impulseGraph (a, 7200, 10000));
+    std::vector<float> l ((size_t) kSr), r ((size_t) kSr);
+    e.renderOffline (0, l.data(), r.data(), (Frame) kSr);
+    size_t at = 0;
+    int count = 0;
+    for (size_t i = 0; i < l.size(); ++i) if (std::fabs (l[i]) > 0.1f) { at = i; ++count; }
+    CHECK (count == 1 && at == 10000 && std::fabs (l[10000] - 1.0f) < 1e-6f);
 }
