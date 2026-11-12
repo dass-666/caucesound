@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.22)
+project(CauceSound VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
+
+option(CS_BUILD_TESTS "Build core tests" ON)
+option(CS_SANITIZE "Build with ASan + UBSan" OFF)
+if (CS_SANITIZE)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+add_subdirectory(core)
+
+if (CS_BUILD_TESTS)
+    enable_testing()
+    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp)
+    target_link_libraries(cs_core_tests PRIVATE cs_core)
+    add_test(NAME cs_core_tests COMMAND cs_core_tests)
+    add_executable(cs_bench core/tests/Bench.cpp)
+    target_link_libraries(cs_bench PRIVATE cs_core)
+endif()
