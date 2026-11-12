@@ -75,7 +75,7 @@ class UiScreensTest {
         var request: com.caucesound.app.data.SoloRequest? = null
         override fun vocalProcess(clipId: String, params: com.caucesound.app.data.VocalParams) { calls += "vocal:$clipId"; vocal = params }
         override fun cancelJob() { calls += "cancelJob" }
-        override fun setClipVersion(clipId: String, original: Boolean) { calls += "version:$original" }
+        override fun setClipVersion(clipId: String, original: Boolean, match: Boolean?) { calls += "version:$original" + (match?.let { ":match=$it" } ?: "") }
         override fun discardProcess(clipId: String) { calls += "discard" }
         override fun auditionClip(clipId: String) { calls += "audition" }
         override fun soloAnalyze(clipId: String) { calls += "analyze:$clipId" }
@@ -271,7 +271,12 @@ class UiScreensTest {
         compose.onNodeWithTag("vocal_listen").performScrollTo().performClick()
         compose.onNodeWithTag("vocal_discard").performScrollTo().performClick()
         compose.onNodeWithTag("vocal_accept").performScrollTo().performClick()
-        assertEquals(listOf("version:true", "audition", "discard", "panel:ARRANGE"), rec.calls)
+        // Aceptar quita el volumen igualado: la versión procesada queda a su nivel real.
+        assertTrue(clip.process!!.match && kotlin.math.abs(clip.process!!.levelDb) >= 0.1f)
+        assertEquals(listOf("version:true", "audition", "discard", "version:false:match=false", "panel:ARRANGE"), rec.calls)
+        rec.calls.clear()
+        compose.onNodeWithTag("vocal_match").performScrollTo().performClick()
+        assertEquals(listOf("version:false:match=false"), rec.calls)
         compose.onNodeWithTag("vocal_ab").performScrollTo()
         shot("21_vocalshift_ab")
     }

@@ -129,14 +129,14 @@ OpResult Session::vocalProcess (const std::string& clipId, const vocal::Params& 
             {
                 if (ctx.cancel.load()) { removeFile (tmpPath); error = "cancelado"; return false; }
                 std::unique_lock<std::recursive_mutex> lock (mtx, std::try_to_lock);
-                if (lock.owns_lock()) { r = applyVocalLocked (projectId, clipId, sid, tmpPath, std::move (out), params); break; }
+                if (lock.owns_lock()) { r = applyVocalLocked (projectId, clipId, sid, tmpPath, std::move (out), params, st.levelDb); break; }
                 std::this_thread::sleep_for (std::chrono::milliseconds (2));
             }
             if (! r.ok) { removeFile (tmpPath); error = r.error; return false; }
             ctx.progress = 1.0f;
             result = json { { "clipId", clipId }, { "sourceId", sid }, { "latencySamples", st.latencySamples }, { "inputFrames", st.inputFrames },
                             { "outputFrames", st.outputFrames }, { "tailFrames", st.tailFrames }, { "inputPeak", st.inputPeak },
-                            { "outputPeak", st.outputPeak }, { "nonFiniteEvents", st.nonFiniteEvents }, { "clipAltered", st.clipAltered },
+                            { "outputPeak", st.outputPeak }, { "levelDb", st.levelDb }, { "nonFiniteEvents", st.nonFiniteEvents }, { "clipAltered", st.clipAltered },
                             { "seconds", st.seconds } }.dump();
             return true;
         });
@@ -147,7 +147,7 @@ OpResult Session::vocalProcess (const std::string& clipId, const vocal::Params& 
 }
 
 OpResult Session::applyVocalLocked (const std::string& projectId, const std::string& clipId, const std::string& sid, const std::string& tmpPath,
-                                    AudioData&& audio, const vocal::Params& params)
+                                    AudioData&& audio, const vocal::Params& params, float levelDb)
 {
     // Destino validado: mismo proyecto abierto y el clip sigue existiendo. Si no, el resultado se descarta.
     if (! open || proj.id != projectId) return OpResult::fail ("el proyecto cambió mientras se procesaba: el resultado se descartó");
@@ -174,6 +174,9 @@ OpResult Session::applyVocalLocked (const std::string& projectId, const std::str
     c->procParams = params.toJson();
     c->procSourceId = sid;
     c->procLength = frames;
+    // La comparación empieza a volumen igualado si la diferencia es apreciable; «Aceptar» deja B a su nivel real.
+    c->procLevelDb = std::isfinite (levelDb) ? std::clamp (levelDb, -24.0f, 24.0f) : 0.0f;
+    c->procMatch = std::fabs (c->procLevelDb) >= 0.1f;
     c->sourceId = sid;
     c->sourceOffset = 0;
     c->length = frames;
@@ -183,14 +186,16 @@ OpResult Session::applyVocalLocked (const std::string& projectId, const std::str
     return finishEditLocked();
 }
 
-OpResult Session::setClipVersion (const std::string& clipId, bool original)
+OpResult Session::setClipVersion (const std::string& clipId, bool original, int match)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     ClipModel* c = proj.findClip (clipId);
     if (! c) return OpResult::fail ("clip no encontrado");
     if (! c->processed()) return OpResult::fail ("este clip no tiene versión procesada");
-    if (c->playingOriginal() == original) return {};
+    const bool wantMatch = match < 0 ? c->procMatch : match != 0;
+    if (c->playingOriginal() == original && wantMatch == c->procMatch) return {};
+    c->procMatch = wantMatch;
     const std::string want = original ? c->origSourceId : c->procSourceId;
     if (pool.find (want) == pool.end())
     {

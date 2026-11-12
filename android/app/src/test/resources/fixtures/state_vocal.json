@@ -3,14 +3,14 @@
  "canUndo": true,
  "contentEnd": 2027478,
  "dirty": true,
- "folder": "/tmp/fx05/_proj05",
+ "folder": "/home/user/caucesound/android/app/src/test/resources/fixtures/_proj05",
  "missingClips": [],
  "missingPlugins": [],
  "open": true,
  "project": {
   "beatsPerBar": 4,
   "bpm": 120.0,
-  "createdAt": 1794503893243,
+  "createdAt": 1794505135155,
   "format": "caucesound-project",
   "harmony": {
    "chords": [],
@@ -20,7 +20,7 @@
    "minor": true,
    "source": "analysis"
   },
-  "id": "prj_dade777096b5",
+  "id": "prj_2a20490a9cae",
   "loop": {
    "enabled": false,
    "end": 15360,
@@ -28,7 +28,7 @@
   },
   "masterDb": 0.0,
   "metronome": false,
-  "modifiedAt": 1794503894315,
+  "modifiedAt": 1794505136426,
   "name": "Voz y beat",
   "ppq": 960,
   "recordLatencyOffset": 0,
@@ -36,23 +36,23 @@
   "sources": [
    {
     "channels": 1,
-    "file": "audio/src_deedce4539f3.wav",
+    "file": "audio/src_393e0ca6e740.wav",
     "frames": 288000,
-    "id": "src_deedce4539f3",
+    "id": "src_393e0ca6e740",
     "origin": "Toma de voz"
    },
    {
     "channels": 1,
-    "file": "audio/src_67ddab41fe6e.wav",
+    "file": "audio/src_118a1d1be54d.wav",
     "frames": 2027478,
-    "id": "src_67ddab41fe6e",
+    "id": "src_118a1d1be54d",
     "origin": "Beat importado"
    },
    {
     "channels": 2,
-    "file": "audio/src_f13592aed625.wav",
+    "file": "audio/src_202b62b9b1f1.wav",
     "frames": 324576,
-    "id": "src_f13592aed625",
+    "id": "src_202b62b9b1f1",
     "origin": "vocalshift"
    }
   ],
@@ -65,13 +65,15 @@
       "fadeIn": 0,
       "fadeOut": 0,
       "gainDb": 0.0,
-      "id": "clp_ee2159773815",
+      "id": "clp_2556999f64ef",
       "length": 324576,
       "name": "Toma de voz",
       "process": {
+       "levelDb": 0.2561596632003784,
+       "match": true,
        "origLength": 288000,
        "origOffset": 0,
-       "origSourceId": "src_deedce4539f3",
+       "origSourceId": "src_393e0ca6e740",
        "params": {
         "brightnessOffset": 0.0,
         "character": 65.0,
@@ -89,16 +91,16 @@
        },
        "plugin": "vocalshift",
        "procLength": 324576,
-       "procSourceId": "src_f13592aed625",
+       "procSourceId": "src_202b62b9b1f1",
        "version": "vocalshift-ai-studio@10e679c"
       },
-      "sourceId": "src_f13592aed625",
+      "sourceId": "src_202b62b9b1f1",
       "sourceOffset": 0,
       "start": 0
      }
     ],
     "color": 4287323382,
-    "id": "trk_33877f17322c",
+    "id": "trk_05cd12489c01",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],
@@ -116,16 +118,16 @@
       "fadeIn": 0,
       "fadeOut": 0,
       "gainDb": 0.0,
-      "id": "clp_fd202f1ecd4b",
+      "id": "clp_bc8fbe35e6f2",
       "length": 2027478,
       "name": "Beat importado",
-      "sourceId": "src_67ddab41fe6e",
+      "sourceId": "src_118a1d1be54d",
       "sourceOffset": 0,
       "start": 0
      }
     ],
     "color": 4282090230,
-    "id": "trk_ee72d9317769",
+    "id": "trk_cfd80e7833ec",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],
@@ -140,7 +142,7 @@
     "armed": false,
     "clips": [],
     "color": 4280472558,
-    "id": "trk_16a7571a51a3",
+    "id": "trk_57aad73c6840",
     "inserts": [],
     "instrument": {
      "preset": "bright_lead",
@@ -150,7 +152,7 @@
     "kind": "synth",
     "midiClips": [
      {
-      "id": "mcl_358f4496ba23",
+      "id": "mcl_fd5b1e89bfba",
       "length": 30720,
       "name": "Solo AI · A · Sencilla y pegajosa",
       "notes": [

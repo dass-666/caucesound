@@ -15,6 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <random>
+
 #include <chrono>
 #include <thread>
 
@@ -380,6 +382,69 @@ TEST (vocalshift_process_is_nondestructive_undoable_and_ab_comparable)
     CHECK (fileBytes (origFile) == origBytes);
 }
 
+// RMS (dB) de los primeros 'frames' de una mezcla exportada.
+static double mixRmsDb (Fx& f, const std::string& path, Frame frames)
+{
+    CHECK (f.session.exportMix (path, 24).ok);
+    AudioData mix;
+    std::string err;
+    CHECK (readWav (path, mix, err));
+    double sq = 0;
+    long n = 0;
+    for (const auto& ch : mix.channels)
+        for (Frame i = 0; i < std::min<Frame> (frames, (Frame) ch.size()); ++i) { sq += (double) ch[(size_t) i] * ch[(size_t) i]; ++n; }
+    return 10.0 * std::log10 (std::max (1e-12, sq / (double) std::max (1L, n)));
+}
+
+TEST (vocalshift_ab_compare_is_level_matched_until_accepted)
+{
+    Fx f ("vocal_match");
+    CHECK (f.session.createProject (f.dir + "/p", "x").ok);
+    CHECK (f.session.addTrack ("Voz").ok);
+    const auto imp = f.session.importWav (writeVoice (f.dir + "/voz.wav", 3.0), f.session.model().tracks.back().id, 48000);
+    CHECK (imp.ok);
+    const std::string clip = imp.id;
+    const Frame len = f.session.model().findClip (clip)->length;
+    // Un ajuste que cambia el nivel de forma clara: transformación con segunda voz fuerte.
+    json p = kUrban;
+    p["secondGainDb"] = 0;
+    const json done = waitJob (f, f.cmd ({ { "cmd", "vocalProcess" }, { "clipId", clip }, { "params", p } }).value ("jobId", std::string()));
+    CHECK_MSG (done.value ("state", std::string()) == "done", done.dump());
+    f.session.jobRunner().waitIdle();
+    const ClipModel c = *f.session.model().findClip (clip);
+    const double level = done["result"].value ("levelDb", 0.0);
+    MEASURE ("la versión procesada mide %+.2f dB respecto a la original (RMS)", level);
+    CHECK (std::fabs (level) >= 0.1 && std::fabs (c.procLevelDb - (float) level) < 1e-3f && c.procMatch); // empieza igualada
+
+    // Con la comparación igualada, A y B suenan al mismo nivel (±0,5 dB) en la mezcla real.
+    const double bMatched = mixRmsDb (f, f.dir + "/b1.wav", len);
+    CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", true } }).value ("ok", false));
+    const double aLevel = mixRmsDb (f, f.dir + "/a.wav", len);
+    MEASURE ("A/B igualado: A %.2f dB, B %.2f dB", aLevel, bMatched);
+    CHECK (std::fabs (aLevel - bMatched) < 0.5);
+    CHECK (f.session.model().findClip (clip)->procMatch); // cambiar de versión no toca el ajuste
+
+    // Sin igualar (lo que hace «Aceptar»): B vuelve a su nivel real, y A no cambia nunca.
+    const size_t undoBefore = json::parse (f.session.stateJson()).value ("canUndo", false) ? 1 : 0;
+    CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", false }, { "match", false } }).value ("ok", false));
+    const double bReal = mixRmsDb (f, f.dir + "/b2.wav", len);
+    CHECK (std::fabs ((bReal - aLevel) - level) < 0.5);
+    CHECK (! f.session.model().findClip (clip)->procMatch);
+    CHECK ((json::parse (f.session.stateJson()).value ("canUndo", false) ? 1u : 0u) == undoBefore);
+    CHECK (f.session.model().findClip (clip)->gainDb == 0.0f); // la ganancia del clip que ajusta el usuario no se toca
+
+    // El ajuste se guarda con el proyecto.
+    CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", false }, { "match", true } }).value ("ok", false));
+    CHECK (f.session.save().ok);
+    f.session.close();
+    CHECK (f.session.openProject (f.dir + "/p").ok);
+    const ClipModel r = *f.session.model().findClip (clip);
+    CHECK (r.procMatch && std::fabs (r.procLevelDb - c.procLevelDb) < 1e-3f);
+    // Descartar el procesado limpia el ajuste.
+    CHECK (f.session.discardProcess (clip).ok);
+    CHECK (! f.session.model().findClip (clip)->procMatch && f.session.model().findClip (clip)->procLevelDb == 0.0f);
+}
+
 TEST (vocalshift_processes_only_the_trimmed_region_and_stereo_takes)
 {
     Fx f ("vocal_trim");
@@ -493,6 +558,99 @@ TEST (vocalshift_stale_temp_files_are_removed_on_open_and_missing_original_fails
 }
 
 // --- Contrato: plugin ausente y latencia en buses --------------------------------------------------------------------
+// Comandos de plugins al azar, con argumentos válidos e inválidos, mientras hay procesados en marcha: nada debe
+// colgarse ni romper el proyecto, y la toma original no cambia ni un byte.
+TEST (fuzz_plugin_commands_keep_project_valid_and_original_untouched)
+{
+    Fx f ("vocal_fuzz");
+    CHECK (f.session.createProject (f.dir + "/p", "x", 48000, "trap").ok);
+    CHECK (f.session.addTrack ("Voz").ok);
+    const auto imp = f.session.importWav (writeVoice (f.dir + "/voz.wav", 1.0), f.session.model().tracks.back().id, 0);
+    CHECK (imp.ok);
+    ProjectModel m0 = f.session.model();
+    const std::string origFile = f.dir + "/p/" + m0.findSource (m0.findClip (imp.id)->sourceId)->file;
+    const std::string origBytes = fileBytes (origFile);
+
+    static const char* cmds[] = { "vocalProcess", "vocalProcess", "clipVersion", "clipVersion", "discardProcess", "jobStatus", "jobCancel",
+                                  "vocalPresets", "soloProposals", "soloMelody", "soloAnalyze", "setHarmony", "undo", "redo", "save",
+                                  "trimClip", "splitClip", "moveClip", "setClipGain", "state", "catalog" };
+    static const char* keys[] = { "clipId", "params", "original", "match", "jobId", "keyRoot", "minor", "bars", "seed", "type", "character",
+                                  "variation", "replaceTrackId", "bpm", "chords", "start", "length", "at", "gainDb", "trackId" };
+    std::mt19937 rng (20261112);
+    std::vector<std::string> ids, jobs;
+    auto value = [&] () -> json
+    {
+        switch (rng() % 14)
+        {
+            case 0: case 1: case 2: return ids.empty() ? json ("x") : json (ids[rng() % ids.size()]);
+            case 3: return jobs.empty() ? json ("job_x") : json (jobs[rng() % jobs.size()]);
+            case 4: return kUrban;
+            case 5: return json::object ({ { "semitones", 1e30 }, { "character", -5 }, { "secondVoice", "sí" }, { "secondGainDb", nullptr } });
+            case 6: return json (true);
+            case 7: return json (false);
+            case 8: return json ((int) (rng() % 40) - 10);
+            case 9: return json (1e30);
+            case 10: return json (nullptr);
+            case 11: return json (std::string (500, 'A'));
+            case 12: return json::array ({ json::object ({ { "root", 9 }, { "quality", 1 } }), "x", 5 });
+            default: return json ((double) (rng() % 96000));
+        }
+    };
+    int ok = 0, rejected = 0, bad = 0, started = 0;
+    const int iterations = 500;
+    for (int i = 0; i < iterations; ++i)
+    {
+        if (i % 40 == 39) f.session.jobRunner().waitIdle(); // deja terminar algunos: así también se aplican resultados
+        if (i % 10 == 0)
+        {
+            ids.clear();
+            for (const auto& t : f.session.model().tracks) { ids.push_back (t.id); for (const auto& c : t.clips) ids.push_back (c.id); }
+        }
+        json j;
+        j["cmd"] = cmds[rng() % (sizeof cmds / sizeof cmds[0])];
+        // La mitad de las veces, un procesado bien formado sobre un clip real: así hay trabajos de verdad en marcha.
+        if (j["cmd"] == "vocalProcess" && rng() % 2 == 0)
+        {
+            // Deshacer puede haber quitado la toma (o su pista): se vuelve a importar la misma grabación.
+            std::vector<std::string> clips;
+            for (const auto& t : f.session.model().tracks) for (const auto& c : t.clips) clips.push_back (c.id);
+            if (clips.empty())
+            {
+                CHECK (f.session.addTrack ("Voz").ok);
+                const auto again = f.session.importWav (f.dir + "/voz.wav", f.session.model().tracks.back().id, 0);
+                CHECK (again.ok);
+                clips.push_back (again.id);
+            }
+            j["clipId"] = clips[rng() % clips.size()];
+            j["params"] = kUrban;
+        }
+        else
+        {
+            const int nargs = (int) (rng() % 5);
+            for (int a = 0; a < nargs; ++a) j[keys[rng() % (sizeof keys / sizeof keys[0])]] = value();
+        }
+        json r;
+        try { r = f.cmd (j); } catch (...) { ++bad; std::printf ("    excepción: %s\n", j.dump().substr (0, 200).c_str()); continue; }
+        const bool stateLike = j["cmd"] == "state" || j["cmd"] == "catalog";
+        if (! r.is_object() || (! stateLike && ! r.contains ("ok"))) { ++bad; continue; }
+        if (stateLike) continue;
+        (r["ok"] == true ? ok : rejected)++;
+        if (r["ok"] == true && r.contains ("jobId")) { jobs.push_back (r.value ("jobId", std::string())); ++started; }
+    }
+    f.session.jobRunner().waitIdle();
+    MEASURE ("%d comandos de plugins al azar: %d aceptados, %d rechazados, %d trabajos lanzados, %d respuestas inválidas", iterations, ok, rejected, started, bad);
+    CHECK (bad == 0 && ok > 30 && rejected > 30 && started > 3);
+    CHECK (fileBytes (origFile) == origBytes);
+    CHECK (tempFiles (f.dir + "/p") == 0);
+    const ProjectModel m = f.session.model();
+    CHECK_MSG (validate (m).empty(), validate (m));
+    CHECK (f.session.save().ok);
+    const std::string before = toJson (f.session.model(), false);
+    f.session.close();
+    CHECK (f.session.openProject (f.dir + "/p").ok);
+    CHECK (toJson (f.session.model(), false) == before);
+}
+
 TEST (missing_plugin_is_reported_and_project_data_is_preserved)
 {
     Fx f ("missing_plugin");

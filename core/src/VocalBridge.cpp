@@ -149,6 +149,7 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
     Frame fed = 0, skipped = 0, written = 0;
     const Frame total = length + latency + maxTail; // máximo de frames que se alimentan
     int quietBlocks = 0;
+    double inSq = 0, outSq = 0;
     while (fed < total)
     {
         if (cancel && cancel->load()) return "cancelado";
@@ -159,7 +160,11 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
             const bool inside = f < length;
             l[(size_t) i] = inside ? srcL[f] : 0.0f;
             r[(size_t) i] = inside ? srcR[f] : 0.0f;
-            if (inside) st.inputPeak = std::max ({ st.inputPeak, std::fabs (l[(size_t) i]), std::fabs (r[(size_t) i]) });
+            if (inside)
+            {
+                st.inputPeak = std::max ({ st.inputPeak, std::fabs (l[(size_t) i]), std::fabs (r[(size_t) i]) });
+                inSq += (double) l[(size_t) i] * l[(size_t) i] + (double) r[(size_t) i] * r[(size_t) i];
+            }
         }
         chain.process (io, 2, n);
         fed += n;
@@ -178,6 +183,7 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
                 inter[(size_t) i * 2] = a;
                 inter[(size_t) i * 2 + 1] = b;
                 peak = std::max ({ peak, std::fabs (a), std::fabs (b) });
+                if (written + i < length) outSq += (double) a * a + (double) b * b;
             }
             st.outputPeak = std::max (st.outputPeak, peak);
             if (! sink (inter.data(), out)) return "no se pudo escribir el resultado (¿almacenamiento lleno?)";
@@ -193,6 +199,7 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
         if (progress) progress->store ((float) std::min (1.0, (double) fed / (double) (length + latency)) * 0.98f);
     }
     st.outputFrames = written;
+    if (inSq > 1e-9 && outSq > 1e-9) st.levelDb = (float) std::clamp (10.0 * std::log10 (outSq / inSq), -24.0, 24.0);
     st.tailFrames = std::max<Frame> (0, written - length);
     st.nonFiniteEvents = chain.nonFiniteEvents();
     st.clipAltered = chain.clipAlteredSamples();

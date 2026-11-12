@@ -59,6 +59,7 @@ import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.SAMPLE_RATE
 import com.caucesound.app.data.TrackState
 import com.caucesound.app.data.VocalParams
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -169,9 +170,19 @@ fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginU
                     { actions.setClipVersion(clip.id, it == 0) }, Modifier.fillMaxWidth().testTag("vocal_ab"), height = 44.dp)
                 Text(tr("Pulsa Escuchar y cambia entre A y B: la música sigue sonando en el mismo punto.", "Press Listen and switch between A and B: playback keeps going at the same point."),
                     color = Palette.TextDim, fontSize = 12.sp)
+                // Volumen igualado: lo más fuerte suele parecer mejor, así que B se compensa mientras se compara.
+                if (abs(process.levelDb) >= 0.1f) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillToggle(tr("Igualar volumen", "Match volume"), process.match, { actions.setClipVersion(clip.id, process.playingOriginal, !process.match) },
+                            color = Palette.Cyan, height = 40.dp, modifier = Modifier.testTag("vocal_match"))
+                        Text((if (process.match) tr("B suena %+.1f dB para comparar con justicia. Al aceptar vuelve a su volumen real.", "B plays at %+.1f dB for a fair comparison. Accepting restores its real level.")
+                            else tr("B es %+.1f dB respecto a A (volumen real).", "B is %+.1f dB relative to A (real level)."))
+                            .format(if (process.match) -process.levelDb else process.levelDb), color = Palette.TextDim, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CauceButton(tr("Escuchar", "Listen"), { actions.auditionClip(clip.id) }, Modifier.weight(1f).testTag("vocal_listen"), icon = Icons.Default.PlayArrow)
-                    CauceButton(tr("Aceptar", "Accept"), { if (process.playingOriginal) actions.setClipVersion(clip.id, false); actions.openPanel(Panel.ARRANGE) },
+                    CauceButton(tr("Aceptar", "Accept"), { if (process.playingOriginal || process.match) actions.setClipVersion(clip.id, false, false); actions.openPanel(Panel.ARRANGE) },
                         Modifier.weight(1f).testTag("vocal_accept"), kind = ButtonKind.Primary, icon = Icons.Default.Check)
                 }
                 CauceButton(tr("Descartar el procesado", "Discard processing"), { actions.discardProcess(clip.id) }, Modifier.fillMaxWidth().testTag("vocal_discard"),

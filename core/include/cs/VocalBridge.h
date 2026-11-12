@@ -44,6 +44,9 @@ struct Stats
     int latencySamples = 0;      // latencia real de la cadena, descartada del principio (resultado alineado)
     Frame inputFrames = 0, outputFrames = 0, tailFrames = 0;
     float inputPeak = 0, outputPeak = 0;
+    // Diferencia de nivel RMS (procesada − original, en dB) medida sobre la duración de la entrada, sin la cola.
+    // Sirve para comparar A/B a volumen igualado: lo más fuerte tiende a parecer mejor. 0 si no se puede medir.
+    float levelDb = 0;
     int nonFiniteEvents = 0;
     long clipAltered = 0;
     double seconds = 0;          // tiempo de proceso

@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -124,7 +125,8 @@ std::string toJson (const ProjectModel& p, bool pretty)
                 json pp = json::parse (c.procParams, nullptr, false);
                 jc["process"] = { { "plugin", c.procPlugin }, { "version", c.procVersion }, { "params", pp.is_discarded() ? json::object() : pp },
                                   { "origSourceId", c.origSourceId }, { "origOffset", c.origOffset }, { "origLength", c.origLength },
-                                  { "procSourceId", c.procSourceId }, { "procLength", c.procLength } };
+                                  { "procSourceId", c.procSourceId }, { "procLength", c.procLength },
+                                  { "levelDb", c.procLevelDb }, { "match", c.procMatch } };
             }
             jt["clips"].push_back (jc);
         }
@@ -232,6 +234,9 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                     c.origOffset = jp.value ("origOffset", (Frame) 0);
                     c.origLength = jp.value ("origLength", (Frame) 0);
                     c.procLength = jp.value ("procLength", (Frame) 0);
+                    const float lv = jp.value ("levelDb", 0.0f);
+                    c.procLevelDb = std::isfinite (lv) ? std::clamp (lv, -24.0f, 24.0f) : 0.0f;
+                    c.procMatch = jp.value ("match", false);
                 }
                 t.clips.push_back (c);
             }

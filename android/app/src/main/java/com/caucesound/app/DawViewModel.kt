@@ -385,7 +385,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     }
 
     override fun cancelJob() { _plugins.value.job?.takeIf { it.active }?.let { j -> viewModelScope.launch { call(Cmd.jobCancel(j.id)) } } }
-    override fun setClipVersion(clipId: String, original: Boolean) = edit(Cmd.clipVersion(clipId, original))
+    override fun setClipVersion(clipId: String, original: Boolean, match: Boolean?) = edit(Cmd.clipVersion(clipId, original, match))
     override fun discardProcess(clipId: String) = edit(Cmd.discardProcess(clipId)) { _plugins.value = _plugins.value.copy(vocalResult = null) }
     override fun auditionClip(clipId: String) {
         val c = _state.value?.clip(clipId)?.second ?: return

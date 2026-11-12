@@ -32,7 +32,7 @@ object Cmd {
     // --- Plugins (misión 0.5) ---
     fun vocalPresets() = c("vocalPresets")
     fun vocalProcess(clipId: String, params: VocalParams) = c("vocalProcess", "clipId" to clipId, "params" to params.toJson())
-    fun clipVersion(clipId: String, original: Boolean) = c("clipVersion", "clipId" to clipId, "original" to original)
+    fun clipVersion(clipId: String, original: Boolean, match: Boolean? = null) = c("clipVersion", "clipId" to clipId, "original" to original, "match" to match)
     fun discardProcess(clipId: String) = c("discardProcess", "clipId" to clipId)
     fun jobStatus(jobId: String) = c("jobStatus", "jobId" to jobId)
     fun jobCancel(jobId: String) = c("jobCancel", "jobId" to jobId)

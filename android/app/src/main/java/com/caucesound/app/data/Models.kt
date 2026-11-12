@@ -190,7 +190,8 @@ object StateParser {
                     c.optDouble("gainDb", 0.0).toFloat(), c.getString("id") in missing,
                     c.optJSONObject("process")?.let { pr ->
                         ClipProcess(pr.optString("plugin"), pr.optString("version"), VocalParams.fromJson(pr.optJSONObject("params")),
-                            c.getString("sourceId") == pr.optString("origSourceId"), pr.optLong("origLength"), pr.optLong("procLength"))
+                            c.getString("sourceId") == pr.optString("origSourceId"), pr.optLong("origLength"), pr.optLong("procLength"),
+                            pr.optDouble("levelDb", 0.0).toFloat(), pr.optBoolean("match", false))
                     },
                 )
             }.sortedBy { it.start }

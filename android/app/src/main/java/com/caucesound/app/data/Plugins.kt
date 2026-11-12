@@ -48,7 +48,9 @@ data class VocalParams(
 data class VocalPreset(val id: String, val name: String, val description: String, val params: VocalParams)
 
 /** Procesado no destructivo de un clip: existe la versión original y la procesada; `playingOriginal` dice cuál suena. */
-data class ClipProcess(val plugin: String, val version: String, val params: VocalParams, val playingOriginal: Boolean, val origLength: Long, val procLength: Long)
+data class ClipProcess(val plugin: String, val version: String, val params: VocalParams, val playingOriginal: Boolean, val origLength: Long, val procLength: Long,
+    /** Nivel RMS de la versión procesada respecto a la original (dB), medido por el motor; match = B suena compensada al comparar. */
+    val levelDb: Float = 0f, val match: Boolean = false)
 
 /** Trabajo offline en curso o terminado (cola del motor). state: queued, running, done, failed, cancelled. */
 data class JobUi(val id: String, val type: String, val targetId: String, val state: String, val progress: Float, val error: String? = null) {

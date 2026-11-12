@@ -261,7 +261,7 @@ TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, Rende
             g.keepAlive.push_back (it->second->audio);
         }
         rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
-        rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.gainDb);
+        rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.playGainDb());
         tr.clips.push_back (rc);
     }
     std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });

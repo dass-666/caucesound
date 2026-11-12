@@ -47,9 +47,14 @@ struct ClipModel
     std::string procParams;   // JSON de parámetros (para reproducir o seguir ajustando)
     std::string origSourceId, procSourceId;
     Frame origOffset = 0, origLength = 0, procLength = 0;
+    // Comparación A/B a volumen igualado: procLevelDb = nivel RMS de B respecto a A. Con procMatch, B suena
+    // compensada (−procLevelDb) solo mientras se compara; «Aceptar» lo desactiva y B queda a su nivel real.
+    float procLevelDb = 0.0f;
+    bool procMatch = false;
+    float playGainDb() const { return gainDb + (processed() && ! playingOriginal() && procMatch ? -procLevelDb : 0.0f); }
     bool processed() const { return ! procPlugin.empty(); }
     bool playingOriginal() const { return processed() && sourceId == origSourceId; }
-    void clearProcess() { procPlugin.clear(); procVersion.clear(); procParams.clear(); origSourceId.clear(); procSourceId.clear(); origOffset = origLength = procLength = 0; }
+    void clearProcess() { procPlugin.clear(); procVersion.clear(); procParams.clear(); origSourceId.clear(); procSourceId.clear(); origOffset = origLength = procLength = 0; procLevelDb = 0.0f; procMatch = false; }
 };
 
 struct InstrumentModel

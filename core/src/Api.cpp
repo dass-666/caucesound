@@ -337,7 +337,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             if (j.value ("ok", false)) j["jobId"] = j.value ("id", std::string());
             return j.dump();
         }
-        if (cmd == "clipVersion") return result (s.setClipVersion (str ("clipId"), flag ("original"))).dump();
+        if (cmd == "clipVersion") return result (s.setClipVersion (str ("clipId"), flag ("original"), q.contains ("match") && q["match"].is_boolean() ? (q["match"].get<bool>() ? 1 : 0) : -1)).dump();
         if (cmd == "discardProcess") return result (s.discardProcess (str ("clipId"))).dump();
         if (cmd == "jobStatus")
         {

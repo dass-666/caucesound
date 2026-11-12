@@ -117,7 +117,7 @@
     "root": 7
    }
   ],
-  "clipId": "clp_fd202f1ecd4b",
+  "clipId": "clp_bc8fbe35e6f2",
   "durationSec": 42.239125,
   "firstBeatSec": 0.0,
   "keyCandidates": [
@@ -146,7 +146,7 @@
   "keyRoot": 9,
   "minor": true,
   "percussiveOnly": false,
-  "seconds": 0.277012179,
+  "seconds": 0.325606857,
   "silent": false,
   "summary": "92.0 BPM (confianza alta), Am (confianza alta), 16 compases, acordes: Am | F | C | G | Am | F | C | G | Am | F | C | G | Am | F | C | G",
   "tonal": true,
@@ -155,6 +155,6 @@
   ]
  },
  "state": "done",
- "targetId": "clp_fd202f1ecd4b",
+ "targetId": "clp_bc8fbe35e6f2",
  "type": "soloAnalyze"
 }

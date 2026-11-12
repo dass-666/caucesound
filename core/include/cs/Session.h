@@ -151,7 +151,8 @@ public:
     // temporal se borra. Reprocesar parte siempre del original.
     OpResult vocalProcess (const std::string& clipId, const vocal::Params& params);
     // Comparación A/B: elige qué versión suena (original = true). Misma posición en el tiempo; no entra en deshacer.
-    OpResult setClipVersion (const std::string& clipId, bool original);
+    // match: -1 no cambia, 0 desactiva y 1 activa la comparación a volumen igualado (ver ClipModel::procMatch).
+    OpResult setClipVersion (const std::string& clipId, bool original, int match = -1);
     // Descarta el procesado: el clip vuelve a ser solo el original (con deshacer).
     OpResult discardProcess (const std::string& clipId);
     JobRunner& jobRunner() { return jobs; }
@@ -224,7 +225,7 @@ private:
     OpResult finishEditLocked();
     void touchLocked();
     OpResult applyVocalLocked (const std::string& projectId, const std::string& clipId, const std::string& sid, const std::string& tmpPath,
-                               AudioData&& audio, const vocal::Params& params);
+                               AudioData&& audio, const vocal::Params& params, float levelDb);
     void cleanStaleTempLocked();
 
     Engine& engine;
