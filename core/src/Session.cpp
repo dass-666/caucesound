@@ -144,6 +144,42 @@ void Session::pushUndo()
     undoStack.push_back (proj);
     if (undoStack.size() > kMaxUndo) undoStack.erase (undoStack.begin());
     redoStack.clear();
+    paramGestureKey.clear(); // cualquier otra edición cierra el gesto de parámetros abierto
+}
+
+void Session::paramUndoLocked (const std::string& key)
+{
+    if (key == paramGestureKey) return; // mismo gesto: el estado previo ya está guardado
+    pushUndo();
+    paramGestureKey = key;
+}
+
+void Session::endParamGesture()
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    paramGestureKey.clear();
+}
+
+// Deshacer/rehacer cambian el estado guardado de instrumentos y efectos; las instancias que ya suenan deben seguirlo
+// (si no, se oiría una cosa y se guardaría otra). El kit de batería es estructural: se recrea la instancia.
+void Session::syncInstancesLocked()
+{
+    paramGestureKey.clear();
+    for (const auto& t : proj.tracks)
+    {
+        auto it = instrumentInstances.find (t.id);
+        if (it != instrumentInstances.end() && it->second && ! t.instrument.state.empty() && it->second->saveState() != t.instrument.state)
+        {
+            if (t.instrument.type == "cs.drums") instrumentInstances.erase (it);
+            else it->second->loadState (t.instrument.state);
+        }
+        for (const auto& ins : t.inserts)
+        {
+            auto fx = insertInstances.find (ins.id);
+            if (fx != insertInstances.end() && fx->second && ! ins.state.empty() && fx->second->saveState() != ins.state)
+                fx->second->loadState (ins.state);
+        }
+    }
 }
 
 OpResult Session::finishEditLocked()
@@ -785,6 +821,7 @@ OpResult Session::undo()
     for (auto& t : proj.tracks)
         if (auto it = mixer.find (t.id); it != mixer.end())
         { t.volumeDb = it->second.volumeDb; t.pan = it->second.pan; t.mute = it->second.mute; t.solo = it->second.solo; t.armed = it->second.armed; }
+    syncInstancesLocked();
     return finishEditLocked();
 }
 
@@ -801,6 +838,7 @@ OpResult Session::redo()
     for (auto& t : proj.tracks)
         if (auto it = mixer.find (t.id); it != mixer.end())
         { t.volumeDb = it->second.volumeDb; t.pan = it->second.pan; t.mute = it->second.mute; t.solo = it->second.solo; t.armed = it->second.armed; }
+    syncInstancesLocked();
     return finishEditLocked();
 }
 

@@ -91,8 +91,11 @@ public:
     OpResult undo();
     OpResult redo();
 
-    // --- Instrumentos (sin deshacer, como la mezcla: se aplican al instante) ----------------------------------
+    // --- Instrumentos y parámetros de efectos: se aplican al instante y entran en deshacer agrupados por gesto ----
+    // Llamadas seguidas al mismo parámetro (un giro de perilla) forman una sola entrada de deshacer. endParamGesture()
+    // cierra el gesto (la interfaz lo llama al soltar la perilla): el siguiente cambio abre una entrada nueva.
     OpResult setInstrumentParam (const std::string& trackId, const std::string& paramId, float value);
+    void endParamGesture();
     OpResult loadSynthPreset (const std::string& trackId, const std::string& presetId);
     int activeVoices (const std::string& trackId) const; // para pruebas e indicadores
 
@@ -160,6 +163,8 @@ private:
     static constexpr int kPeakBlock = 256;
 
     void pushUndo();
+    void paramUndoLocked (const std::string& key); // entrada de deshacer al empezar un gesto (ver endParamGesture)
+    void syncInstancesLocked();                   // tras deshacer/rehacer: instancias vivas = estado del modelo
     void rebuildGraph();
     TrackRT makeTrackRT (const TrackModel& t, int slot, bool offline, RenderGraph& g);
     std::shared_ptr<Instrument> instrumentFor (const TrackModel& t);
@@ -183,6 +188,7 @@ private:
     std::map<std::string, ProcessorPtr> insertInstances;
     std::map<std::string, std::shared_ptr<Instrument>> instrumentInstances; // por id de pista
     std::vector<ProjectModel> undoStack, redoStack;
+    std::string paramGestureKey; // parámetro del gesto abierto ("" = ninguno)
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
 };

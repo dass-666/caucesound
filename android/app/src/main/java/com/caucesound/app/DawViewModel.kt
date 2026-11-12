@@ -14,6 +14,7 @@ import com.caucesound.app.data.ProjectSummary
 import com.caucesound.app.data.StateParser
 import com.caucesound.app.data.Catalog
 import com.caucesound.app.data.NoteState
+import com.caucesound.app.ui.tr
 import com.caucesound.app.ui.Panel
 import com.caucesound.app.ui.StudioActions
 import kotlinx.coroutines.Dispatchers
@@ -172,6 +173,43 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         }
     }
 
+    /**
+     * Proyecto completo a un archivo .caucesound (ZIP) elegido por el usuario con el selector del sistema: el motor lo
+     * escribe en la caché de la app y aquí se copia al destino. Nada sale del dispositivo salvo a donde el usuario elija.
+     */
+    fun exportProjectArchive(folder: String, target: android.net.Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tmp = File(app.cacheDir, "export_${System.currentTimeMillis()}.caucesound")
+            val r = call(Cmd.exportProjectArchive(projectsRoot.absolutePath, folder, tmp.absolutePath))
+            if (!r.ok) { tmp.delete(); toast(r.error ?: ""); return@launch }
+            val copied = withContext(Dispatchers.IO) {
+                runCatching {
+                    app.contentResolver.openOutputStream(target, "w")!!.use { out -> tmp.inputStream().use { it.copyTo(out, 1 shl 16) } }
+                }.isSuccess.also { tmp.delete() }
+            }
+            toast(if (copied) tr("Proyecto exportado (${r.raw.optInt("files")} archivos)", "Project exported (${r.raw.optInt("files")} files)")
+                  else tr("No se pudo escribir el archivo elegido", "Could not write the chosen file"))
+        }
+    }
+
+    /** Importa un .caucesound como proyecto nuevo (id nuevo; no sustituye a ninguno existente). */
+    fun importProjectArchive(source: android.net.Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tmp = File(app.cacheDir, "import_${System.currentTimeMillis()}.caucesound")
+            val copied = withContext(Dispatchers.IO) {
+                runCatching { app.contentResolver.openInputStream(source)!!.use { inp -> tmp.outputStream().use { inp.copyTo(it, 1 shl 16) } } }.isSuccess
+            }
+            if (!copied) { tmp.delete(); toast(tr("No se pudo leer el archivo", "Could not read the file")); return@launch }
+            val dest = File(projectsRoot, "p_" + System.currentTimeMillis()).absolutePath
+            val r = call(Cmd.importProjectArchive(projectsRoot.absolutePath, tmp.absolutePath, dest))
+            withContext(Dispatchers.IO) { tmp.delete() }
+            toast(if (r.ok) tr("Proyecto importado: ", "Project imported: ") + r.raw.optString("name") else (r.error ?: ""))
+            refreshProjects()
+        }
+    }
+
     fun openProject(folder: String) {
         viewModelScope.launch {
             val r = call(Cmd.openProject(folder))
@@ -288,7 +326,8 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         viewModelScope.launch {
             val r = call(Cmd.setInstrumentParam(trackId, param, value))
             if (!r.ok && r.error != null) toast(r.error)
-            if (param == "kit" || param.startsWith("mute") || param.startsWith("solo")) refresh()
+            // Botones (kit, mute, solo de carril): cada pulsación es su propia entrada de deshacer.
+            if (param == "kit" || param.startsWith("mute") || param.startsWith("solo")) { call(Cmd.endParamGesture()); refresh() }
         }
     }
     override fun addInsert(trackId: String, type: String) = edit(Cmd.addInsert(trackId, type))
@@ -314,7 +353,8 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     /** Deslizadores: se aplican al instante; el estado se refresca al soltar. */
     override fun setVolumeLive(id: String, db: Float) { viewModelScope.launch { call(Cmd.setVolume(id, db)) } }
     override fun setPanLive(id: String, pan: Float) { viewModelScope.launch { call(Cmd.setPan(id, pan)) } }
-    override fun commitMixer() { viewModelScope.launch { refresh() } }
+    /** Al soltar una perilla o deslizador: cierra el gesto (una entrada de deshacer por giro) y refresca. */
+    override fun commitMixer() { viewModelScope.launch { call(Cmd.endParamGesture()); refresh() } }
 
     // --- Clips --------------------------------------------------------------------------------------------------
     override fun selectClip(id: String?) { _selectedClip.value = id }

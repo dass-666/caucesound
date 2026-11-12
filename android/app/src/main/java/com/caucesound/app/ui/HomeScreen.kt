@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -75,6 +78,8 @@ interface HomeActions {
     fun rename(folder: String, name: String) {}
     fun duplicate(folder: String, name: String) {}
     fun delete(folder: String) {}
+    fun exportArchive(folder: String, name: String) {}
+    fun importArchive() {}
 }
 
 private val TEMPLATE_COLORS = mapOf(
@@ -130,14 +135,22 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
                     }
                 }
             }
-            item { SectionTitle(tr("Proyectos recientes", "Recent projects")) }
+            item {
+                Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { SectionTitle(tr("Proyectos recientes", "Recent projects")) }
+                    TextButton(onClick = { actions.importArchive() }, modifier = Modifier.heightIn(min = Dims.Touch)) {
+                        Icon(Icons.Default.FileOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(tr("Importar", "Import"))
+                    }
+                }
+            }
             if (projects.isEmpty()) item {
                 Text(tr("Todavía no hay proyectos. Elige una plantilla para empezar.", "No projects yet. Pick a template to begin."),
                     color = Palette.TextDim, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             }
             items(projects, key = { it.folder }) { p ->
                 ProjectRow(p, onOpen = { actions.open(p.folder) }, onRename = { renaming = p },
-                    onDuplicate = { actions.duplicate(p.folder, p.name + tr(" (copia)", " (copy)")) }, onDelete = { deleting = p })
+                    onDuplicate = { actions.duplicate(p.folder, p.name + tr(" (copia)", " (copy)")) }, onDelete = { deleting = p },
+                    onExport = { actions.exportArchive(p.folder, p.name) })
             }
         }
     }
@@ -254,7 +267,7 @@ private fun TemplateCard(id: String, info: TemplateInfo?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProjectRow(p: ProjectSummary, onOpen: () -> Unit, onRename: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit) {
+private fun ProjectRow(p: ProjectSummary, onOpen: () -> Unit, onRename: () -> Unit, onDuplicate: () -> Unit, onDelete: () -> Unit, onExport: () -> Unit = {}) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
@@ -276,6 +289,7 @@ private fun ProjectRow(p: ProjectSummary, onOpen: () -> Unit, onRename: () -> Un
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(text = { Text(tr("Renombrar", "Rename")) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onRename() }, enabled = p.error == null)
                 DropdownMenuItem(text = { Text(tr("Duplicar", "Duplicate")) }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) }, onClick = { menu = false; onDuplicate() }, enabled = p.error == null)
+                DropdownMenuItem(text = { Text(tr("Exportar (.caucesound)", "Export (.caucesound)")) }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { menu = false; onExport() }, enabled = p.error == null)
                 DropdownMenuItem(text = { Text(tr("Eliminar", "Delete"), color = Palette.Record) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = Palette.Record) }, onClick = { menu = false; onDelete() })
             }
         }

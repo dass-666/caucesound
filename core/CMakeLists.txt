@@ -2,6 +2,7 @@
 # Lo comparten la app Android (JNI + Oboe), la futura app iOS (Core Audio) y las pruebas en escritorio.
 add_library(cs_core STATIC
     src/Api.cpp
+    src/Archive.cpp
     src/Drums.cpp
     src/Effects.cpp
     src/Engine.cpp

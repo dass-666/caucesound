@@ -33,6 +33,7 @@ OpResult Session::setInstrumentParam (const std::string& trackId, const std::str
     const int idx = parameterIndex (*inst, paramId);
     if (idx < 0) return OpResult::fail ("parámetro desconocido: " + paramId);
     const bool structural = t->instrument.type == "cs.drums" && paramId == "kit";
+    paramUndoLocked ("i/" + trackId + "/" + paramId);
     inst->setParameter (idx, value);
     t->instrument.state = inst->saveState();
     if (structural)
@@ -107,6 +108,7 @@ OpResult Session::setInsertParam (const std::string& insertId, const std::string
     else { fx = createProcessor (ins->type); if (! fx) return OpResult::fail ("efecto no disponible"); fx->loadState (ins->state); }
     const int idx = parameterIndex (*fx, paramId);
     if (idx < 0) return OpResult::fail ("parámetro desconocido: " + paramId);
+    paramUndoLocked ("f/" + insertId + "/" + paramId);
     fx->setParameter (idx, value);
     ins->state = fx->saveState();
     touchLocked();
@@ -159,7 +161,9 @@ OpResult Session::loadSynthPreset (const std::string& trackId, const std::string
     const std::string state = synthPresetState (presetId);
     if (state.empty()) return OpResult::fail ("preset desconocido");
     auto inst = instrumentFor (*t);
-    if (! inst || ! inst->loadState (state)) return OpResult::fail ("no se pudo cargar el preset");
+    if (! inst) return OpResult::fail ("no se pudo cargar el preset");
+    pushUndo();
+    if (! inst->loadState (state)) { undoStack.pop_back(); return OpResult::fail ("no se pudo cargar el preset"); }
     t->instrument.state = inst->saveState();
     t->instrument.preset = presetId;
     touchLocked();

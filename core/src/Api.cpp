@@ -1,4 +1,5 @@
 #include "cs/Api.h"
+#include "cs/Archive.h"
 
 #include "cs/Instruments.h"
 #include "cs/Project.h"
@@ -156,6 +157,25 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             removeFile (dest + "/project.json.bak");
             return json { { "ok", true }, { "folder", dest } }.dump();
         }
+        if (cmd == "exportProjectArchive")
+        {
+            // Proyecto completo en un .caucesound (ZIP). Si es el proyecto abierto, se guarda antes.
+            const std::string root = str ("root"), folder = str ("folder");
+            if (! insideRoot (root, folder)) return result (OpResult::fail ("carpeta fuera de los proyectos")).dump();
+            if (s.isOpen() && s.folder() == folder)
+                if (auto r = s.save(); ! r.ok) return result (r).dump();
+            const auto a = exportProjectArchive (folder, str ("out"));
+            if (! a.ok) return result (OpResult::fail (a.error)).dump();
+            return json { { "ok", true }, { "files", a.files }, { "bytes", a.bytes }, { "name", a.name } }.dump();
+        }
+        if (cmd == "importProjectArchive")
+        {
+            const std::string root = str ("root"), dest = str ("dest");
+            if (! insideRoot (root, dest)) return result (OpResult::fail ("destino fuera de los proyectos")).dump();
+            const auto a = importProjectArchive (str ("archive"), dest);
+            if (! a.ok) return result (OpResult::fail (a.error)).dump();
+            return json { { "ok", true }, { "folder", dest }, { "files", a.files }, { "bytes", a.bytes }, { "name", a.name } }.dump();
+        }
         if (cmd == "openProject")
         {
             LoadReport rep;
@@ -209,6 +229,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setClipGain") return result (s.setClipGain (str ("clipId"), (float) num ("db"))).dump();
         if (cmd == "undo") return result (s.undo()).dump();
         if (cmd == "redo") return result (s.redo()).dump();
+        if (cmd == "endParamGesture") { s.endParamGesture(); return result ({}).dump(); }
         if (cmd == "setTempo") return result (s.setTempo (num ("bpm", 120), (int) num ("beatsPerBar", 4))).dump();
         if (cmd == "setMetronome") return result (s.setMetronome (flag ("on"))).dump();
         if (cmd == "setLatencyOffset") return result (s.setRecordLatencyOffset (frame ("frames"))).dump();

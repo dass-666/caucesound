@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -75,6 +76,22 @@ class UiScreensTest {
         compose.setContent { Themed { HomeScreen(projects, catalog.templates, null, {}, object : HomeActions {}) } }
         compose.onNodeWithText("Beat trap 140", substring = true).assertExists()
         shot("01_home")
+    }
+
+    @Test fun home_import_and_export_actions_are_wired() {
+        val projects = StateParser.projects(res("projects.json"))
+        var imported = 0
+        var exported: String? = null
+        val actions = object : HomeActions {
+            override fun importArchive() { imported++ }
+            override fun exportArchive(folder: String, name: String) { exported = folder }
+        }
+        compose.setContent { Themed { HomeScreen(projects, catalog.templates, null, {}, actions) } }
+        compose.onNodeWithText(tr("Importar", "Import")).performClick()
+        assertEquals(1, imported)
+        compose.onAllNodesWithContentDescription(tr("Opciones", "Options"))[0].performClick()
+        compose.onNodeWithText(tr("Exportar (.caucesound)", "Export (.caucesound)")).performClick()
+        assertEquals(projects.first { it.error == null }.folder, exported)
     }
 
     @Test fun drums_panel_paints_steps() {

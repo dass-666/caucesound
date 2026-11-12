@@ -423,3 +423,86 @@ TEST (pdc_after_seek_is_aligned_and_documents_the_preroll_gap)
     MEASURE ("PDC tras seek: alineada si el contenido está a más de %d frames; si no, solo suena la pista sin latencia (pico %.2f)", L, m);
     CHECK (std::fabs (m - 0.5f) < 1e-6f);
 }
+
+// Deshacer agrupado por gesto: muchos cambios seguidos del mismo parámetro (un giro de perilla) son una sola entrada;
+// deshacer y rehacer devuelven el valor anterior y la instancia que suena lo sigue (lo exportado tras guardar y
+// reabrir es idéntico a lo exportado antes de cerrar).
+TEST (param_gestures_undo_as_one_step_and_live_instances_follow)
+{
+    const std::string dir = cstest::tempDir ("param_undo");
+    Engine engine;
+    engine.prepare (kSr, 1024);
+    Session s (engine);
+    CHECK (s.createProject (dir + "/p", "undo", 48000, "trap").ok);
+    std::string synth, drums;
+    for (const auto& t : s.model().tracks)
+    {
+        if (t.kind == "synth" && synth.empty()) synth = t.id;
+        if (t.kind == "drums") drums = t.id;
+    }
+    auto param = [&] (const std::string& trackId, const char* id)
+    {
+        const auto m = s.model();
+        return json::parse (m.findTrack (trackId)->instrument.state).value (id, -1.0f);
+    };
+    auto fxParam = [&] (const std::string& insertId, const char* id)
+    {
+        for (const auto& t : s.model().tracks)
+            for (const auto& i : t.inserts) if (i.id == insertId) return json::parse (i.state).value (id, -1.0f);
+        return -1.0f;
+    };
+    const float cutoff0 = param (synth, "cutoffHz");
+    // Gesto 1: 60 pasos de la perilla de corte.
+    for (int i = 1; i <= 60; ++i) CHECK (s.setInstrumentParam (synth, "cutoffHz", 300.0f + 50.0f * (float) i).ok);
+    s.endParamGesture();
+    const float cutoff1 = param (synth, "cutoffHz");
+    // Gesto 2 sobre la misma perilla: entrada nueva porque el gesto anterior se cerró.
+    for (int i = 1; i <= 30; ++i) CHECK (s.setInstrumentParam (synth, "cutoffHz", 800.0f + 10.0f * (float) i).ok);
+    s.endParamGesture();
+    // Efecto: añadir (entrada) + gesto en la mezcla (entrada).
+    const auto rev = s.addInsert (synth, "cs.reverb");
+    CHECK (rev.ok);
+    for (int i = 1; i <= 40; ++i) CHECK (s.setInsertParam (rev.id, "mix", 0.01f * (float) i).ok);
+    s.endParamGesture();
+    // Kit de batería (estructural) y preset del synth: una entrada cada uno.
+    const float kit0 = param (drums, "kit");
+    CHECK (s.setInstrumentParam (drums, "kit", kit0 >= 1 ? 0.0f : 2.0f).ok);
+    s.endParamGesture();
+    CHECK (s.loadSynthPreset (synth, "pluck").ok);
+    const float cutoffPluck = param (synth, "cutoffHz");
+
+    // Deshacer paso a paso.
+    CHECK (s.undo().ok); // preset
+    CHECK (param (synth, "cutoffHz") == 1100.0f);
+    CHECK (s.undo().ok); // kit
+    CHECK (param (drums, "kit") == kit0);
+    CHECK (s.undo().ok); // gesto de mezcla de la reverb: vuelve al valor por defecto, no a un paso intermedio
+    CHECK (std::fabs (fxParam (rev.id, "mix") - 0.25f) < 1e-6f);
+    CHECK (s.undo().ok); // añadir la reverb
+    CHECK (fxParam (rev.id, "mix") == -1.0f);
+    CHECK (s.undo().ok); // gesto 2
+    CHECK (param (synth, "cutoffHz") == cutoff1);
+    CHECK (s.undo().ok); // gesto 1
+    CHECK (param (synth, "cutoffHz") == cutoff0);
+    MEASURE ("deshacer: 60 + 30 + 40 pasos de perilla = 3 entradas; corte %.0f -> %.0f -> %.0f Hz y vuelta", cutoff0, cutoff1, 1100.0f);
+    // Rehacer todo y comprobar que lo que suena es lo que se guarda.
+    for (int i = 0; i < 6; ++i) CHECK (s.redo().ok);
+    CHECK (param (synth, "cutoffHz") == cutoffPluck);
+    CHECK (s.undo().ok && s.undo().ok); // estado intermedio: kit y preset deshechos
+    CHECK (s.exportMix (dir + "/a.wav", 32).ok);
+    CHECK (s.save().ok);
+    s.close();
+    Session s2 (engine);
+    CHECK (s2.openProject (dir + "/p").ok);
+    CHECK (s2.exportMix (dir + "/b.wav", 32).ok);
+    AudioData a, b;
+    std::string err;
+    CHECK (readWav (dir + "/a.wav", a, err) && readWav (dir + "/b.wav", b, err));
+    CHECK (a.numFrames() == b.numFrames() && a.numFrames() > 0);
+    float diff = 0;
+    for (int c = 0; c < std::min (a.numChannels(), b.numChannels()); ++c)
+        for (Frame i = 0; i < std::min (a.numFrames(), b.numFrames()); ++i)
+            diff = std::max (diff, std::fabs (a.channels[(size_t) c][(size_t) i] - b.channels[(size_t) c][(size_t) i]));
+    MEASURE ("exportación antes de cerrar vs tras reabrir (después de deshacer): diferencia máxima %g", diff);
+    CHECK (diff == 0.0f);
+}

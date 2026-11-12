@@ -31,6 +31,17 @@ class MainActivity : ComponentActivity() {
         else { afterPermission = action; micPermission.launch(Manifest.permission.RECORD_AUDIO) }
     }
 
+    // Selector del sistema (Storage Access Framework): sin permisos de almacenamiento; el usuario elige dónde.
+    private var exportFolder: String? = null
+    private val exportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val folder = exportFolder
+        exportFolder = null
+        if (uri != null && folder != null) vm.exportProjectArchive(folder, uri)
+    }
+    private val importPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importProjectArchive(uri)
+    }
+
     private val homeActions = object : HomeActions {
         override fun open(folder: String) = vm.openProject(folder)
         override fun create(name: String, template: String) =
@@ -38,6 +49,11 @@ class MainActivity : ComponentActivity() {
         override fun rename(folder: String, name: String) = vm.renameProject(folder, name)
         override fun duplicate(folder: String, name: String) = vm.duplicateProject(folder, name)
         override fun delete(folder: String) = vm.deleteProject(folder)
+        override fun exportArchive(folder: String, name: String) {
+            exportFolder = folder
+            exportPicker.launch(name.replace(Regex("[^\\p{L}\\p{N} _-]"), "_").trim().ifEmpty { "proyecto" } + ".caucesound")
+        }
+        override fun importArchive() = importPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
