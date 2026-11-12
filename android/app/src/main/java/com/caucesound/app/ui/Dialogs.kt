@@ -211,6 +211,7 @@ internal fun SettingsDialog(vm: DawViewModel, s: ProjectState, requestMic: (() -
                         fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Palette.TextDim,
                     )
                     Text(stringResource(R.string.latency_estimate_note), fontSize = 11.sp, color = Palette.TextDim)
+                    TextButton(onClick = { vm.refreshAudioStatus() }) { Text(tr("Actualizar estado", "Refresh status")) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.record_offset, offsetMs.toInt()))

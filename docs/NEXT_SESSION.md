@@ -6,8 +6,8 @@
   `feat/fase-1-2-beatmaker-ui-midi`). Pull request abierto contra `main`, **sin fusionar** (requiere autorización).
 - **Base**: `main` en `dbdd93b` (fase 1). Ver `git log main..claude/project-thread-w0xy20` para los commits.
 - **APK de prueba**: `caucesound-0.2.0-fase1.2-preview.apk` en la carpeta del proyecto (`/mnt/project-files/caucesound/`),
-  `com.caucesound.app.preview`, versionCode 2, SHA-256 `e3f23dd9099dea44b2f562e1243f35bbcbe3894a842aedf451c5f878265e6406`
-  (compilado 08:55 UTC, incluye PDC, deshacer por gesto, .caucesound, desnormales, presets corregidos y argumentos estrictos). Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
+  `com.caucesound.app.preview`, versionCode 2, SHA-256 `67ea0537139efa6cdc710c17b4ef2426c9c35e71a3c240927d29a2ac5e040453`
+  (compilado ~09:05 UTC, incluye PDC, deshacer por gesto, .caucesound, desnormales, presets corregidos, argumentos estrictos y medidor de carga DSP). Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
 - **Clave de prueba**: `/mnt/project-files/caucesound/signing/` (`caucesound-preview.jks` + `keystore.properties`).
   Fuera de git. Si se pierde, la Preview instalada tampoco podrá actualizarse (igual que pasó con la fase 1).
 - **Validación física**: ninguna. Todo lo «probado» es automático (ver STATUS.md).
