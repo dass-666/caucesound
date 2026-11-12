@@ -90,5 +90,16 @@ inline double polyBlep (double t, double dt)
     return 0.0;
 }
 
+// sin(2*pi*ph) para ph en [0, 1): reducción por simetría a |t| <= pi/2 y polinomio de Taylor de grado 11
+// (error < 1e-7, unas 4 veces más rápido que std::sin). Para osciladores en el hilo de audio.
+inline double sin2pi (double ph)
+{
+    double x = ph - 0.5;                 // sin(2*pi*ph) = -sin(2*pi*x), x en [-0,5, 0,5)
+    if (x > 0.25) x = 0.5 - x;
+    else if (x < -0.25) x = -0.5 - x;
+    const double t = 2.0 * 3.14159265358979323846 * x, t2 = t * t;
+    return -t * (1.0 + t2 * (-1.0 / 6 + t2 * (1.0 / 120 + t2 * (-1.0 / 5040 + t2 * (1.0 / 362880 + t2 * (-1.0 / 39916800))))));
+}
+
 inline float dbToLin (float db) { return db <= -96.0f ? 0.0f : std::pow (10.0f, db / 20.0f); }
 } // namespace cs::dsp

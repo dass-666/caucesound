@@ -6,6 +6,7 @@
 #include "cs/Instruments.h"
 #include "cs/Midi.h"
 #include "cs/Processor.h"
+#include "../src/Dsp.h"
 
 #include <algorithm>
 #include <cmath>
@@ -255,4 +256,16 @@ TEST (drum_kits_are_balanced_short_and_clean)
         MEASURE ("kit %-11s: bombo vs caja %.1f dB; rango de picos %.1f dB", kits[(size_t) k].id.c_str(), kickPeak - snarePeak, maxPeak - minPeak);
         CHECK (std::fabs (kickPeak - snarePeak) < 6.0); // bombo y caja, la base del beat, a niveles parecidos
     }
+}
+
+TEST (fast_sine_matches_std_sin)
+{
+    double err = 0;
+    for (int i = 0; i < 1000000; ++i)
+    {
+        const double ph = (double) i / 1000000.0;
+        err = std::max (err, std::fabs (cs::dsp::sin2pi (ph) - std::sin (2 * M_PI * ph)));
+    }
+    MEASURE ("seno rápido del oscilador: error máximo %.2g (%.0f dB)", err, 20 * std::log10 (err));
+    CHECK (err < 1e-6);
 }

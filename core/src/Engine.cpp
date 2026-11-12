@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#if defined(__SSE__) || defined(_M_X64)
+#include <xmmintrin.h>
+#endif
 
 namespace cs
 {
@@ -354,8 +358,28 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
     }
 }
 
+namespace
+{
+// Desnormales a cero mientras se procesa (FTZ/DAZ en x86, FZ en ARM64) y se restaura al salir. Las colas de reverb,
+// filtros y voces decaen hacia números desnormales, que en x86 cuestan decenas de veces más ciclos (picos de CPU
+// justo cuando todo está en silencio). Se usa igual en vivo y en la exportación, para que ambas den lo mismo.
+struct ScopedNoDenormals
+{
+#if defined(__aarch64__)
+    uint64_t saved = 0;
+    ScopedNoDenormals() { asm volatile ("mrs %0, fpcr" : "=r"(saved)); const uint64_t v = saved | (1ull << 24); asm volatile ("msr fpcr, %0" : : "r"(v)); }
+    ~ScopedNoDenormals() { asm volatile ("msr fpcr, %0" : : "r"(saved)); }
+#elif defined(__SSE__) || defined(_M_X64)
+    unsigned int saved = 0;
+    ScopedNoDenormals() : saved (_mm_getcsr()) { _mm_setcsr (saved | 0x8040); } // FTZ | DAZ
+    ~ScopedNoDenormals() { _mm_setcsr (saved); }
+#endif
+};
+} // namespace
+
 void Engine::process (const float* input, int inChannels, float* output, int outChannels, int frames)
 {
+    ScopedNoDenormals noDenormals;
     adoptPendingGraph();
     const RenderGraph* g = active;
     const Frame s = seekRequest.exchange (-1, std::memory_order_acq_rel);
@@ -463,6 +487,7 @@ void Engine::process (const float* input, int inChannels, float* output, int out
 
 void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
 {
+    ScopedNoDenormals noDenormals;
     adoptPendingGraph();
     snapSmoothersToTargets();
     const RenderGraph* g = active;

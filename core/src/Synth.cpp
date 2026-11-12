@@ -207,7 +207,7 @@ private:
     {
         switch (w)
         {
-            case 0: return std::sin (2 * dsp::kPi * ph);
+            case 0: return dsp::sin2pi (ph);
             case 1: return 4.0 * std::fabs (ph - 0.5) - 1.0;
             case 2: return 2.0 * ph - 1.0 - dsp::polyBlep (ph, dt);
             default:

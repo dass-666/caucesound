@@ -324,7 +324,7 @@ public:
                     float& z = lp[(size_t) c][k];
                     z = y * (1 - damp) + z * damp;
                     b[p0] = sane (input + z * fb);
-                    p0 = (p0 + 1) % b.size();
+                    if (++p0 == b.size()) p0 = 0; // sin división por muestra
                     acc += y;
                 }
                 for (size_t k = 0; k < 4; ++k)
@@ -334,7 +334,7 @@ public:
                     const float bo = b[p0];
                     b[p0] = sane (acc + bo * 0.5f);
                     acc = bo - acc;
-                    p0 = (p0 + 1) % b.size();
+                    if (++p0 == b.size()) p0 = 0; // sin división por muestra
                 }
                 out[c] = acc;
             }

@@ -4,6 +4,7 @@
 #include "Test.h"
 
 #include "cs/Engine.h"
+#include "cs/Processor.h"
 #include "cs/Session.h"
 #include "cs/Wav.h"
 
@@ -312,4 +313,87 @@ TEST (stress_large_project_32_tracks_saves_reopens_and_renders)
              us[us.size() / 2], p99, 100 * p99 / budget, budget);
     CHECK (finite);
     CHECK (cstest::allocationCount.load() == 0);
+}
+
+// Colas que decaen: con los desnormales a cero en el callback, la salida nunca contiene números desnormales y el coste
+// por bloque en silencio no se dispara (en x86 un desnormal cuesta decenas de veces más).
+TEST (stress_decaying_tails_never_produce_denormals)
+{
+    Fx f ("denormals", 256);
+    CHECK (f.session.createProject (f.dir + "/p", "tails", kSr, "").ok);
+    AudioData wav;
+    wav.sampleRate = kSr;
+    wav.allocate (1, kSr / 10);
+    for (Frame i = 0; i < wav.numFrames(); ++i) wav.channels[0][(size_t) i] = (i % 97 < 48 ? 0.5f : -0.5f) * (1.0f - (float) i / (float) wav.numFrames());
+    std::string err;
+    CHECK (writeWav (f.dir + "/burst.wav", wav, WavFormat::Float32, err));
+    const auto t = f.session.addTrack ("A", "audio");
+    CHECK (f.session.importWav (f.dir + "/burst.wav", t.id, 0).ok);
+    for (const char* fx : { "cs.filter", "cs.eq", "cs.delay", "cs.reverb" })
+    {
+        const auto r = f.session.addInsert (t.id, fx);
+        CHECK (r.ok);
+        if (std::string (fx) == "cs.reverb") { f.session.setInsertParam (r.id, "size", 1.0f); f.session.setInsertParam (r.id, "damping", 0.0f); f.session.setInsertParam (r.id, "mix", 1.0f); }
+        if (std::string (fx) == "cs.delay") f.session.setInsertParam (r.id, "feedback", 0.9f);
+    }
+    f.engine.seek (0);
+    f.engine.play();
+    std::vector<float> out (256 * 2);
+    long denormals = 0;
+    double early = 0, late = 0;
+    using clock = std::chrono::steady_clock;
+    const int blocks = kSr * 90 / 256;
+    for (int b = 0; b < blocks; ++b)
+    {
+        const auto s = clock::now();
+        f.engine.process (nullptr, 0, out.data(), 2, 256);
+        const double us = std::chrono::duration<double, std::micro> (clock::now() - s).count();
+        if (b >= blocks / 20 && b < blocks / 10) early += us;
+        if (b >= blocks - blocks / 20) late += us;
+        for (float x : out) if (x != 0.0f && std::fabs (x) < 1.17549435e-38f) ++denormals;
+    }
+    f.engine.stop();
+    MEASURE ("90 s de colas (filtro, EQ, delay 0,9, reverb máxima): %ld muestras desnormales; coste medio por bloque al principio %.1f us, al final %.1f us",
+             denormals, early / (blocks / 20), late / (blocks / 20));
+    CHECK (denormals == 0);
+
+    // Comprobación determinista del modo: un procesador de prueba mira, dentro del callback, si un desnormal se
+    // convierte en cero (en vivo y en la exportación); fuera del motor el modo normal se restaura.
+    struct Probe final : AudioProcessor
+    {
+        std::atomic<int> flushed { -1 };
+        std::string typeId() const override { return "test.probe"; }
+        void prepare (double, int) override {}
+        void reset() override {}
+        void process (float* const*, int, int) override
+        {
+            volatile float tiny = 1e-39f; // desnormal
+            volatile float half = tiny * 0.5f;
+            flushed.store (half == 0.0f ? 1 : 0);
+        }
+    };
+    auto probe = std::make_shared<Probe>();
+    Engine e;
+    e.prepare (kSr, 256);
+    auto g = std::make_unique<RenderGraph>();
+    TrackRT tr;
+    tr.slot = 0;
+    tr.inserts.push_back (probe);
+    g->tracks.push_back (tr);
+    e.publish (std::move (g));
+    e.play();
+    std::vector<float> o (256 * 2);
+    e.process (nullptr, 0, o.data(), 2, 256);
+    const int live = probe->flushed.load();
+    probe->flushed.store (-1);
+    std::vector<float> l (256), r (256);
+    e.renderOffline (0, l.data(), r.data(), 256);
+    const int offline = probe->flushed.load();
+    volatile float tiny = 1e-39f;
+    volatile float outside = tiny * 0.5f;
+    MEASURE ("desnormales a cero: en vivo %d, exportación %d, fuera del motor %d (1 = sí)", live, offline, outside == 0.0f ? 1 : 0);
+#if defined(__SSE__) || defined(__aarch64__)
+    CHECK (live == 1 && offline == 1);
+    CHECK (outside != 0.0f); // el modo se restaura al salir del callback
+#endif
 }
