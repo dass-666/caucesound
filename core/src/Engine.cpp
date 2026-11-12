@@ -1,6 +1,7 @@
 #include "cs/Engine.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -377,8 +378,24 @@ struct ScopedNoDenormals
 };
 } // namespace
 
+void Engine::noteDspLoad (double seconds, int frames)
+{
+    if (frames <= 0 || rate <= 0) return;
+    const float load = (float) (seconds * rate / frames);
+    const float a = std::min (1.0f, (float) frames / (float) rate); // media móvil de ~1 s
+    dspLoadAvg.store (dspLoadAvg.load (std::memory_order_relaxed) * (1.0f - a) + load * a, std::memory_order_relaxed);
+    if (load > dspLoadPeak.load (std::memory_order_relaxed)) dspLoadPeak.store (load, std::memory_order_relaxed);
+    if (load > 1.0f) dspOver.fetch_add (1, std::memory_order_relaxed);
+}
+
 void Engine::process (const float* input, int inChannels, float* output, int outChannels, int frames)
 {
+    // Medición de carga: steady_clock (vDSO, sin llamadas bloqueantes) al entrar y al salir.
+    struct LoadTimer
+    {
+        Engine& e; int n; std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        ~LoadTimer() { e.noteDspLoad (std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count(), n); }
+    } loadTimer { *this, frames };
     ScopedNoDenormals noDenormals;
     adoptPendingGraph();
     const RenderGraph* g = active;

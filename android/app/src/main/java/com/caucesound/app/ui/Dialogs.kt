@@ -204,7 +204,10 @@ internal fun SettingsDialog(vm: DawViewModel, s: ProjectState, requestMic: (() -
                             "${stringResource(R.string.exclusive)} ${st.optBoolean("outExclusive")}\n" +
                             "${stringResource(R.string.out_latency)}: ${"%.1f".format(st.optDouble("outLatencyMs", -1.0))} ms" +
                             (if (st.has("inLatencyMs")) "\n${stringResource(R.string.in_latency)}: ${"%.1f".format(st.optDouble("inLatencyMs", -1.0))} ms" else "") +
-                            "\nXRuns: ${st.optInt("outXruns")} · ${stringResource(R.string.reopens)}: ${st.optInt("reopenCount")}",
+                            "\nXRuns: ${st.optInt("outXruns")} · ${stringResource(R.string.reopens)}: ${st.optInt("reopenCount")}" +
+                            "\n" + tr("Carga DSP", "DSP load") + ": " + tr("media", "avg") + " ${"%.0f".format(100 * st.optDouble("dspLoadAvg", 0.0))} % · " +
+                            tr("pico", "peak") + " ${"%.0f".format(100 * st.optDouble("dspLoadPeak", 0.0))} % · " +
+                            tr("bloques tarde", "late blocks") + " ${st.optLong("dspOverBudget")}",
                         fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Palette.TextDim,
                     )
                     Text(stringResource(R.string.latency_estimate_note), fontSize = 11.sp, color = Palette.TextDim)

@@ -6,8 +6,8 @@
   `feat/fase-1-2-beatmaker-ui-midi`). Pull request abierto contra `main`, **sin fusionar** (requiere autorización).
 - **Base**: `main` en `dbdd93b` (fase 1). Ver `git log main..claude/project-thread-w0xy20` para los commits.
 - **APK de prueba**: `caucesound-0.2.0-fase1.2-preview.apk` en la carpeta del proyecto (`/mnt/project-files/caucesound/`),
-  `com.caucesound.app.preview`, versionCode 2, SHA-256 `659f7a8e463bd70c6b102b823c41face5796c3de35a1ee2ab63d1241ae6bcf37`
-  (compilado 08:40 UTC, incluye PDC, deshacer por gesto, .caucesound, desnormales y presets corregidos). Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
+  `com.caucesound.app.preview`, versionCode 2, SHA-256 `e3f23dd9099dea44b2f562e1243f35bbcbe3894a842aedf451c5f878265e6406`
+  (compilado 08:55 UTC, incluye PDC, deshacer por gesto, .caucesound, desnormales, presets corregidos y argumentos estrictos). Se instala junto a la app de la fase 1 (ver TESTING_ON_DEVICE.md).
 - **Clave de prueba**: `/mnt/project-files/caucesound/signing/` (`caucesound-preview.jks` + `keystore.properties`).
   Fuera de git. Si se pierde, la Preview instalada tampoco podrá actualizarse (igual que pasó con la fase 1).
 - **Validación física**: ninguna. Todo lo «probado» es automático (ver STATUS.md).
@@ -16,10 +16,10 @@
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 74/74 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 74/74 |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 74/74 |
-| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 74/74 |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 75/75 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 75/75 |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 75/75 |
+| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 75/75 |
 | App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 22/22 |
 | Lint | `./gradlew lintDebug` | 0 errores |
 | Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 1,8-4,4 % (Xeon compartido, varía; no es un teléfono) |

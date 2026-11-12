@@ -98,6 +98,11 @@ public:
     Frame position() const { return positionOut.load(); }
     float masterPeak() const { return masterPeakOut.load(); }
     long xrunsReportedByHost() const { return hostXruns.load(); }
+    // Carga DSP: tiempo de process() / duración del bloque (1,0 = sin margen). Media móvil (~1 s) y pico desde la
+    // última lectura con takeDspLoadPeak(). blocksOverBudget: bloques que tardaron más que su duración.
+    float dspLoadAverage() const { return dspLoadAvg.load (std::memory_order_relaxed); }
+    float takeDspLoadPeak() { return dspLoadPeak.exchange (0.0f, std::memory_order_relaxed); }
+    long blocksOverBudget() const { return dspOver.load (std::memory_order_relaxed); }
     void reportXruns (long n) { hostXruns.store (n); }
 
     // --- Grabación ---------------------------------------------------------------------------------------------
@@ -149,6 +154,9 @@ private:
     std::atomic<float> masterGain { 1.0f }, metronomeGain { 0.5f }, monitorGain { 0.0f }, masterPeakOut { 0.0f };
     std::atomic<bool> metronomeOn { false };
     std::atomic<long> hostXruns { 0 };
+    std::atomic<float> dspLoadAvg { 0.0f }, dspLoadPeak { 0.0f };
+    std::atomic<long> dspOver { 0 };
+    void noteDspLoad (double seconds, int frames);
 
     std::atomic<bool> loopOn { false };
     std::atomic<Frame> loopStart { 0 }, loopEnd { 0 };

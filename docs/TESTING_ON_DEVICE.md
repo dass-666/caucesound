@@ -60,7 +60,7 @@ envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga
 | 13 | Guardar y reabrir | Guarda, vuelve al inicio, reabre | ¿Todo igual (patrones, notas, efectos, voz)? |
 | 14 | Exportar | Exporta a 24 bits y ábrelo en Windows | ¿Incluye batería, synths, voz y la cola de la reverb al final? |
 | 15 | Horizontal | Gira el teléfono en el Arreglo | ¿Se ve bien? ¿Cuántas pistas caben? |
-| 16 | Carga | Añade 4 synths con el preset Pad y acordes largos + reverb en cada uno | ¿Cortes? ¿Se calienta? Copia la línea de XRuns de Ajustes |
+| 16 | Carga | Añade 4 synths con el preset Pad y acordes largos + reverb en cada uno; reproduce 1 minuto y abre Ajustes | ¿Cortes? ¿Se calienta? Copia las líneas de XRuns y **Carga DSP** (media, pico desde la última vez que abriste Ajustes, bloques tarde). Repite añadiendo pistas hasta oír cortes: ese número de pistas es el límite real |
 | 17 | Interrupciones | Durante la reproducción: llamada, alarma, desconectar auriculares | ¿Se detiene limpio? ¿Notas colgadas al volver? |
 | 18 | Deshacer perillas | Gira el corte del synth varias veces y pulsa Deshacer | ¿Vuelve al valor anterior a cada giro (no paso a paso)? |
 | 19 | Exportar/importar proyecto | Inicio → ⋮ de un proyecto → Exportar (.caucesound), guárdalo en Descargas; luego Importar ese archivo | ¿Aparece la copia y suena igual? ¿Se abre el archivo en Windows como ZIP? |

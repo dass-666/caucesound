@@ -397,3 +397,26 @@ TEST (stress_decaying_tails_never_produce_denormals)
     CHECK (outside != 0.0f); // el modo se restaura al salir del callback
 #endif
 }
+
+// Medidor de carga DSP (lo que la app muestra en Ajustes para medir en el teléfono): coherente y sin reservas.
+TEST (dsp_load_meter_reports_sane_values)
+{
+    Fx f ("dspload", 256);
+    CHECK (f.session.createProject (f.dir + "/p", "load", kSr, "trap").ok);
+    f.engine.play();
+    std::vector<float> out (256 * 2);
+    for (int b = 0; b < 400; ++b) f.engine.process (nullptr, 0, out.data(), 2, 256);
+    const float avg = f.engine.dspLoadAverage();
+    const float peak = f.engine.takeDspLoadPeak();
+    MEASURE ("carga DSP de la plantilla trap en esta máquina: media %.2f %%, pico %.2f %%, bloques fuera de tiempo %ld",
+             100 * avg, 100 * peak, f.engine.blocksOverBudget());
+    CHECK (avg > 0.0f && avg < 1.0f);
+    CHECK (peak >= avg);
+    CHECK (f.engine.takeDspLoadPeak() == 0.0f); // leer el pico lo reinicia
+    cstest::allocationCount.store (0);
+    cstest::countAllocations.store (true);
+    for (int b = 0; b < 200; ++b) f.engine.process (nullptr, 0, out.data(), 2, 256);
+    cstest::countAllocations.store (false);
+    CHECK (cstest::allocationCount.load() == 0);
+    f.engine.stop();
+}
