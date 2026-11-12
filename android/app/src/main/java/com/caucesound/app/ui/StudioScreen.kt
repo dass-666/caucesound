@@ -140,7 +140,7 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
             meters.value = NativeEngine.meters(state.tracks.size)
         }
     }
-    BackHandler { if (panel != Panel.ARRANGE) vm.openPanel(Panel.ARRANGE) else vm.closeProject() }
+    BackHandler { when (panel) { Panel.ARRANGE -> vm.closeProject(); Panel.FX -> vm.openPanel(Panel.MIXER); else -> vm.openPanel(Panel.ARRANGE) } }
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val t = importTrack
@@ -213,6 +213,11 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
                         } else SynthPanel(state, t, catalog, vm)
                     }
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, vm)
+                    Panel.FX -> {
+                        val t = track ?: state.tracks.firstOrNull()
+                        if (t == null) EmptyPanel(tr("No hay pistas.", "No tracks."), tr("Añadir pista de audio", "Add audio track")) { vm.addTrack("Audio 1", "audio") }
+                        else EffectsPanel(state, t, catalog, vm)
+                    }
                 }
             }
         }
@@ -254,7 +259,7 @@ private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit) {
     NavigationBar(containerColor = Palette.Surface, tonalElevation = 0.dp) {
         items.forEach { (p, icon, label) ->
             NavigationBarItem(
-                selected = p == panel, onClick = { onSelect(p) }, icon = { Icon(icon, null) },
+                selected = p == panel || (p == Panel.MIXER && panel == Panel.FX), onClick = { onSelect(p) }, icon = { Icon(icon, null) },
                 label = { Text(label, fontSize = 11.sp, maxLines = 1) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = Color.Black, indicatorColor = Palette.Cyan, selectedTextColor = Palette.Text,

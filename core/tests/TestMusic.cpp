@@ -753,6 +753,15 @@ TEST (ui_fixtures_from_engine)
     for (const auto& t : st["project"]["tracks"])
         if (t["kind"] == "synth" && ! t["midiClips"].empty() && synthClip.empty()) synthClip = t["midiClips"][0]["id"];
     CHECK (! synthClip.empty());
+    // Cadena de efectos en la pista Melodía: EQ + reverb con la mezcla al 35 %.
+    for (const auto& t : st["project"]["tracks"])
+        if (t["name"] == "Melodía")
+        {
+            const auto eq = json::parse (cmd ({ { "cmd", "addInsert" }, { "trackId", t["id"] }, { "type", "cs.eq" } }));
+            const auto rv = json::parse (cmd ({ { "cmd", "addInsert" }, { "trackId", t["id"] }, { "type", "cs.reverb" } }));
+            CHECK (eq["ok"] == true && rv["ok"] == true);
+            CHECK (json::parse (cmd ({ { "cmd", "setInsertParam" }, { "insertId", rv["id"] }, { "param", "mix" }, { "value", 0.35 } }))["ok"] == true);
+        }
     CHECK (json::parse (cmd ({ { "cmd", "save" } }))["ok"] == true);
     const std::string state = f.session.stateJson();
     const std::string catalog = cmd ({ { "cmd", "catalog" } });

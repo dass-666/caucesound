@@ -421,6 +421,204 @@
     }
    ],
    "type": "cs.gain"
+  },
+  {
+   "params": [
+    {
+     "default": 0.0,
+     "id": "mode",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mode (0 LP, 1 HP)"
+    },
+    {
+     "default": 20000.0,
+     "id": "cutoffHz",
+     "max": 20000.0,
+     "min": 20.0,
+     "name": "Cutoff"
+    },
+    {
+     "default": 0.10000000149011612,
+     "id": "resonance",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Resonance"
+    }
+   ],
+   "type": "cs.filter"
+  },
+  {
+   "params": [
+    {
+     "default": 0.0,
+     "id": "lowDb",
+     "max": 15.0,
+     "min": -15.0,
+     "name": "Low"
+    },
+    {
+     "default": 0.0,
+     "id": "midDb",
+     "max": 15.0,
+     "min": -15.0,
+     "name": "Mid"
+    },
+    {
+     "default": 1000.0,
+     "id": "midHz",
+     "max": 5000.0,
+     "min": 200.0,
+     "name": "Mid freq"
+    },
+    {
+     "default": 0.0,
+     "id": "highDb",
+     "max": 15.0,
+     "min": -15.0,
+     "name": "High"
+    }
+   ],
+   "type": "cs.eq"
+  },
+  {
+   "params": [
+    {
+     "default": 0.30000001192092896,
+     "id": "drive",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Drive"
+    },
+    {
+     "default": 1.0,
+     "id": "mix",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mix"
+    },
+    {
+     "default": 0.0,
+     "id": "outputDb",
+     "max": 6.0,
+     "min": -24.0,
+     "name": "Output"
+    }
+   ],
+   "type": "cs.saturation"
+  },
+  {
+   "params": [
+    {
+     "default": -18.0,
+     "id": "thresholdDb",
+     "max": 0.0,
+     "min": -48.0,
+     "name": "Threshold"
+    },
+    {
+     "default": 4.0,
+     "id": "ratio",
+     "max": 20.0,
+     "min": 1.0,
+     "name": "Ratio"
+    },
+    {
+     "default": 10.0,
+     "id": "attackMs",
+     "max": 100.0,
+     "min": 0.10000000149011612,
+     "name": "Attack"
+    },
+    {
+     "default": 120.0,
+     "id": "releaseMs",
+     "max": 1000.0,
+     "min": 10.0,
+     "name": "Release"
+    },
+    {
+     "default": 0.0,
+     "id": "makeupDb",
+     "max": 24.0,
+     "min": 0.0,
+     "name": "Makeup"
+    }
+   ],
+   "type": "cs.compressor"
+  },
+  {
+   "params": [
+    {
+     "default": 375.0,
+     "id": "timeMs",
+     "max": 2000.0,
+     "min": 10.0,
+     "name": "Time"
+    },
+    {
+     "default": 0.3499999940395355,
+     "id": "feedback",
+     "max": 0.8999999761581421,
+     "min": 0.0,
+     "name": "Feedback"
+    },
+    {
+     "default": 0.25,
+     "id": "mix",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mix"
+    },
+    {
+     "default": 6000.0,
+     "id": "toneHz",
+     "max": 16000.0,
+     "min": 500.0,
+     "name": "Tone"
+    },
+    {
+     "default": 0.0,
+     "id": "pingPong",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Ping-pong"
+    }
+   ],
+   "type": "cs.delay"
+  },
+  {
+   "params": [
+    {
+     "default": 0.6000000238418579,
+     "id": "size",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Size"
+    },
+    {
+     "default": 0.4000000059604645,
+     "id": "damping",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Damping"
+    },
+    {
+     "default": 0.25,
+     "id": "mix",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mix"
+    },
+    {
+     "default": 1.0,
+     "id": "width",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Width"
+    }
+   ],
+   "type": "cs.reverb"
   }
  ],
  "ok": true,

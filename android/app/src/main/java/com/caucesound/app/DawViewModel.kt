@@ -291,6 +291,13 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             if (param == "kit" || param.startsWith("mute") || param.startsWith("solo")) refresh()
         }
     }
+    override fun addInsert(trackId: String, type: String) = edit(Cmd.addInsert(trackId, type))
+    override fun removeInsert(insertId: String) = edit(Cmd.removeInsert(insertId))
+    override fun setInsertParam(insertId: String, param: String, value: Float) {
+        viewModelScope.launch { val r = call(Cmd.setInsertParam(insertId, param, value)); if (!r.ok && r.error != null) toast(r.error) }
+    }
+    override fun setInsertBypass(insertId: String, bypass: Boolean) = edit(Cmd.setInsertBypass(insertId, bypass))
+    override fun moveInsert(insertId: String, index: Int) = edit(Cmd.moveInsert(insertId, index))
     fun commitParams() { viewModelScope.launch { refresh() } }
     override fun loadPreset(trackId: String, presetId: String) = edit(Cmd.loadPreset(trackId, presetId))
 

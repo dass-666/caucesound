@@ -36,6 +36,9 @@ data class MidiClipState(val id: String, val name: String, val patternId: String
     val isPattern: Boolean get() = patternId.isNotEmpty()
 }
 
+/** Efecto de inserción (Cauce FX). params: valores actuales leídos del estado JSON del motor. */
+data class InsertState(val id: String, val type: String, val params: Map<String, Float>, val bypass: Boolean)
+
 data class TrackState(
     val id: String,
     val name: String,
@@ -52,6 +55,7 @@ data class TrackState(
     val preset: String = "",
     val patterns: List<PatternState> = emptyList(),
     val midiClips: List<MidiClipState> = emptyList(),
+    val inserts: List<InsertState> = emptyList(),
 ) {
     val isAudio: Boolean get() = kind == "audio"
     val isDrums: Boolean get() = kind == "drums"
@@ -185,11 +189,20 @@ object StateParser {
                     midi += MidiClipState(mo.getString("id"), mo.optString("name"), mo.optString("patternId"), mo.getLong("start"), mo.getLong("length"), notes)
                 }
             }
+            val inserts = mutableListOf<InsertState>()
+            t.optJSONArray("inserts")?.let { ia ->
+                for (k in 0 until ia.length()) {
+                    val io = ia.getJSONObject(k)
+                    val st = runCatching { JSONObject(io.optString("state", "{}")) }.getOrDefault(JSONObject())
+                    val ps = st.keys().asSequence().associateWith { st.optDouble(it, 0.0).toFloat() }
+                    inserts += InsertState(io.getString("id"), io.optString("type"), ps, io.optBoolean("bypass"))
+                }
+            }
             tracks += TrackState(
                 t.getString("id"), t.optString("name"), t.optDouble("volumeDb", 0.0).toFloat(),
                 t.optDouble("pan", 0.0).toFloat(), t.optBoolean("mute"), t.optBoolean("solo"), t.optBoolean("armed"),
                 t.optLong("color", 0xFF4FC3F7), clips, t.optString("kind", "audio"), inst?.optString("type") ?: "", params,
-                inst?.optString("preset") ?: "", patterns, midi.sortedBy { it.start },
+                inst?.optString("preset") ?: "", patterns, midi.sortedBy { it.start }, inserts,
             )
         }
         return ProjectState(

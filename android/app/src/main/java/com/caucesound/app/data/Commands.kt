@@ -36,6 +36,11 @@ object Cmd {
     fun setClipNotes(id: String, notes: List<NoteState>) =
         c("setClipNotes", "clipId" to id, "notes" to JSONArray(notes.map { JSONArray(listOf(it.key, it.velocity, it.channel, it.start, it.length)) }))
     fun quantizeClip(id: String, grid: Long) = c("quantizeClip", "clipId" to id, "grid" to grid, "strength" to 1.0)
+    fun addInsert(trackId: String, type: String) = c("addInsert", "trackId" to trackId, "type" to type)
+    fun removeInsert(insertId: String) = c("removeInsert", "insertId" to insertId)
+    fun setInsertParam(insertId: String, param: String, value: Float) = c("setInsertParam", "insertId" to insertId, "param" to param, "value" to value.toDouble())
+    fun setInsertBypass(insertId: String, bypass: Boolean) = c("setInsertBypass", "insertId" to insertId, "bypass" to bypass)
+    fun moveInsert(insertId: String, index: Int) = c("moveInsert", "insertId" to insertId, "index" to index)
     fun setLoop(on: Boolean, start: Long, end: Long) = c("setLoop", "on" to on, "start" to start, "end" to end)
     fun setMaster(db: Float) = c("setMaster", "db" to db.toDouble())
     fun listProjects(root: String) = c("listProjects", "root" to root)

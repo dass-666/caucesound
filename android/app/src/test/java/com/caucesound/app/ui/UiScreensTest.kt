@@ -51,6 +51,7 @@ class UiScreensTest {
         override fun loadPreset(trackId: String, presetId: String) { calls += "preset:$presetId" }
         override fun setMute(id: String, on: Boolean) { calls += "mute:$id:$on" }
         override fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) { live += Triple(key, velocity, on) }
+        override fun setInsertBypass(insertId: String, bypass: Boolean) { calls += "bypass:$insertId:$bypass" }
         override fun addPattern(trackId: String, copyFrom: String?) { calls += "addPattern:$copyFrom" }
     }
 
@@ -107,6 +108,18 @@ class UiScreensTest {
         shot("05_mixer")
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("M"))[0].performClick()
         assertEquals("mute:${state.tracks[0].id}:true", rec.calls.last())
+    }
+
+    @Test fun effects_panel_shows_engine_chain() {
+        val rec = Recorder()
+        // Pista con reverb y EQ añadidas por el motor (fixture generado con inserciones reales).
+        val t = state.tracks.first { it.inserts.isNotEmpty() }
+        assertEquals(listOf("cs.eq", "cs.reverb"), t.inserts.map { it.type })
+        assertEquals(7, catalog.effects.size)
+        compose.setContent { Themed { EffectsPanel(state, t, catalog, rec) } }
+        shot("07_effects")
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Bypass").or(androidx.compose.ui.test.hasContentDescription("On")))[0].performClick()
+        assertTrue(rec.calls.any { it.startsWith("bypass:") })
     }
 
     @Test fun arrangement_timeline_draws_midi_and_audio_lanes() {

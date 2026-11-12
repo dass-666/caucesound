@@ -65,6 +65,9 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, actions:
         Text(t.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(kindLabel(t), fontSize = 9.sp, color = Palette.TextFaint, letterSpacing = 1.sp)
         Spacer(Modifier.height(4.dp))
+        PillToggle(if (t.inserts.isEmpty()) "FX" else "FX ${t.inserts.count { !it.bypass }}", t.inserts.any { !it.bypass },
+            { actions.selectTrack(t.id); actions.openPanel(Panel.FX) }, color = Palette.Violet, height = 30.dp, minWidth = 60.dp)
+        Spacer(Modifier.height(4.dp))
         Knob("Pan", pan, -1f, 1f, 0f, { pan = it; actions.setPanLive(t.id, it) }, onEnd = actions::commitMixer, size = 40.dp, color = Palette.Solo,
             format = { if (kotlin.math.abs(it) < 0.02f) "C" else if (it < 0) "L${(-it * 100).toInt()}" else "R${(it * 100).toInt()}" })
         Row(Modifier.weight(1f).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

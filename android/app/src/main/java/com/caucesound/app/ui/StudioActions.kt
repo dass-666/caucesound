@@ -58,10 +58,17 @@ interface StudioActions {
     fun setParam(trackId: String, param: String, value: Float) {}
     fun loadPreset(trackId: String, presetId: String) {}
 
+    // Efectos de inserción (Cauce FX)
+    fun addInsert(trackId: String, type: String) {}
+    fun removeInsert(insertId: String) {}
+    fun setInsertParam(insertId: String, param: String, value: Float) {}
+    fun setInsertBypass(insertId: String, bypass: Boolean) {}
+    fun moveInsert(insertId: String, index: Int) {}
+
     /** MIDI en vivo (pads, teclado, vista previa). slot = índice de la pista. */
     fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {}
 
     fun openPanel(panel: Panel) {}
 }
 
-enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER }
+enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER, FX }
