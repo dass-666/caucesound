@@ -256,6 +256,110 @@ TEST (vocalshift_second_voice_level_and_tail)
     CHECK (o2.numFrames() == in.numFrames() && st.tailFrames == 0);
 }
 
+// Misión 0.6 (A4): evaluación técnica con el preset de referencia sobre la voz de prueba (sílabas con ataque de ruido
+// tipo consonante y pausas). Son medidas objetivas: dicen si se conservan los ataques, las consonantes, los silencios
+// y los extremos del clip; NO dicen si la voz suena natural, que se juzga escuchando una voz real.
+TEST (vocalshift_keeps_attacks_consonants_silences_and_clip_ends_and_is_deterministic)
+{
+    const AudioData in = voice (3.0);
+    vocal::Params p; // Urbano Espacial — Segunda voz
+    vocal::Stats st;
+    const AudioData out = run (in, p, &st);
+    const int sr = 48000;
+    auto rmsOf = [&] (const AudioData& a, Frame from, Frame to)
+    {
+        double acc = 0;
+        for (Frame i = from; i < to; ++i) acc += (double) a.channels[0][(size_t) i] * a.channels[0][(size_t) i];
+        return std::sqrt (acc / std::max<Frame> (1, to - from));
+    };
+    // 1) Ataques: cada sílaba empieza cada 0,5 s. El primer instante en que la envolvente pasa de un umbral debe
+    //    coincidir con el del original (la voz original va delante; la segunda voz no la adelanta ni la emborrona).
+    int worstMs = 0, syll = 0;
+    for (int k = 1; k < 6; ++k)
+    {
+        const Frame t0 = (Frame) (k * 0.5 * sr) - sr / 100;
+        auto onset = [&] (const AudioData& a)
+        {
+            const double ref = rmsOf (a, t0 + sr / 50, t0 + sr / 10) * 0.35;
+            for (Frame i = t0; i < t0 + sr / 5; ++i) if (std::fabs (a.channels[0][(size_t) i]) > ref) return i;
+            return t0 + sr / 5;
+        };
+        const int d = (int) std::lround ((double) (onset (out) - onset (in)) * 1000.0 / sr);
+        worstMs = std::max (worstMs, std::abs (d));
+        ++syll;
+    }
+    MEASURE ("ataques: %d sílabas, desviación máxima del inicio %d ms respecto al original", syll, worstMs);
+    CHECK (worstMs <= 5);
+    // 2) Consonantes: el soplo de ruido de los primeros 30 ms de cada sílaba (por encima de 4 kHz) conserva su nivel.
+    auto highRms = [&] (const AudioData& a, Frame from, Frame to)
+    {
+        double acc = 0, prev = a.channels[0][(size_t) from], prev2 = prev; // diferencia segunda: realza agudos
+        for (Frame i = from + 2; i < to; ++i)
+        {
+            const double x = a.channels[0][(size_t) i], d = x - 2 * prev + prev2;
+            acc += d * d; prev2 = prev; prev = x;
+        }
+        return std::sqrt (acc / std::max<Frame> (1, to - from));
+    };
+    double worstCons = 0;
+    for (int k = 1; k < 6; ++k)
+    {
+        const Frame t0 = (Frame) (k * 0.5 * sr);
+        const double dbd = 20.0 * std::log10 (highRms (out, t0, t0 + sr * 3 / 100) / highRms (in, t0, t0 + sr * 3 / 100));
+        if (std::fabs (dbd) > std::fabs (worstCons)) worstCons = dbd;
+    }
+    MEASURE ("consonantes (agudos de los primeros 30 ms de cada sílaba): cambio de nivel máximo %+.1f dB", worstCons);
+    CHECK (std::fabs (worstCons) < 3.0);
+    // 3) Silencios: en las pausas (últimos 60 ms antes de cada sílaba) solo queda la cola de la segunda voz, bien
+    //    por debajo de la voz. Se mide, y se exige que no «rellene» la pausa.
+    double pause = 0, body = 0;
+    for (int k = 1; k < 6; ++k)
+    {
+        const Frame t0 = (Frame) (k * 0.5 * sr);
+        pause += rmsOf (out, t0 - sr * 6 / 100, t0 - sr / 100) / 5.0;
+        body += rmsOf (out, t0 + sr / 20, t0 + sr * 3 / 10) / 5.0;
+    }
+    MEASURE ("silencios: nivel en las pausas %.1f dB por debajo de la voz (es la cola de la segunda voz y del espacio)", 20.0 * std::log10 (body / pause));
+    CHECK (20.0 * std::log10 (body / pause) > 12.0);
+    // 4) Extremos del clip: sin chasquido al empezar ni al terminar (la salida arranca y acaba cerca de cero y sin saltos).
+    float jump = 0, typical = 0;
+    for (Frame i = 1; i < out.numFrames(); ++i) typical = std::max (typical, std::fabs (out.channels[0][(size_t) i] - out.channels[0][(size_t) (i - 1)]));
+    const Frame n = out.numFrames();
+    const float first = std::fabs (out.channels[0][0]), last = std::fabs (out.channels[0][(size_t) (n - 1)]);
+    for (Frame i = n - 480; i < n; ++i) jump = std::max (jump, std::fabs (out.channels[0][(size_t) i] - out.channels[0][(size_t) (i - 1)]));
+    const float firstIn = std::fabs (in.channels[0][0]);
+    MEASURE ("extremos: primera muestra %.4f (la del original es %.4f), última %.5f, mayor salto en los últimos 10 ms %.5f (mayor salto de toda la toma %.3f)", first, firstIn, last, jump, typical);
+    CHECK (std::fabs (first - firstIn) < 0.02f && last < 0.005f && jump < 0.01f);
+    // 5) Desfase de la segunda voz: lo añadido (salida − original) con 60 ms es lo mismo que con 0 ms, 60 ms más tarde.
+    auto added = [&] (float offsetMs)
+    {
+        vocal::Params q = p;
+        q.offsetMs = offsetMs; q.spatial = false; q.magic = 0;
+        const AudioData o = run (in, q);
+        std::vector<double> d ((size_t) in.numFrames());
+        for (Frame i = 0; i < in.numFrames(); ++i) d[(size_t) i] = o.channels[0][(size_t) i] - in.channels[0][(size_t) i];
+        return d;
+    };
+    const auto d0 = added (0), d60 = added (60);
+    int bestLag = -1;
+    double best = -1e30;
+    for (int lag = 0; lag <= sr / 10; lag += 4)
+    {
+        double acc = 0;
+        for (size_t i = (size_t) sr / 4; i + (size_t) sr / 4 < d0.size(); i += 2) acc += d0[i] * d60[i + (size_t) lag];
+        if (acc > best) { best = acc; bestLag = lag; }
+    }
+    MEASURE ("desfase de la segunda voz: pedir 60 ms la retrasa %.1f ms (medido por correlación)", bestLag * 1000.0 / sr);
+    CHECK (std::abs (bestLag * 1000.0 / sr - 60.0) < 3.0);
+    // 6) Reprocesar con los mismos ajustes da exactamente el mismo audio (por eso la prueba rápida puede reutilizarse).
+    const AudioData again = run (in, p);
+    CHECK (again.numFrames() == out.numFrames());
+    float diff = 0;
+    for (Frame i = 0; i < std::min (again.numFrames(), out.numFrames()); ++i) diff = std::max (diff, std::fabs (again.channels[0][(size_t) i] - out.channels[0][(size_t) i]));
+    MEASURE ("reprocesado con los mismos ajustes: diferencia máxima %.1e", diff);
+    CHECK (diff == 0.0f);
+}
+
 TEST (vocalshift_edge_inputs_silence_low_level_extremes_short_stereo)
 {
     vocal::Params p;

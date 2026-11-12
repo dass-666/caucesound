@@ -131,6 +131,12 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
     chain.prepare ((double) in.sampleRate, 2, block);
     if (tempoBpm > 0) chain.setTempoBpm (tempoBpm);
     chain.setParams (toVs (p), false);
+    // VocalShift suaviza sus parámetros (pensado para mover controles en vivo) y solo los «clava» en prepare().
+    // Sin esta segunda llamada, el desfase de la segunda voz arrancaba en 0 y tardaba hasta 3 s en llegar al valor
+    // pedido (con una leve desafinación mientras tanto). Offline no hay nada que suavizar: se parte del valor final.
+    chain.prepare ((double) in.sampleRate, 2, block);
+    if (tempoBpm > 0) chain.setTempoBpm (tempoBpm);
+    chain.setParams (toVs (p), false);
     chain.reset();
     chain.setParams (toVs (p), false);
     const int latency = chain.latencySamples();
