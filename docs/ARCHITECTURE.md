@@ -143,3 +143,22 @@ entrando por la misma cola en vivo; importar/exportar archivos MIDI convirtiendo
 **Interfaz Android**: las pantallas no conocen el motor: reciben `ProjectState` y la interfaz `StudioActions`
 (implementada por `DawViewModel`). Por eso se pueden renderizar en la JVM con datos del motor (`UiScreensTest`).
 Posición y medidores se leen en la fase de dibujo para no recomponer toda la pantalla a 60 Hz.
+
+## 7. Trabajos offline y clips no destructivos (misión 0.5)
+
+- **`JobRunner`** (`core/src/Jobs.cpp`): un hilo de trabajo y una cola corta. Cada trabajo recibe un progreso
+  atómico y una señal de cancelación. Es el último miembro de `Session`, así que se destruye primero.
+- **Sin interbloqueo**: `close()` cancela y espera a los trabajos con el cerrojo de la sesión tomado; por eso un
+  trabajo nunca espera ese cerrojo: lo intenta (`try_lock`) y, si le han pedido cancelar, se retira.
+- **Nada de esto toca el hilo de audio**: el trabajo lee el audio original (inmutable), escribe un archivo temporal y,
+  al terminar, aplica el resultado como una edición normal (un paso de deshacer, grafo nuevo publicado atómicamente).
+- **Clip con dos versiones**: `ClipModel` guarda el audio original y, si existe, el procesado y sus parámetros.
+  `clipVersion` alterna entre ambos sin paso de deshacer y sin parar el transporte (A/B). El procesado se alinea
+  descontando la latencia del plugin, así que A y B ocupan la misma posición en la línea de tiempo. El motor mide
+  la diferencia de nivel RMS entre ambas (`procLevelDb`) y, con `procMatch`, reproduce B compensada para comparar.
+- **Armonía confirmada** (`ProjectModel::harmony`): tonalidad y acordes que el usuario acepta tras el análisis de un
+  beat. Solo AI los usa cuando la canción no viene de una plantilla. Los acordes detectados solo se aplican si el
+  tempo del proyecto coincide (1,5 %) con el tempo en que se analizaron.
+- **Android**: `DawViewModel` sigue cada trabajo consultando `jobStatus` cada 120 ms y expone el estado en
+  `PluginUi`. Las pantallas (`VocalShiftPanel`, `SoloAiPanel`) solo se muestran si el catálogo anuncia el plugin.
+

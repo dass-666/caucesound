@@ -1,97 +1,83 @@
-# Contrato de plugins de CAUCESOUND (misión 0.4, etapa C)
+# Contrato de plugins de CAUCESOUND (actualizado en la misión 0.5)
 
-Estado: **Solo AI integrado** (submódulo fijado, decisión del propietario del 2026-11-12). El resto sigue en diseño. Las secciones marcadas «Hecho» existen en el
-motor y tienen pruebas; el resto es propuesta. No se ha copiado ni modificado código de los repositorios de plugins.
+Estado: **Solo AI y VocalShift integrados** como plugins *offline* (procesan fuera del hilo de audio y dejan un
+resultado editable). Spatial Echo y AI Choir Studio **no** están integrados (ver `RESEARCH_0.5.md`). No se ha copiado
+ni modificado código de los repositorios de plugins: entran como submódulos git fijados a un commit.
 
-## 1. Qué ya ofrece el motor (hecho, con pruebas)
+Vocabulario: *offline* significa que el plugin trabaja sobre un audio ya grabado y tarda lo que tarde, sin sonar en
+directo; *inserción* es un efecto que procesa el sonido mientras se reproduce; *PDC* (compensación de latencia) es el
+ajuste que hace el motor para que una pista con un efecto lento siga sonando a tiempo con las demás.
 
-| Requisito del contrato | Dónde | Estado |
-|---|---|---|
-| Identificador estable, parámetros con rango, estado guardable y validado | `cs::AudioProcessor` (`typeId`, `parameters`, `saveState`/`loadState`) | Hecho |
-| Latencia declarada y compensación (PDC) por pista | `latencySamples()` + `Engine` (lectura adelantada) | Hecho en pistas. **Falta en buses**: un bus con una inserción latente no se compensa todavía |
-| Cola (reverb, delay) en exportación | `tailSamples()` | Hecho |
-| Instrumentos con MIDI exacto a la muestra | `cs::Instrument::handleMidi`, `allNotesOff`, `activeVoices` | Hecho |
-| Transporte para el plugin (tempo, compás, posición) | `cs::TransportInfo` definido | Falta pasarlo por bloque |
-| Añadir, quitar, bypass, ordenar, deshacer, guardar y restaurar | `Session::addInsert`…, formato de proyecto | Hecho (lo usan los 7 Cauce FX) |
-| Tiempo real: sin reservas ni bloqueos en `process()` | Grafo inmutable publicado atómicamente; prueba de 600 ediciones con audio sonando | Hecho para los procesadores propios; cada plugin externo debe demostrarlo con sus pruebas |
+## 1. Las tres piezas del contrato (hecho, con pruebas)
 
-## 2. Lo que añade el contrato
-
-```cpp
-// Propuesta (no implementada todavía)
-struct PluginDescriptor {
-    std::string id;          // "solo.ai", "vocalshift", "spatial.echo"
-    std::string version;     // versión semántica del núcleo integrado + commit fijado
-    enum class Kind { Effect, Instrument, OfflineTool } kind;
-    bool realtime;           // false = solo procesamiento offline (no se ofrece como inserción en vivo)
-    int  latencySamples;     // latencia fija conocida al preparar
-    bool wantsMidi, wantsTransport;
-    size_t maxMemoryBytes;   // límite declarado; se comprueba en las pruebas
-};
-
-// Trabajo pesado fuera del hilo de audio: análisis, generación, render offline.
-class OfflineJob {
-public:
-    virtual ~OfflineJob() = default;
-    virtual void run (std::atomic<float>& progress, const std::atomic<bool>& cancel) = 0; // hilo de trabajo
-    // Resultado siempre editable: notas MIDI (setClipNotes) o un clip de audio nuevo (como una importación).
-};
-```
-
-Reglas:
-1. Un plugin `realtime = false` **nunca** aparece como inserción en vivo. La interfaz lo presenta como «Procesar»
-   con vista previa y comparación original/procesado. No se presenta el procesamiento offline como tiempo real.
-2. Los resultados offline son **no destructivos**: el audio original se conserva y el procesado entra como clip nuevo
-   (o como notas MIDI editables). Deshacer lo quita.
-3. Si una integración no está lista, no hay botón ni pantalla para ella.
-
-## 3. Plan por plugin
-
-| Plugin | Lo que se sabe (comprobado) | Integración propuesta | Bloqueos |
+| Pieza | Para qué | Dónde | Pruebas |
 |---|---|---|---|
-| **Solo AI** (`solo_core`, C++17, sin JUCE, sin dependencias) | API offline completa: `BeatAnalyzer` da BPM y tonalidad **con confianza** (`HarmonyTimeline`), `MelodyExplorer` da 4 propuestas de melodía. 143/144 pruebas en ARM64 (QEMU) | Flujo «Generar melodía o solo» como `OfflineJob`: analiza o usa el plan de la canción; si la confianza de tonalidad es baja, pide la escala; el resultado va al piano roll como clip MIDI. Progreso y cancelar | Licencia y mecanismo de dependencia (§4). La prueba numérica que difiere en ARM (sobremuestreo de la guitarra) no afecta al flujo MIDI, pero sí al sonido de guitarra |
-| **VocalShift** (`vs_core`, C++17, Signalsmith MIT) | `VocalChain::process` en el sitio, latencia fija 150 ms. 57/59 pruebas en ARM64 (las 2 que fallan son umbrales de CPU bajo emulación). Coste en x86: 1,5-2,5 % de un núcleo el pitch, 27-33 % con segunda voz | Primero **offline** (procesar una toma de voz, comparar original/procesado). En vivo solo si la medida en el Samsung lo permite, y con aviso de 150 ms de latencia al monitorizar | Licencia, dependencia, **medir CPU en el teléfono**, PDC en buses |
-| **Spatial Echo** (repo `3D`) | El núcleo usa `juce::` (buffers, hilos, JSON). JUCE no se incorpora sin decidir su licencia | Adaptador: portar `ses::` a tipos propios (sustituir `juce::AudioBuffer`, `juce::Thread`, `juce::var`) o mantenerlo fuera de la app | Trabajo de portado no estimado con precisión; decisión de licencia JUCE |
-| **AI Choir Studio** | No encontrado. No aparece entre los repositorios accesibles; los candidatos MONTAMBRE, RUN y ek-chuah no son legibles con el acceso actual | Mismo contrato que Solo AI (`OfflineJob` que produce MIDI o audio de armonías) | **Hace falta que el propietario diga dónde está** o dé acceso |
+| `cs::AudioProcessor` / `cs::Instrument` | Efectos e instrumentos **en tiempo real**: `typeId`, parámetros con rango, estado guardable, bypass, `latencySamples()`, `tailSamples()`, MIDI exacto a la muestra | `core/include/cs/Processor.h` | Los 7 Cauce FX, el sinte y la batería (TestEffects, TestMusic) |
+| Descriptor de plugin | Lo que la interfaz necesita saber sin conocer el plugin: `id`, `name`, `version` (repositorio@commit), `category` (`effect`, `generator`), `kind` (`offline`), `realtime`, latencia, `output` (`midi`, `audio`), `appliesTo`, `cancellable`, `maxSeconds` | `pluginDescriptors()` en `core/src/Api.cpp`; llega en `catalog.plugins` | `catalog_lists_only_compiled_plugins` (TestSolo) |
+| `cs::JobRunner` | Trabajo pesado **fuera del hilo de audio**: cola, progreso real, cancelar, estados finales (`done`, `cancelled`, `failed`), cancelación al cambiar de proyecto | `core/include/cs/Jobs.h`, `core/src/Jobs.cpp` | `jobs_*` (3 pruebas, TestVocal) |
 
-## 3 bis. Solo AI: lo que está hecho
+Reglas, todas comprobadas por pruebas:
 
-- Submódulo `third_party/solo-ai-studio` fijado en `fe8445b` (rama `claude/solo-ai-studio-v4-beat-melody`). Solo se
-  compilan sus `core/src/*.cpp`: **no** se usa su CMakeLists raíz, que descargaría JUCE para su plugin.
-- Puente `core/src/SoloBridge.cpp` y comando `soloMelody`:
-  - La tonalidad y los acordes salen del plan de la canción (confirmados, no adivinados).
-  - Si la canción no tiene plan, el comando responde `key_required` y la interfaz pide la tonalidad.
-  - El resultado entra como pista nueva con un clip MIDI editable. Deshacer la quita.
-  - El catálogo del motor anuncia `plugins: [solo.ai]` solo si está compilado.
-- Medido en x86: unos 0,3 ms por melodía de 8 compases. Con ese tiempo no hacen falta barra de progreso ni cancelar.
-  Además, la composición corre sin el cerrojo de la sesión y fuera del hilo de audio, y un resultado que llega con
-  otro proyecto abierto se descarta.
-  **Pendiente:** medirlo en el teléfono.
-- **No incluido todavía:** analizar BPM y tonalidad de un audio importado (`BeatAnalyzer`), el sonido de guitarra
-  modelada y las variaciones A-D de una misma familia.
+1. Un plugin `realtime: false` **nunca** aparece como inserción en vivo. La interfaz lo presenta como «Procesar».
+2. El resultado es **no destructivo**: el audio original no se toca nunca. El procesado es un archivo nuevo y el clip
+   recuerda los dos (A = original, B = procesado). Deshacer lo quita.
+3. Un resultado que termina cuando ya hay otro proyecto abierto **se descarta** (`vocalshift_result_never_lands_in_another_project`).
+4. El archivo temporal (`audio/<id>.wav.vs.tmp`) solo se renombra a definitivo cuando el resultado se ha validado y
+   aplicado. Si se cancela o falla, se borra. Al abrir un proyecto se limpian los temporales huérfanos
+   (`vocalshift_stale_temp_files_are_removed_on_open…`).
+5. Cerrar un proyecto cancela sus trabajos y espera a que paren (medido: 14 ms con un procesado en marcha).
+6. Si un proyecto usa un plugin que esta compilación no tiene, el proyecto **se abre igual**, conserva sus datos y
+   anuncia `missingPlugins` (`missing_plugin_is_reported_and_project_data_is_preserved`).
+7. Si una integración no está lista, no hay botón ni pantalla para ella: la interfaz solo muestra lo que anuncia el catálogo.
+8. Ningún plugin hace llamadas de red. No hay modelos neuronales ni descargas.
 
-## 3 ter. VocalShift: hallazgo que bloquea elegir el commit
+Límites de la cola: un trabajo a la vez (un hilo de trabajo), hasta 4 en espera, se recuerdan los 16 últimos
+terminados. Un clip de más de 600 s se rechaza con un error claro en lugar de ocupar memoria sin control.
 
-El repositorio tiene **cuatro ramas de funciones sin fusionar en `main`**, todas del 06-11-2026:
-- `feat/hybrid-engine` (la más reciente);
-- `feat/natural-voice`;
-- `feat/second-voice`;
-- `feat/urban-spatial`.
+## 2. Latencia en buses: prohibida de momento
 
-`main` solo tiene el README. Hace falta que el propietario diga qué rama es la de referencia.
+La PDC del motor compensa la latencia en **pistas**. En **buses** (envíos compartidos, por ejemplo la reverb) no está
+resuelta. En lugar de simularla, `Session::addInsert` **rechaza** un efecto con latencia en un bus, con un mensaje
+claro. Hoy ningún efecto propio tiene latencia (`no_internal_effect_adds_latency_so_buses_stay_aligned` lo vigila) y
+VocalShift no es una inserción, así que la restricción no quita nada al usuario. Resolverlo de verdad exige retrasar
+todas las pistas secas la latencia máxima de los buses; está descrito en `RESEARCH_0.5.md`.
 
-Su `THIRD_PARTY_NOTICES.md` declara:
-- Signalsmith Stretch y Linear, con licencia **MIT**: compatibles con una app comercial.
-- JUCE 9, con licencia **AGPLv3 o EULA**: solo para su plugin, no para `vs_core`.
+## 3. Estado por plugin
 
-`NeuralVoiceConverter.h` es solo una interfaz sin implementar. No hay ningún modelo neuronal que integrar.
+| Plugin | Versión fijada | Qué hace en la app | Qué no hace |
+|---|---|---|---|
+| **Solo AI** | `solo-ai-studio@fe8445b` | Analiza un beat importado (BPM, tonalidad, acordes, con confianza) con su `BeatAnalyzer` real; propone 4 alternativas A-D con su `MelodyExplorer`; el resultado es una pista MIDI editable. Semilla reproducible | Sonido de guitarra modelada (desactivado: una prueba numérica suya difiere en ARM). No cambia el tempo ni la afinación del proyecto por su cuenta |
+| **VocalShift** | `vocalshift-ai-studio@10e679c` (rama `feat/urban-spatial`) + Signalsmith Stretch `88061fd` y Linear `7bb1c8f` (MIT) | Procesa un clip de voz offline: tono, carácter, magia, segunda voz con nivel propio, espacio, presets (incluido «Urbano Espacial — Segunda voz»: +7 st, 65 %, 70 %, −12 dB). A/B sincronizado y a volumen igualado (por RMS; «Aceptar» devuelve el volumen real). Latencia real 7200 muestras (150,0 ms) compensada a la muestra | No funciona en vivo (150 ms al monitorizar no es utilizable). No hay escucha previa sin procesar. No usa `feat/natural-voice` ni `feat/hybrid-engine`. `NeuralVoiceConverter.h` es una interfaz vacía: no hay modelo neuronal |
+| **Spatial Echo** (repo `3D`) | No integrado | Nada | Ver `RESEARCH_0.5.md` §1: su DSP depende de JUCE y el repositorio no tiene rama de referencia |
+| **AI Choir Studio** | No localizado | Nada | `/mnt/project-files/ai-choir-studio/` no existe. Hace falta el paquete o el repositorio |
 
-## 4. Decisiones que necesita el propietario
+### Comandos de la API JSON
 
-1. **Licencia de los núcleos propios** (Solo AI, VocalShift, Spatial Echo): ninguno declara licencia. Para
-   distribuir la app hay que fijarla (aunque sea «propietaria, todos los derechos reservados»).
-2. ~~Mecanismo de dependencia~~ **Decidido: submódulo fijado.** Recomendación original: **submódulo git fijado a un commit** concreto de cada repositorio
-   (no se copia código, la versión queda registrada y se actualiza a propósito). Alternativa: copia versionada en
-   `third_party/` (más simple de compilar, pero duplica código y se desincroniza).
-3. Ubicación de **AI Choir Studio**.
-4. Rama de referencia de **VocalShift** (§3 ter).
+- Catálogo: `catalog` → `plugins[]`.
+- Trabajos: `jobStatus {id}`, `jobCancel {id}`.
+- VocalShift: `vocalPresets`, `vocalProcess {clipId, params}` (devuelve un trabajo), `clipVersion {clipId, original, match?}`
+  (A/B y volumen igualado, sin paso de deshacer), `discardProcess {clipId}` (vuelve al original, con deshacer).
+- Solo AI: `soloAnalyze {clipId}` (trabajo; **no** cambia el proyecto), `setHarmony {…}` (lo que el usuario confirma),
+  `soloProposals {…}` (4 alternativas sin tocar el proyecto), `soloMelody {…, replaceTrackId}` (crea o sustituye la
+  pista de Solo AI; nunca una pista bloqueada ni una que no sea suya).
+
+### Guardado
+
+El formato de proyecto sigue en la versión 2: los campos nuevos son aditivos (`clip.process`, `harmony`), así que un
+proyecto de la 0.4 se abre sin migración y uno de la 0.5 abierto con una 0.4 pierde solo esos campos. Un clip
+recortado o partido después de procesarse vuelve al original (el procesado ya no corresponde a ese trozo).
+
+## 4. Cómo añadir el siguiente plugin
+
+1. Submódulo fijado a un commit, sin usar su CMake raíz si descarga JUCE u otras dependencias.
+2. Un puente `core/src/<Nombre>Bridge.cpp` que solo exponga tipos propios de CAUCESOUND.
+3. Su descriptor en `pluginDescriptors()` y, si es offline, un trabajo en `JobRunner`.
+4. Pruebas: entradas extremas, cancelar, cierre de proyecto, guardado y reapertura, y la medida de latencia.
+5. Solo entonces, su pantalla.
+
+## 5. Decisiones que siguen pendientes del propietario
+
+1. **Licencia de los núcleos propios** (Solo AI, VocalShift, Spatial Echo): ninguno declara licencia. Para distribuir
+   la app hay que fijarla, aunque sea «propietaria, todos los derechos reservados».
+2. Ubicación de **AI Choir Studio**.
+3. Rama de referencia de **Spatial Echo** (`3D`) y permiso para separar en ese repositorio un núcleo sin JUCE.

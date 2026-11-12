@@ -113,6 +113,26 @@ cambia las plantillas y el fallo de Play no debe volver.
 | 47 | Botón «Nueva canción» | Con 6 o más proyectos, baja hasta el final de la lista | ¿Se ve entero el último proyecto y su menú «⋮»? |
 | 48 | CPU | Play de una plantilla 0.4 durante 5 min | ¿Cortes? ¿El teléfono se calienta más que con la 0.3? |
 
+### Pruebas de la versión 0.5.0 (VocalShift, Solo AI 2.0, estabilidad)
+
+Instala `caucesound-0.5.0-integration-preview.apk` encima de la 0.4.1 (sin desinstalar). Tus proyectos deben seguir
+ahí: si no aparecen, **no desinstales** y avísame. Repite antes las 30-37 (Play tras cambiar de proyecto).
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 49 | Actualización | Instalar encima de la 0.4.1 y abrir un proyecto antiguo | ¿Siguen todos los proyectos? ¿Suenan igual? |
+| 50 | Canción de Trap | Nueva canción → Trap → ✨ variaciones, candado al bajo, otra versión | ¿Funciona como en la 0.4? (no debe haber cambiado) |
+| 51 | Analizar un beat | Proyecto vacío → importa un instrumental (MP3 o WAV de 1-4 min) → toca el clip → «Analizar» | Tiempo que tarda. BPM y tonalidad que propone y su confianza. ¿Aciertan? (compara con lo que sepas del beat) |
+| 52 | Corregir el análisis | En la pantalla de Solo AI cambia la tonalidad o el BPM y confirma | ¿Se respeta lo que pones tú? ¿El tempo del proyecto solo cambia si lo aceptas? |
+| 53 | Alternativas A-D | Solo AI → Generar → escucha A, B, C y D → elige una → «Variación» | ¿Las cuatro son distintas? ¿Encajan con el beat? ¿La elegida aparece como pista editable en el Piano roll? |
+| 54 | VocalShift | Graba 15-20 s de voz con auriculares → toca el clip → «VocalShift» → preset «Urbano Espacial — Segunda voz» → «Procesar voz» | Tiempo que tarda. ¿Se oye la segunda voz? ¿Está a tiempo con la original (sin eco ni retraso)? |
+| 55 | A/B | Con Play en marcha, pulsa «Escuchar» y alterna «A · Original» y «B · Procesada» | ¿Cambia sin cortar ni reiniciar? Con «Igualar volumen» activo, ¿suenan igual de fuertes? |
+| 56 | Naturalidad | Escucha el procesado solo, con auriculares; prueba también ±2 y ±4 semitonos | ¿Suena natural, robótico, metálico? ¿Las consonantes se emborronan? Es la valoración que yo no puedo hacer |
+| 57 | Original intacto | Acepta el procesado, luego «Descartar el procesado»; después deshacer y rehacer | ¿La toma original sigue exactamente igual? |
+| 58 | Cancelar y cambiar | Procesa una toma de 1-2 min y pulsa Cancelar a mitad. Repite y, a mitad, sal al inicio y abre otro proyecto | ¿El proyecto queda como estaba? ¿El otro proyecto no recibe nada? ¿Play funciona después? |
+| 59 | Exportar | Exporta la canción con la voz procesada y ábrela en el PC | ¿Voz y beat alineados? |
+| 60 | Carga | Proyecto con beat importado + pista de Solo AI + 2 voces procesadas, Play 5 min | ¿Cortes? ¿Temperatura? Línea de «Motor de audio» de Ajustes |
+
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de

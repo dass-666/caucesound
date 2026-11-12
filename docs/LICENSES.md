@@ -37,6 +37,19 @@ Presupuesto usado: 0 $. Ningún banco de sonidos, modelo ni servicio externo.
 Si en el futuro se añaden samples grabados, cada paquete necesitará su licencia documentada aquí (origen, autor,
 licencia que permita redistribuir dentro de una app comercial) antes de incluirlo.
 
+### Añadido en la misión 0.5 (VocalShift)
+
+| Componente | Origen | Licencia | Cómo entra |
+|---|---|---|---|
+| `vs_core` de VocalShift | `dass-666/vocalshift-ai-studio`, rama `feat/urban-spatial`, commit `10e679c` | **Sin licencia declarada** (código del propietario) | Submódulo fijado; solo se compilan los fuentes del núcleo, no su plugin JUCE |
+| Signalsmith Stretch | `Signalsmith-Audio/signalsmith-stretch`, commit `88061fd` | MIT | Submódulo fijado (solo cabeceras) |
+| Signalsmith Linear | `Signalsmith-Audio/linear`, commit `7bb1c8f` | MIT | Submódulo fijado (solo cabeceras) |
+
+MIT permite el uso en una app comercial cerrada; obliga a incluir el aviso de copyright al distribuir. **Pendiente**:
+una pantalla o archivo «Licencias de terceros» dentro de la app antes de publicarla (para un APK de prueba privado no
+es bloqueante). JUCE **no** se compila ni se enlaza. No hay modelos neuronales, ni audio o MIDI de terceros.
+Las grabaciones del usuario no salen del teléfono: los plugins no usan red.
+
 ## Clave de firma de prueba
 
 `caucesound-preview.jks` (RSA 3072, válida 25 años, SHA-256 del certificado `56:B4:DE:46:…:AB:2E`) firma solo los

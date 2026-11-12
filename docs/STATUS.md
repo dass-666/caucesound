@@ -4,6 +4,44 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.5 «Integración» (2026-11-12, rama `claude/project-thread-hxmmji`)
+
+Categorías: **Implementado** (código en la rama), **Probado** (prueba automática), **Compilado** (entra en el APK
+arm64), **Render JVM** (pantalla dibujada con Robolectric y revisada), **Físico** (en un teléfono: hoy, nada).
+
+| Entrega | Implementado | Probado | Compilado | Render JVM | Físico |
+|---|---|---|---|---|---|
+| Trabajos offline (`JobRunner`): cola, progreso, cancelar, cancelación al cambiar de proyecto | Sí | `jobs_*` (3) | Sí | — | Pendiente |
+| VocalShift offline no destructivo (submódulo `10e679c`), presets, A/B, descartar, deshacer | Sí | `vocalshift_*` (10): latencia a la muestra, A/B igualado (A −18,93 dB, B −18,92 dB), silencio, niveles bajos, extremos, mono y estéreo, recorte, cancelar, otro proyecto, temporales, original ausente, guardar y reabrir | Sí | `19`-`22` | Pendiente (54-59) |
+| Solo AI 2.0: análisis de beat, corrección por el usuario, 4 alternativas A-D, variación, sustituir solo su pista | Sí | `solo_ai_*` (5) | Sí | `15`, `23`, `24` | Pendiente (51-53) |
+| Plugin ausente no destruye el proyecto; latencia prohibida en buses | Sí | 2 pruebas | Sí | — | — |
+| Pantallas de VocalShift y Solo AI, accesos desde el clip y la pista | Sí | 13 pruebas nuevas en Android | Sí | Sí | Pendiente |
+| Sonido 2.0 | **Sin cambio audible** (dos intentos descartados por medida; ver RESEARCH_0.5.md §6) | 1 prueba de guarda del 808 | — | — | — |
+| Spatial Echo, AI Choir, congelar pista, PDC en buses | **No** (investigado; ver RESEARCH_0.5.md) | — | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **114/114** (94 anteriores + 20 nuevas) |
+| ASan + UBSan | **112/112** prueba por prueba sobre el commit `cb2463d`; tras el último cambio (A/B igualado) se repitieron las 33 pruebas afectadas (`vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`, `project`): 33/33. Las 2 pruebas nuevas están incluidas en esa repetición |
+| TSan | **112/112** prueba por prueba sobre el commit `cb2463d`, sin avisos; tras el último cambio se repitieron las pruebas afectadas: ver la línea siguiente |
+| TSan, repetición tras el último cambio | `vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`: 15/15. `project` (18 pruebas): en curso al cerrar este documento |
+| ARM64 | **Solo compilación** (NDK, arm64-v8a dentro del APK). Esta sesión no tenía QEMU ni compilador cruzado: las pruebas **no** se ejecutaron en ARM64 |
+| Android JVM y Robolectric | **59/59** |
+| Lint | 0 errores, 37 avisos (no ocultados) |
+| APK `caucesound-0.5.0-integration-preview.apk` | versionCode 7, `com.caucesound.app.preview`, certificado `56b4de46…61ab2e` (el de siempre, comprobado con `apksigner`). SHA-256 `b0bdd15a9c040f3548da80f44a36a700b78c87d418271c60580b4505d5b4970b` |
+
+Límites conocidos de la 0.5:
+
+- **A/B a volumen igualado**: hecho por nivel medio (RMS), que es una aproximación a la sonoridad percibida, no una
+  medida de sonoridad (LUFS). Mientras está activo, B suena compensada también en la exportación: «Aceptar» lo quita.
+  Si sales de la pantalla sin aceptar, sigue activo (se ve en la propia pantalla).
+- **No hay escucha previa** de VocalShift: hay que procesar y después comparar.
+- El análisis de beat solo se ha validado con un beat **sintético** (92 BPM, La menor: acierta con confianza 0,90 y
+  0,76). Con música real puede dar la mitad o el doble del tempo o la tonalidad relativa: por eso el usuario confirma.
+- Las variaciones no cambian la estructura de la canción, así que no existe candado de estructura.
+- Guitarra modelada de Solo AI: desactivada.
+- Un solo trabajo a la vez; clips de más de 10 minutos se rechazan.
+
 # Hotfix 0.3.1 (2026-11-12, misión 0.4, etapa A, rama `claude/project-thread-hxmmji`)
 
 Fallo observado por Diego en un Samsung con la 0.3.0: tras salir de un proyecto y abrir otro, Play deja de funcionar
