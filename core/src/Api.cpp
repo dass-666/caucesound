@@ -4,7 +4,9 @@
 #include "cs/Instruments.h"
 #include "cs/Project.h"
 
+#include <cmath>
 #include <filesystem>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
@@ -90,6 +92,15 @@ json catalog()
              { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl } };
 }
 
+// Entero desde JSON sin conversiones fuera de rango (1e30 -> int es comportamiento indefinido en C++).
+long long safeInt (const json& v)
+{
+    if (! v.is_number()) throw std::invalid_argument ("se esperaba un número");
+    const double d = v.get<double>();
+    if (! std::isfinite (d) || std::fabs (d) > 1e9) throw std::invalid_argument ("número fuera de rango");
+    return (long long) d;
+}
+
 std::vector<MidiNote> parseNotes (const json& arr)
 {
     std::vector<MidiNote> notes;
@@ -97,8 +108,17 @@ std::vector<MidiNote> parseNotes (const json& arr)
     for (const auto& jn : arr)
     {
         MidiNote n;
-        if (jn.is_array()) { n.key = jn.at (0); n.velocity = jn.at (1); n.channel = jn.at (2); n.start = jn.at (3); n.length = jn.at (4); }
-        else { n.key = jn.at ("key"); n.velocity = jn.value ("velocity", 100); n.channel = jn.value ("channel", 0); n.start = jn.at ("start"); n.length = jn.at ("length"); }
+        if (jn.is_array())
+        {
+            n.key = (int) safeInt (jn.at (0)); n.velocity = (int) safeInt (jn.at (1)); n.channel = (int) safeInt (jn.at (2));
+            n.start = (Tick) safeInt (jn.at (3)); n.length = (Tick) safeInt (jn.at (4));
+        }
+        else
+        {
+            n.key = (int) safeInt (jn.at ("key")); n.velocity = jn.contains ("velocity") ? (int) safeInt (jn["velocity"]) : 100;
+            n.channel = jn.contains ("channel") ? (int) safeInt (jn["channel"]) : 0;
+            n.start = (Tick) safeInt (jn.at ("start")); n.length = (Tick) safeInt (jn.at ("length"));
+        }
         notes.push_back (n);
     }
     return notes;
@@ -122,8 +142,18 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
     {
         const std::string cmd = q["cmd"].get<std::string>();
         auto str = [&] (const char* k) { return q.value (k, std::string()); };
-        auto num = [&] (const char* k, double d = 0) { return q.contains (k) && q[k].is_number() ? q[k].get<double>() : d; };
-        auto frame = [&] (const char* k, Frame d = 0) { return q.contains (k) && q[k].is_number() ? (Frame) q[k].get<double>() : d; };
+        // Un argumento presente con tipo equivocado o fuera de rango es un error (antes se tomaba el valor por
+        // defecto en silencio: p. ej. {"bpm":"rápido"} ponía el tempo a 120). Límite 1e9: cabe en int y en frames
+        // (5,8 h a 48 kHz) y evita conversiones de double a entero fuera de rango (comportamiento indefinido).
+        auto num = [&] (const char* k, double d = 0)
+        {
+            if (! q.contains (k) || q[k].is_null()) return d;
+            if (! q[k].is_number()) throw std::invalid_argument (std::string (k) + " debe ser un número");
+            const double v = q[k].get<double>();
+            if (! std::isfinite (v) || std::fabs (v) > 1e9) throw std::invalid_argument (std::string (k) + " fuera de rango");
+            return v;
+        };
+        auto frame = [&] (const char* k, Frame d = 0) { return q.contains (k) && ! q[k].is_null() ? (Frame) num (k) : d; };
         auto flag = [&] (const char* k) { return q.value (k, false); };
 
         if (cmd == "state") return s.stateJson();
@@ -200,7 +230,10 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setStep") return result (s.setPatternStep (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("velocity"))).dump();
         if (cmd == "setPatternLength") return result (s.setPatternLength (str ("trackId"), str ("patternId"), (int) num ("steps", 16))).dump();
         if (cmd == "setSwing") return result (s.setPatternSwing (str ("trackId"), str ("patternId"), (float) num ("swing"))).dump();
-        if (cmd == "setPatternLanes") return result (s.setPatternLanes (str ("trackId"), str ("patternId"), q.at ("lanes").get<std::vector<std::vector<int>>>())).dump();
+        if (cmd == "setPatternLanes") return result (s.setPatternLanes (str ("trackId"), str ("patternId"), [&] {
+                std::vector<std::vector<int>> lanes;
+                for (const auto& lane : q.at ("lanes")) { lanes.emplace_back(); for (const auto& v : lane) lanes.back().push_back ((int) safeInt (v)); }
+                return lanes; }())).dump();
         if (cmd == "renamePattern") return result (s.renamePattern (str ("trackId"), str ("patternId"), str ("name"))).dump();
         if (cmd == "addMidiClip") return result (s.addMidiClip (str ("trackId"), (Tick) num ("start"), (Tick) num ("length", 4 * kPpq * 4), str ("patternId"))).dump();
         if (cmd == "moveMidiClip") return result (s.moveMidiClip (str ("clipId"), (Tick) num ("start"), str ("trackId"))).dump();

@@ -16,10 +16,10 @@
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 72/72 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 72/72 |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 72/72 |
-| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 72/72 |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 74/74 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 74/74 |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 74/74 |
+| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 74/74 |
 | App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 22/22 |
 | Lint | `./gradlew lintDebug` | 0 errores |
 | Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 1,8-4,4 % (Xeon compartido, varía; no es un teléfono) |

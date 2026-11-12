@@ -20,7 +20,7 @@ add_subdirectory(core)
 
 if (CS_BUILD_TESTS)
     enable_testing()
-    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp core/tests/TestMusic.cpp core/tests/TestEffects.cpp core/tests/TestStress.cpp core/tests/TestArchive.cpp core/tests/TestQuality.cpp)
+    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp core/tests/TestMusic.cpp core/tests/TestEffects.cpp core/tests/TestStress.cpp core/tests/TestArchive.cpp core/tests/TestQuality.cpp core/tests/TestFuzz.cpp)
     target_link_libraries(cs_core_tests PRIVATE cs_core)
     add_test(NAME cs_core_tests COMMAND cs_core_tests)
     add_executable(cs_bench core/tests/Bench.cpp)

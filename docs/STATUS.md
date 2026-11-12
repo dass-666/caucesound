@@ -10,9 +10,9 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 
 | Conjunto | Resultado |
 |---|---|
-| Pruebas del motor `cs_core_tests` (x86-64 Release) | **72/72** (28 de la fase 1 + 44 nuevas) |
-| Mismas pruebas con ASan + UBSan / con TSan | **72/72** / **72/72** |
-| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **72/72**: portabilidad y resultados numéricos, no rendimiento |
+| Pruebas del motor `cs_core_tests` (x86-64 Release) | **74/74** (28 de la fase 1 + 46 nuevas) |
+| Mismas pruebas con ASan + UBSan / con TSan | **74/74** / **74/74** |
+| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **74/74**: portabilidad y resultados numéricos, no rendimiento |
 | Pruebas JVM de la app (`testDebugUnitTest`) | **22/22**: 5 de modelos (fase 1), 6 del modelo musical, 11 de interfaz con Robolectric |
 | `lintDebug` | 0 errores (avisos: versiones nuevas de dependencias, plurales, icono monocromo) |
 | APK `0.2.0-fase1.2-preview` (`assemblePreview`) | Compila, firmado con clave de prueba persistente, `com.caucesound.app.preview` |
@@ -33,6 +33,7 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 | Calidad de presets | **Error real corregido**: Lead y Pad sonaban 6 y 9 cents altos (solo subía el oscilador 2); ahora el detune se reparte. Bajos reequilibrados (diferencia 8,6 → 3,5 dB). Todos: afinación ≤ 0,1 cents (Synth Bass +2,7, estimación sobre onda filtrada), DC despreciable, colas que terminan, sin clic al soltar | `synth_presets_are_in_tune_balanced_and_end_cleanly` |
 | Aliasing | Seno -88/-92 dB; triángulo -44/-53; sierra -38/-41; cuadrada -40/-43 (Do 6 / Do 7, sin filtro). Con el filtro del preset Lead: -65/-70 dB. Sierra y cuadrada agudas sin filtro: mejorable con sobremuestreo x2 (pendiente) | `synth_oscillators_have_low_aliasing_at_high_notes` |
 | Kits | 4 kits: picos de -3,4 (bombo) a -11 dB (hats), bombo y caja a 2,1 dB, colas de 119 a 1500 ms, sin DC | `drum_kits_are_balanced_short_and_clean` |
+| Fuzzing | 4000 comandos JSON al azar (tipos equivocados, ids reales y falsos, extremos, texto que no es JSON) con el audio sonando: 0 fallos, toda respuesta válida, proyecto final válido y reabre igual. 400 project.json dañados al azar: cada uno se rechaza con error o se abre válido y suena. **Error real corregido**: un argumento de tipo equivocado se sustituía en silencio por el valor por defecto (`{"bpm":"rápido"}` ponía el tempo a 120) y números enormes se convertían a entero con comportamiento indefinido; ahora se rechazan | `fuzz_command_api_never_crashes_and_leaves_a_valid_project`, `fuzz_damaged_project_json_is_rejected_or_opened_safely` |
 | Rendimiento | Seno polinómico en el oscilador (error 5,6e-8), reverb sin división por muestra | `fast_sine_matches_std_sin` + todas las de salida idéntica |
 
 ### Rendimiento con proyectos grandes (inferencia, sin medir en teléfono)
