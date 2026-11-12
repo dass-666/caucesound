@@ -121,7 +121,7 @@ struct FakeOboe
 {
     Engine& e;
     std::atomic<bool> quit { false }, pauseReq { false }, pausedAck { false };
-    std::atomic<int> epoch { 0 };
+    std::atomic<int> epoch { 0 }, ackEpoch { 0 };
     std::atomic<double> energy { 0 };
     std::atomic<long long> frames { 0 };
     std::thread th;
@@ -144,7 +144,7 @@ struct FakeOboe
                 for (float v : out) sum += (double) v * v;
                 n += block;
                 energy.store (sum); frames.store (n);
-                if (epoch.load() == seen) {} // nada
+                ackEpoch.store (seen); // energía y frames de este bloque pertenecen a la época 'seen'
                 std::this_thread::sleep_for (std::chrono::microseconds (50)); // deja respirar al hilo de disco
             }
         });
@@ -153,10 +153,11 @@ struct FakeOboe
     // Empieza una medición nueva y espera 'count' frames; devuelve el RMS.
     double measure (long long count)
     {
-        epoch.fetch_add (1);
-        // Espera a que el hilo vea la nueva época (frames vuelve a contar desde 0).
-        while (frames.load() >= count) std::this_thread::yield();
-        while (frames.load() < count) std::this_thread::yield();
+        // Antes se esperaba a que 'frames' bajara de 'count' para detectar la época nueva: si el hilo de audio
+        // contaba más de 'count' frames antes de que este hilo lo viera (con ASan y count = 384), la espera no
+        // terminaba nunca. Ahora el hilo de audio confirma la época explícitamente.
+        const int my = epoch.fetch_add (1) + 1;
+        while (ackEpoch.load() != my || frames.load() < count) std::this_thread::yield();
         const double s = energy.load(); const long long n = frames.load();
         return std::sqrt (s / (double) (2 * std::max<long long> (1, n)));
     }
