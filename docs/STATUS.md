@@ -4,6 +4,40 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Hotfix 0.3.1 (2026-11-12, misión 0.4, etapa A, rama `claude/project-thread-hxmmji`)
+
+Fallo observado por Diego en un Samsung con la 0.3.0: tras salir de un proyecto y abrir otro, Play deja de funcionar
+(también al volver al primero) hasta reiniciar la app. Se encontraron **dos defectos independientes** que producen
+exactamente ese síntoma, y un tercero que podía dejar el audio mudo de forma permanente:
+
+| # | Defecto | Evidencia | Corrección |
+|---|---|---|---|
+| 1 | El motor vive todo el proceso y `Session::close()` no reiniciaba el transporte: el proyecto siguiente heredaba la posición del anterior. Tras reproducir A más de sus 8 compases, B (y A al volver) arrancaban en silencio más allá de su contenido. Solo reiniciar la app devolvía la posición a 0 | **Demostrado**: `switch_projects_play_after_long_playback` falla con el código de la 0.3.0 (posición heredada 1 440 000, RMS 0,0000 en B y en A) y pasa con la corrección (RMS 0,199) | `Engine::resetTransport()` en cerrar/abrir/crear: parado, posición 0 (visible al instante), cuenta previa cancelada, bucle desactivado hasta que el proyecto aplique el suyo y MIDI en vivo pendiente descartado |
+| 2 | Cada Play creaba una petición de foco de audio con un oyente nuevo. Android identifica al dueño del foco por el oyente: la petición nueva le quitaba el foco (`AUDIOFOCUS_LOSS`) a la anterior **de la misma app**, cuyo oyente paraba el transporte. Desde el segundo Play, el transporte se paraba justo después de arrancar | **Inferencia fuerte, no reproducida en teléfono**: leído en el código de Android (AOSP `MediaFocusControl.requestAudioFocus` → `propagateFocusLossFromGain_syncAf`; `FocusRequester.frameworkHandleFocusLoss` despacha la pérdida aunque sea la misma app; `AudioManager.getIdForAudioFocusListener` usa el oyente como id). Robolectric no simula esa pila | Una sola petición y un solo oyente durante toda la app (`AudioGuard`); pedir el foco con él ya concedido no genera pérdida. Se abandona al cerrar el proyecto. `AudioGuardTest`: 100 Play seguidos usan el mismo objeto y no interrumpen |
+| 3 | `AudioIO::onErrorAfterClose` solo reabría el stream con `ErrorDisconnected`; con cualquier otro error Oboe lo cerraba, `running` seguía en `true` y `start()` no hacía nada: audio mudo hasta reiniciar | Lectura de código (no observado) | Reapertura con cualquier error; `audioEnsure()` antes de cada Play reabre el stream si no está en estado `Started`. `statusJson` añade `processedFrames`, `outState`, `lastError`, `ensureRestarts` |
+
+Además: con el bucle activo y el cabezal por detrás de la región (seek, bucle acortado), el transporte reproducía
+silencio indefinidamente; ahora vuelve al inicio del bucle (`loop_region_behind_playhead_wraps_instead_of_playing_silence`,
+falla con el código anterior).
+
+**Cuál de los dos primeros causó lo que viste**: no se puede saber sin el teléfono; ambos producen el mismo síntoma y
+ambos están corregidos. Si el fallo persiste en la 0.3.1, Ajustes → Estado del audio muestra `outState`,
+`processedFrames` (si no avanza, el callback de Oboe no se ejecuta) y `lastError`.
+
+Pruebas nuevas (motor, `core/tests/TestSwitch.cpp`):
+- `switch_projects_play_after_long_playback`: A → Play 30 s → cerrar sin Stop → B → Play → cerrar → A → Play; exige
+  posición 0 al abrir y RMS > 0,01 en B y en A.
+- `switch_120_sessions_with_audio_thread`: 120 ciclos (216 aperturas) con `process()` en otro hilo como el callback de
+  Oboe, sobre las 5 plantillas, un proyecto con delay + compresor + bus de reverb con envío, uno con bucle y uno en el
+  que se graba: cerrar con Play en marcha, Stop antes de salir, abrir/cerrar rápido el mismo proyecto 3 veces, stream
+  parado y reanudado, seek detrás del bucle, cambio de tempo guardado, nota en vivo sin Note Off al salir. En cada
+  apertura: transporte parado en 0, ninguna voz sonando, RMS > 0,01 al pulsar Play, posición que avanza; tras cerrar:
+  silencio y 0 instrumentos vivos (ningún grafo antiguo referenciado). Al final, las 11 tomas grabadas siguen en el
+  proyecto. Resultado: RMS mínimo al reproducir 0,147, 0 fallos.
+- Con la corrección del motor deshecha, la prueba de 120 ciclos falla (posición heredada en cada apertura).
+
+Pendiente de validación física (no hay teléfono aquí): pruebas 30-37 de TESTING_ON_DEVICE.md.
+
 # Pulido 0.3.0 (2026-11-12, misión «Ultimate Polish», misma rama)
 
 Auditoría, rediseño visual y refinamiento sobre la fase 1.2. Categorías usadas abajo: **Implementado** (código en la

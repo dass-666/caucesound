@@ -38,6 +38,7 @@ std::string str (JNIEnv* env, jstring s)
 extern "C"
 {
 JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_audioStart (JNIEnv*, jobject) { return native().audio.start(); }
+JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_audioEnsure (JNIEnv*, jobject) { return native().audio.ensureRunning(); }
 JNIEXPORT void JNICALL Java_com_caucesound_app_audio_NativeEngine_audioStop (JNIEnv*, jobject) { native().audio.stop(); }
 JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_setInputEnabled (JNIEnv*, jobject, jboolean on) { return native().audio.setInputEnabled (on); }
 

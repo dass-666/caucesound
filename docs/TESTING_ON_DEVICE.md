@@ -80,6 +80,22 @@ envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga
 | 28 | Tamaños | Gira el teléfono en Arreglo, Mezclador y Piano roll | ¿Algún botón cortado, texto partido o control demasiado pequeño para el dedo? |
 | 29 | 808 | Synth → Bajos → «808 Bass», toca notas graves | ¿Se oye el golpe inicial y la nota queda afinada? |
 
+### Pruebas de la versión 0.3.1 (hotfix de Play)
+
+Instala `caucesound-0.3.1-hotfix-preview.apk` encima de la 0.3.0 (sin desinstalar). Si algo falla, abre Ajustes →
+Estado del audio y haz una captura: `outState`, `processedFrames` y `lastError` dicen si el stream sigue vivo.
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 30 | Secuencia del fallo | Proyecto A → Play (deja que pase el final, ~30 s) → salir sin Stop → Proyecto B → Play → salir → A → Play | ¿Suena siempre? ¿El cabezal empieza al principio en cada proyecto? |
+| 31 | Play repetido | En un proyecto: Play, Stop, Play, Stop… 10 veces | ¿Arranca siempre y sigue sonando? (en la 0.3.0 se paraba al instante desde el segundo Play) |
+| 32 | Stop antes de salir | Play → Stop → salir → otro proyecto → Play | ¿Suena? |
+| 33 | Segundo plano | Play → botón de inicio del teléfono → volver a la app → salir del proyecto → abrir otro → Play | ¿Suena? |
+| 34 | Girar | Play → gira el teléfono → salir → otro proyecto → Play | ¿Suena? ¿Se mantiene el estado? |
+| 35 | Rápido | Abre y cierra el mismo proyecto 5 veces seguidas, luego Play | ¿Suena? ¿Algún mensaje de error? |
+| 36 | Tras grabar | Graba una toma corta → Stop → salir → otro proyecto → Play → vuelve al de la toma | ¿Suena? ¿La toma sigue ahí? |
+| 37 | Otra app | Play en CAUCESOUND → reproduce algo en otra app (YouTube, Spotify) → vuelve | CAUCESOUND debe pararse al empezar la otra app; al volver, ¿Play funciona? |
+
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de

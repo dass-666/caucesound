@@ -507,7 +507,11 @@ void Session::close()
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (recorder) stopRecording();
     if (open && dirty) save();
+    // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
+    // proyecto siguiente heredaba la posición del anterior (p. ej. compás 40 tras reproducir A un rato) y sonaba
+    // silencio más allá de su contenido hasta reiniciar la app (fallo de la 0.3.0; ver TestSwitch.cpp).
     engine.stop();
+    engine.resetTransport();
     engine.publish (std::make_unique<RenderGraph>());
     open = false;
     dirty = false;
@@ -524,7 +528,11 @@ void Session::abandonForTest()
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (recorder) { recorder->abandon(); recorder.reset(); }
+    // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
+    // proyecto siguiente heredaba la posición del anterior (p. ej. compás 40 tras reproducir A un rato) y sonaba
+    // silencio más allá de su contenido hasta reiniciar la app (fallo de la 0.3.0; ver TestSwitch.cpp).
     engine.stop();
+    engine.resetTransport();
     engine.publish (std::make_unique<RenderGraph>());
     open = false;
     dirty = false;

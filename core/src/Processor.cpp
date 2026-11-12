@@ -8,6 +8,11 @@
 
 namespace cs
 {
+namespace { std::atomic<int> gLiveInstruments { 0 }; }
+Instrument::Instrument() { gLiveInstruments.fetch_add (1, std::memory_order_relaxed); }
+Instrument::~Instrument() { gLiveInstruments.fetch_sub (1, std::memory_order_relaxed); }
+int Instrument::liveInstances() { return gLiveInstruments.load (std::memory_order_relaxed); }
+
 std::string AudioProcessor::saveState() const
 {
     nlohmann::json j = nlohmann::json::object();

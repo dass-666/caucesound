@@ -11,6 +11,8 @@ object NativeEngine {
     }
 
     external fun audioStart(): Boolean
+    /** Reabre el stream si no está realmente en marcha (no corta el audio si ya funciona). */
+    external fun audioEnsure(): Boolean
     external fun audioStop()
     external fun setInputEnabled(on: Boolean): Boolean
     external fun audioStatus(): String

@@ -33,6 +33,7 @@
     <string name="monitoring_note">Reproduce el micrófono por la salida. Usa auriculares para evitar acoples. Todavía sin efectos.</string>
     <string name="msg_arm_track">Arma una pista (R) antes de grabar</string>
     <string name="msg_audio_failed">No se pudo iniciar la salida de audio</string>
+    <string name="msg_focus_denied">Otra app (o una llamada) está usando el audio. Prueba de nuevo cuando termine.</string>
     <string name="msg_export_clipped">Exportado, pero %1$d muestras saturaron. Baja los niveles.</string>
     <string name="msg_export_failed">Error al exportar: %1$s</string>
     <string name="msg_exported">Exportado</string>

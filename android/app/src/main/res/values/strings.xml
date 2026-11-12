@@ -33,6 +33,7 @@
     <string name="monitoring_note">Plays the microphone through the output. Use headphones to avoid feedback. No effects yet.</string>
     <string name="msg_arm_track">Arm a track (R) before recording</string>
     <string name="msg_audio_failed">Could not start the audio output</string>
+    <string name="msg_focus_denied">Another app (or a call) is using audio. Try again when it ends.</string>
     <string name="msg_export_clipped">Exported, but %1$d samples clipped. Lower the levels.</string>
     <string name="msg_export_failed">Export failed: %1$s</string>
     <string name="msg_exported">Exported</string>

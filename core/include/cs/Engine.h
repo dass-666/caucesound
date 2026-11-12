@@ -105,6 +105,10 @@ public:
     Frame countInRemaining() const { return countInOut.load (std::memory_order_relaxed); }
     bool isPlaying() const { return playing.load(); }
     void seek (Frame pos) { seekRequest.store (pos < 0 ? 0 : pos); }
+    // Cambio de proyecto (abrir/crear/cerrar): transporte parado, cuenta previa cancelada, bucle desactivado,
+    // posición al inicio (visible al instante para la interfaz aunque el stream esté parado) y MIDI en vivo
+    // pendiente descartado (era para las pistas del proyecto anterior). Hilo de control.
+    void resetTransport();
     Frame position() const { return positionOut.load(); }
     float masterPeak() const { return masterPeakOut.load(); }
     long xrunsReportedByHost() const { return hostXruns.load(); }
@@ -114,6 +118,9 @@ public:
     float takeDspLoadPeak() { return dspLoadPeak.exchange (0.0f, std::memory_order_relaxed); }
     long blocksOverBudget() const { return dspOver.load (std::memory_order_relaxed); }
     void reportXruns (long n) { hostXruns.store (n); }
+    // Diagnóstico: frames procesados por process() desde el arranque (si no avanza, el callback no se ejecuta) y
+    // pico del máster del último bloque con el transporte en marcha.
+    long long processedFrames() const { return processedOut.load (std::memory_order_relaxed); }
 
     // --- Grabación ---------------------------------------------------------------------------------------------
     // El hilo de audio copia la entrada (mientras reproduce) a 'ring' en 'recChannels' canales intercalados.
@@ -169,6 +176,8 @@ private:
     std::atomic<long> hostXruns { 0 };
     std::atomic<float> dspLoadAvg { 0.0f }, dspLoadPeak { 0.0f };
     std::atomic<long> dspOver { 0 };
+    std::atomic<long long> processedOut { 0 };
+    std::atomic<uint32_t> liveEpoch { 0 }; // resetTransport() lo incrementa: se descartan eventos en vivo anteriores
     void noteDspLoad (double seconds, int frames);
 
     std::atomic<bool> loopOn { false };
@@ -176,7 +185,7 @@ private:
     bool prevRolling = false;
     std::atomic<Frame> countInRequest { -1 }, countInOut { 0 };
     Frame countInLeft = 0, countInTotal = 0; // solo hilo de audio
-    struct LiveMidi { int slot; uint8_t status, d1, d2; };
+    struct LiveMidi { int slot; uint8_t status, d1, d2; uint32_t epoch; };
     SpscRing<LiveMidi> live { 1024 };
     std::atomic_flag liveLock = ATOMIC_FLAG_INIT;
 

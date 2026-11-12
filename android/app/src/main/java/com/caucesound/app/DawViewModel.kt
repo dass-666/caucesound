@@ -243,7 +243,8 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun closeProject() {
         autosave?.cancel()
         viewModelScope.launch {
-            call(Cmd.closeProject()) // guarda si hay cambios y detiene grabación/transporte
+            call(Cmd.closeProject()) // guarda si hay cambios, detiene grabación/transporte y vuelve la posición a 0
+            guard.abandonFocus()
             _state.value = null
             refreshProjects()
         }
@@ -266,8 +267,16 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
 
     // --- Transporte ---------------------------------------------------------------------------------------------
     override fun play() {
-        guard.requestFocus()
-        edit(Cmd.play())
+        if (!guard.requestFocus()) { toast(str(R.string.msg_focus_denied)); return }
+        viewModelScope.launch {
+            // Comprueba que el stream de salida sigue vivo (p. ej. tras un error de Oboe) antes de arrancar.
+            val audio = withContext(control) { NativeEngine.audioEnsure() }
+            audioOk = audio
+            if (!audio) { toast(str(R.string.msg_audio_failed)); refreshAudioStatus(); return@launch }
+            val r = call(Cmd.play())
+            if (!r.ok && r.error != null) toast(r.error)
+            refresh()
+        }
     }
 
     override fun stop() {
