@@ -415,14 +415,15 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         }
         else
         {
+            const float direct = t.sendsOnly ? 0.0f : 1.0f; // exportación de retornos de bus: solo alimenta envíos
             for (int i = 0; i < n; ++i)
             {
                 gl = approach (gl, targetL, smoothStep);
                 gr = approach (gr, targetR, smoothStep);
                 tl[i] *= gl;
                 tr[i] *= gr;
-                L[i] += tl[i];
-                R[i] += tr[i];
+                L[i] += tl[i] * direct;
+                R[i] += tr[i] * direct;
                 peak = std::max (peak, std::max (std::fabs (tl[i]), std::fabs (tr[i])));
             }
             addSends (t, tl, tr, n, true);
@@ -628,7 +629,7 @@ void Engine::process (const float* input, int inChannels, float* output, int out
     masterPeakOut.store (mPeak, std::memory_order_relaxed);
 }
 
-void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
+bool Engine::renderOffline (Frame from, float* left, float* right, Frame frames, const std::atomic<bool>* cancel)
 {
     ScopedNoDenormals noDenormals;
     adoptPendingGraph();
@@ -644,9 +645,11 @@ void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
     Frame done = 0;
     while (done < frames)
     {
+        if (cancel && cancel->load (std::memory_order_relaxed)) return false;
         const int n = (int) std::min<Frame> (maxBlock, frames - done);
         renderBlock (g, from + done, true, left + done, right + done, n);
         done += n;
     }
+    return true;
 }
 } // namespace cs

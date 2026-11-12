@@ -45,6 +45,9 @@ struct TrackRT
     // >= 0: pista bus (retorno de efectos). Su entrada es la suma de los envíos de las demás pistas; se procesa
     // después de todas ellas. Los envíos son post-fader (TrackParams::send[busIndex]).
     int busIndex = -1;
+    // true: la pista no suena directamente, solo alimenta sus envíos (post-fader). Lo usa la exportación de retornos
+    // de bus por separado; en la reproducción normal siempre es false.
+    bool sendsOnly = false;
 };
 uint64_t hashEvents (const std::vector<SchedEvent>& ev);
 
@@ -137,7 +140,8 @@ public:
 
     // --- Render offline (exportación): mismo camino de código, sin transporte compartido ----------------------
     // Renderiza [from, from+frames) en L/R planar. Usa el grafo publicado. No usar a la vez que process().
-    void renderOffline (Frame from, float* left, float* right, Frame frames);
+    // cancel: si se pone a true a mitad, deja de renderizar y devuelve false (el resto del búfer queda sin tocar).
+    bool renderOffline (Frame from, float* left, float* right, Frame frames, const std::atomic<bool>* cancel = nullptr);
 
 private:
     void renderBlock (const RenderGraph* g, Frame pos, bool rolling, float* L, float* R, int n);

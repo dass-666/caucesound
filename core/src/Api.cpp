@@ -417,6 +417,23 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setMonitoring") { e.setMonitoring (flag ("on"), (float) num ("gain", 1.0)); return json { { "ok", true } }.dump(); }
         if (cmd == "startRecording") return result (s.startRecording (str ("trackId"), (int) num ("channels", 1), true, (int) num ("countInBars", 0))).dump();
         if (cmd == "stopRecording") return result (s.stopRecording()).dump();
+        if (cmd == "exportDaw")
+        {
+            DawExportOptions o;
+            o.wet = q.value ("mode", std::string ("wet")) != "dry";
+            o.bitDepth = (int) num ("bits", 24);
+            o.includeMix = q.value ("mix", true);
+            o.includeProject = q.value ("project", true);
+            json j = result (s.exportDaw (str ("path"), o));
+            if (j.value ("ok", false)) { j["jobId"] = j.value ("id", std::string()); j.erase ("id"); }
+            return j.dump();
+        }
+        if (cmd == "exportMidi")
+        {
+            json j = result (s.exportMidi (str ("path")));
+            if (j.value ("ok", false)) { j["notes"] = std::atoi (j.value ("id", std::string ("0")).c_str()); j.erase ("id"); }
+            return j.dump();
+        }
         if (cmd == "export")
         {
             long clipped = 0;

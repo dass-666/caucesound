@@ -77,6 +77,15 @@ void sortNotes (std::vector<MidiNote>& notes);
 // Tick (relativo al patrón) en el que suena el paso 'step', con swing aplicado.
 Tick stepTick (int step, float swing);
 
+// Nota en ticks absolutos del timeline, ya recortada a su clip y con patrones y redobles expandidos.
+struct AbsNote
+{
+    Tick start = 0, end = 0;
+    int key = 60, velocity = 100, channel = 0;
+};
+// Expande un clip (notas o patrón de batería repetido) a notas absolutas. Es lo que suena y lo que se exporta a MIDI.
+void clipNotesAbsolute (const MidiClipModel& clip, const DrumPattern* pattern, std::vector<AbsNote>& out);
+
 // Notas del clip como eventos absolutos: Note On / Note Off ordenados (a igual frame, Note Off antes que Note On,
 // para que repetir una nota no la corte). Las notas que pasan del final del clip se acortan al final del clip.
 // Las notas se recortan a la duración del clip; los patrones se repiten hasta llenarlo.

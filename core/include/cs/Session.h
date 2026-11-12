@@ -26,6 +26,15 @@ struct OpResult
     static OpResult fail (std::string e) { OpResult r; r.ok = false; r.error = std::move (e); return r; }
 };
 
+// Exportación para DAW (ver SessionExport.cpp).
+struct DawExportOptions
+{
+    bool wet = true;            // true: con efectos, volumen y panorama + retornos de bus; false: pistas limpias
+    int bitDepth = 24;          // 16, 24 o 32 (float)
+    bool includeMix = true;
+    bool includeProject = true;
+};
+
 struct LoadReport
 {
     std::vector<std::string> missingSources;     // ids cuyo archivo falta o está dañado
@@ -197,6 +206,12 @@ public:
     // --- Exportación ---------------------------------------------------------------------------------------------
     // Renderiza [0, final del contenido + tail) con el mismo motor. Debe llamarse con el transporte parado.
     // bitDepth: 16 (con dither), 24 o 32 (float). stats opcional: muestras recortadas por saturación.
+    // Paquete ZIP para DAW (stems WAV + MIDI + mezcla + proyecto + manifiesto). Trabajo en segundo plano: devuelve el id
+    // del trabajo. No modifica el proyecto. outPath absoluto; se escribe en un temporal y se renombra al terminar.
+    static constexpr double kDawExportMaxSeconds = 1200.0;
+    OpResult exportDaw (const std::string& outPath, const DawExportOptions& options);
+    // Solo el archivo MIDI estándar (formato 1). Inmediato.
+    OpResult exportMidi (const std::string& outPath);
     OpResult exportMix (const std::string& outPath, int bitDepth, Frame tailFrames = 0, long* clippedSamples = nullptr);
 
     // --- Formas de onda --------------------------------------------------------------------------------------------

@@ -71,7 +71,7 @@ void addNote (std::vector<SchedEvent>& out, Tick absStart, Tick absEnd, int key,
 }
 } // namespace
 
-void appendClipEvents (const MidiClipModel& clip, const DrumPattern* pattern, double bpm, int sampleRate, std::vector<SchedEvent>& out)
+void clipNotesAbsolute (const MidiClipModel& clip, const DrumPattern* pattern, std::vector<AbsNote>& out)
 {
     const Tick clipEnd = clip.start + clip.length;
     if (clip.length <= 0) return;
@@ -90,7 +90,7 @@ void appendClipEvents (const MidiClipModel& clip, const DrumPattern* pattern, do
                     const Tick at = clip.start + rep + stepTick (s, pattern->swing);
                     if (at >= clipEnd) continue;
                     const int roll = std::min (4, pattern->rollAt (lane, s));
-                    if (roll <= 1) { addNote (out, at, std::min (at + kStepTicks, clipEnd), kDrumBaseNote + lane, vel, 9, bpm, sampleRate); continue; }
+                    if (roll <= 1) { out.push_back ({ at, std::min (at + kStepTicks, clipEnd), kDrumBaseNote + lane, vel, 9 }); continue; }
                     // Redoble: 'roll' golpes repartidos en el paso, con una pequeña subida de intensidad hacia el último.
                     const Tick sub = kStepTicks / roll;
                     for (int r = 0; r < roll; ++r)
@@ -98,7 +98,7 @@ void appendClipEvents (const MidiClipModel& clip, const DrumPattern* pattern, do
                         const Tick ra = at + r * sub;
                         if (ra >= clipEnd) break;
                         const int rv = std::clamp ((int) std::lround (vel * (0.72 + 0.28 * r / (roll - 1.0))), 1, 127);
-                        addNote (out, ra, std::min (ra + sub, clipEnd), kDrumBaseNote + lane, rv, 9, bpm, sampleRate);
+                        out.push_back ({ ra, std::min (ra + sub, clipEnd), kDrumBaseNote + lane, rv, 9 });
                     }
                 }
         return;
@@ -106,10 +106,17 @@ void appendClipEvents (const MidiClipModel& clip, const DrumPattern* pattern, do
     for (const auto& n : clip.notes)
     {
         if (n.start < 0 || n.start >= clip.length || n.length <= 0) continue;
-        const Tick s = clip.start + n.start;
-        const Tick e = std::min (s + n.length, clipEnd);
-        addNote (out, s, e, n.key, n.velocity, n.channel, bpm, sampleRate);
+        const Tick s0 = clip.start + n.start;
+        out.push_back ({ s0, std::min (s0 + n.length, clipEnd), n.key, n.velocity, n.channel });
     }
+}
+
+void appendClipEvents (const MidiClipModel& clip, const DrumPattern* pattern, double bpm, int sampleRate, std::vector<SchedEvent>& out)
+{
+    // Una sola fuente de verdad para lo que suena y lo que se exporta como MIDI (Smf.cpp).
+    std::vector<AbsNote> notes;
+    clipNotesAbsolute (clip, pattern, notes);
+    for (const auto& n : notes) addNote (out, n.start, n.end, n.key, n.velocity, n.channel, bpm, sampleRate);
 }
 
 std::string validateNote (const MidiNote& n)

@@ -7,6 +7,9 @@ add_library(cs_core STATIC
     src/Effects.cpp
     src/Engine.cpp
     src/Midi.cpp
+    src/Smf.cpp
+    src/Hash.cpp
+    src/SessionExport.cpp
     src/Processor.cpp
     src/Project.cpp
     src/Resampler.cpp
