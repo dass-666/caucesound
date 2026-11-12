@@ -1,6 +1,7 @@
 # cs_core: motor de audio y lógica del DAW en C++17 puro, sin dependencias de plataforma.
 # Lo comparten la app Android (JNI + Oboe), la futura app iOS (Core Audio) y las pruebas en escritorio.
 add_library(cs_core STATIC
+    src/Api.cpp
     src/Engine.cpp
     src/Processor.cpp
     src/Project.cpp

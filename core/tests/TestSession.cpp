@@ -448,3 +448,29 @@ TEST (waveform_peaks_are_correct)
         CHECK (bmin == (int) (30000.0 * buckets / 48000));
     }
 }
+
+#include "cs/Api.h"
+
+TEST (command_api_drives_a_full_session)
+{
+    Fixture f ("api");
+    auto call = [&] (const nlohmann::json& q) { return nlohmann::json::parse (handleCommand (f.session, f.engine, q.dump())); };
+    CHECK (call ({ { "cmd", "createProject" }, { "folder", f.dir + "/p" }, { "name", "API" } })["ok"] == true);
+    const std::string t = call ({ { "cmd", "addTrack" }, { "name", "Voz" } })["id"];
+    CHECK (call ({ { "cmd", "setVolume" }, { "trackId", t }, { "db", -3 } })["ok"] == true);
+    auto imp = call ({ { "cmd", "importWav" }, { "path", writeTestWav (f.dir + "/in.wav", 48000, 1, 9600, 440) }, { "trackId", t }, { "at", 0 } });
+    CHECK (imp["ok"] == true);
+    CHECK (call ({ { "cmd", "splitClip" }, { "clipId", imp["id"] }, { "at", 4800 } })["ok"] == true);
+    CHECK (call ({ { "cmd", "export" }, { "path", f.dir + "/o.wav" }, { "bits", 24 } })["ok"] == true);
+    auto st = call ({ { "cmd", "state" } });
+    CHECK (st["project"]["tracks"][0]["clips"].size() == 2);
+    CHECK (st["canUndo"] == true);
+    CHECK (call ({ { "cmd", "save" } })["ok"] == true);
+    auto list = call ({ { "cmd", "listProjects" }, { "root", f.dir } });
+    CHECK (list["projects"].size() == 1 && list["projects"][0]["name"] == "API");
+    // Entradas no válidas: siempre respuesta JSON con error, nunca excepción ni cierre.
+    CHECK (call ({ { "cmd", "nope" } })["ok"] == false);
+    CHECK (call ({ { "cmd", "setVolume" }, { "trackId", 5 } })["ok"] == false);
+    CHECK (nlohmann::json::parse (handleCommand (f.session, f.engine, "{{{"))["ok"] == false);
+    CHECK (call ({ { "cmd", "moveClip" }, { "clipId", "x" }, { "start", "abc" } })["ok"] == false);
+}
