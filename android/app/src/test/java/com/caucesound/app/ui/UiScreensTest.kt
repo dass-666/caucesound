@@ -2,6 +2,8 @@ package com.caucesound.app.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -252,6 +254,68 @@ class UiScreensTest {
     @Test fun studio_drums_panel_in_context() {
         compose.setContent { Studio(Panel.DRUMS, Recorder()) }
         shot("10_studio_drums")
+    }
+
+    @Test fun tempo_form_has_tap_tempo_and_count_in() {
+        // Se prueba el contenido del diálogo sin la ventana: en Robolectric, un campo de texto dentro de un diálogo
+        // no llega a reposo (limitación del entorno JVM, no verificada en teléfono).
+        val form = TempoForm(state, 1)
+        var clock = 0L
+        compose.setContent { Themed { Box(Modifier.fillMaxSize()) { Box(Modifier.align(androidx.compose.ui.Alignment.Center).padding(24.dp)) { TempoFormContent(form) { clock } } } } }
+        val tap = compose.onNode(androidx.compose.ui.test.hasText("Tocar", substring = true).or(androidx.compose.ui.test.hasText("Tap", substring = true)))
+        for (t in listOf(0L, 500L, 1000L, 1500L)) { clock = t; tap.performClick() }
+        assertEquals(120.0, form.bpmVal!!, 1e-9)
+        compose.onNode(androidx.compose.ui.test.hasText("2 compases").or(androidx.compose.ui.test.hasText("2 bars"))).performClick()
+        assertEquals(2, form.bars)
+        assertTrue(form.valid)
+        shot("11_tempo_form")
+        form.bpm = "999"; assertTrue(!form.valid)
+    }
+
+    @Config(qualifiers = "w360dp-h640dp-xhdpi")
+    @Test fun studio_fits_a_small_phone() {
+        val rec = Recorder()
+        compose.setContent { Studio(Panel.ARRANGE, rec) }
+        shot("12_small_arrange")
+        // Los controles esenciales siguen a la vista y se pueden tocar en 360 dp de ancho.
+        compose.onNodeWithContentDescription("Play").performClick()
+        assertTrue(rec.calls.contains("play"))
+        compose.onNodeWithContentDescription("Tempo").assertExists()
+    }
+
+    @Config(qualifiers = "w360dp-h640dp-xhdpi")
+    @Test fun drums_fit_a_small_phone() {
+        compose.setContent { Studio(Panel.DRUMS, Recorder()) }
+        shot("13_small_drums")
+    }
+
+    @Config(qualifiers = "w360dp-h640dp-xhdpi")
+    @Test fun mixer_fits_a_small_phone() {
+        compose.setContent { Studio(Panel.MIXER, Recorder()) }
+        shot("14_small_mixer")
+    }
+
+    @Config(qualifiers = "w480dp-h1040dp-xxhdpi")
+    @Test fun studio_on_a_large_phone() {
+        compose.setContent { Studio(Panel.PIANO, Recorder()) }
+        shot("15_large_piano")
+    }
+
+    @Config(qualifiers = "w891dp-h411dp-land-xxhdpi")
+    @Test fun studio_mixer_landscape() {
+        compose.setContent { Studio(Panel.MIXER, Recorder()) }
+        shot("16_mixer_land")
+    }
+
+    @Config(qualifiers = "w891dp-h411dp-land-xxhdpi")
+    @Test fun studio_piano_landscape() {
+        compose.setContent { Studio(Panel.PIANO, Recorder()) }
+        shot("17_piano_land")
+    }
+
+    @Test fun studio_synth_in_context() {
+        compose.setContent { Studio(Panel.SYNTH, Recorder()) }
+        shot("18_studio_synth")
     }
 
     @Test fun arrangement_timeline_draws_midi_and_audio_lanes() {

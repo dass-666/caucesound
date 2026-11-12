@@ -97,7 +97,12 @@ public:
 
     // --- Transporte (cualquier hilo) ---------------------------------------------------------------------------
     void play() { playing.store (true); }
-    void stop() { playing.store (false); }
+    void stop() { countInRequest.store (-1); playing.store (false); }
+    // Arranca con cuenta previa: suenan clics durante 'frames' sin que el transporte avance ni se grabe nada; al
+    // terminar, el transporte y la grabación empiezan exactamente en la posición actual. stop() la cancela.
+    void playWithCountIn (Frame frames) { countInRequest.store (frames > 0 ? frames : -1); playing.store (true); }
+    // Frames de cuenta previa que faltan (0 = no hay cuenta en curso). Para la interfaz.
+    Frame countInRemaining() const { return countInOut.load (std::memory_order_relaxed); }
     bool isPlaying() const { return playing.load(); }
     void seek (Frame pos) { seekRequest.store (pos < 0 ? 0 : pos); }
     Frame position() const { return positionOut.load(); }
@@ -169,6 +174,8 @@ private:
     std::atomic<bool> loopOn { false };
     std::atomic<Frame> loopStart { 0 }, loopEnd { 0 };
     bool prevRolling = false;
+    std::atomic<Frame> countInRequest { -1 }, countInOut { 0 };
+    Frame countInLeft = 0, countInTotal = 0; // solo hilo de audio
     struct LiveMidi { int slot; uint8_t status, d1, d2; };
     SpscRing<LiveMidi> live { 1024 };
     std::atomic_flag liveLock = ATOMIC_FLAG_INIT;

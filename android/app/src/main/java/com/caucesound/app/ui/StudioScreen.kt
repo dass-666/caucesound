@@ -128,6 +128,7 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
     val snackbar = remember { SnackbarHostState() }
     val position = remember { mutableLongStateOf(0L) }
     val playingState = remember { mutableStateOf(false) }
+    val countIn = remember { mutableLongStateOf(0L) }
     val meters = remember { mutableStateOf(FloatArray(0)) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var importTrack by remember { mutableStateOf<String?>(null) }
@@ -141,6 +142,7 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
             withFrameNanos { }
             position.longValue = NativeEngine.position()
             playingState.value = NativeEngine.isPlaying()
+            countIn.longValue = NativeEngine.countInRemaining()
             meters.value = NativeEngine.meters(state.tracks.size)
         }
     }
@@ -161,12 +163,12 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         onSettings = { vm.refreshAudioStatus(); dialog = "settings" },
         onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
         onRecord = { requestMic { vm.record() } },
-        favorites = vm.favoritePresets.collectAsState().value,
+        favorites = vm.favoritePresets.collectAsState().value, countIn = countIn,
     )
 
     // --- Diálogos ---
     when (val d = dialog) {
-        "tempo" -> TempoDialog(state, onDismiss = { dialog = null }) { bpm, bpb -> vm.setTempo(bpm, bpb); dialog = null }
+        "tempo" -> TempoDialog(state, vm.countInBars.collectAsState().value, onDismiss = { dialog = null }) { bpm, bpb, bars -> vm.setCountInBars(bars); if (bpm != state.bpm || bpb != state.beatsPerBar) vm.setTempo(bpm, bpb); dialog = null }
         "loop" -> LoopDialog(state, onDismiss = { dialog = null }) { on, s, e -> vm.setLoop(on, s, e); dialog = null }
         "fades" -> selected?.let { state.clip(it) }?.let { (_, c) ->
             FadesDialog(c.length, c.fadeIn, c.fadeOut, onDismiss = { dialog = null }) { i, o -> vm.setFades(c.id, i, o); dialog = null }
@@ -194,7 +196,7 @@ fun StudioLayout(
     state: ProjectState, panel: Panel, selected: String?, selectedTrack: String?, waveforms: Map<String, FloatArray>, catalog: Catalog,
     busy: Boolean, position: LongState, playing: Boolean, meters: androidx.compose.runtime.State<FloatArray>, actions: StudioActions,
     snackbar: SnackbarHostState, onDialog: (String) -> Unit, onSettings: () -> Unit, onImport: (String) -> Unit, onRecord: () -> Unit,
-    favorites: Set<String> = emptySet(),
+    favorites: Set<String> = emptySet(), countIn: LongState? = null,
 ) {
     var drumClipboard by remember { mutableStateOf<List<List<Int>>?>(null) }
     // Horizontal (poca altura): barra superior y transporte en una sola fila y navegación compacta, para dejar
@@ -202,7 +204,7 @@ fun StudioLayout(
     val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
     val transport: @Composable (Modifier) -> Unit = { m ->
         Transport(
-            state, playing, position, onRewind = { actions.seek(0) }, onPlay = actions::play, onStop = actions::stop,
+            state, playing, position, countIn, onRewind = { actions.seek(0) }, onPlay = actions::play, onStop = actions::stop,
             onRecord = onRecord, onTempo = { onDialog("tempo") }, onMetronome = { actions.setMetronome(!state.metronome) },
             onLoop = { actions.setLoop(!state.loopEnabled, state.loopStart, state.loopEnd) }, onLoopEdit = { onDialog("loop") }, modifier = m,
         )
@@ -318,47 +320,54 @@ private fun EmptyPanel(text: String, button: String, onClick: () -> Unit) {
 
 /** Lectura de posición aislada: es lo único que se recompone a cada fotograma. */
 @Composable
-private fun PositionReadout(state: ProjectState, position: LongState) {
+private fun PositionReadout(state: ProjectState, position: LongState, countIn: LongState?) {
     val pos = position.longValue
+    val left = countIn?.longValue ?: 0L
     Column(Modifier.padding(horizontal = 4.dp)) {
-        if (state.recording) Text("● REC", color = Palette.Record, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-        Text(MusicTime.barsBeats(pos, state.bpm, state.beatsPerBar), fontFamily = FontFamily.Monospace, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(MusicTime.clock(pos), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Palette.TextDim)
+        // Cuenta previa: tiempos que faltan para que empiece la toma (dato del motor, no un temporizador de la interfaz).
+        if (left > 0) Text(tr("CUENTA", "COUNT-IN") + " " + MusicTime.countInBeatsLeft(left, state.bpm), color = Palette.Solo, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        else if (state.recording) Text("● REC", color = Palette.Record, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text(MusicTime.barsBeats(pos, state.bpm, state.beatsPerBar), fontFamily = FontFamily.Monospace, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+        Text(MusicTime.clock(pos), fontFamily = FontFamily.Monospace, fontSize = 11.sp, letterSpacing = (-0.3).sp, color = Palette.TextDim, maxLines = 1, softWrap = false)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Transport(
-    s: ProjectState, playing: Boolean, position: LongState, onRewind: () -> Unit, onPlay: () -> Unit, onStop: () -> Unit,
+    s: ProjectState, playing: Boolean, position: LongState, countIn: LongState?, onRewind: () -> Unit, onPlay: () -> Unit, onStop: () -> Unit,
     onRecord: () -> Unit, onTempo: () -> Unit, onMetronome: () -> Unit, onLoop: () -> Unit, onLoopEdit: () -> Unit,
     modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
-    // Cabe en 360 dp de ancho (teléfonos compactos) sin desplazamiento: lo esencial siempre visible.
+    // Cabe en 360 dp de ancho (teléfonos compactos) sin desplazamiento: lo esencial siempre visible. En pantallas
+    // estrechas los botones se encogen un poco (sin bajar de 40 dp) para que la posición no se parta en varias líneas.
+    val narrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400
+    val big = if (narrow) 46.dp else 50.dp
+    val small = if (narrow) 40.dp else Dims.TouchMin
     Row(
         modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (narrow) 2.dp else 4.dp),
     ) {
-        RoundButton(Icons.Default.SkipPrevious, stringResource(R.string.rewind), onRewind, size = 40.dp, background = Palette.SurfaceHigh)
-        if (playing || s.recording) RoundButton(Icons.Default.Stop, stringResource(R.string.stop), onStop, size = 50.dp, background = Palette.SurfaceTop)
-        else RoundButton(Icons.Default.PlayArrow, stringResource(R.string.play), onPlay, size = 50.dp, background = Palette.Violet, tint = Color.White, glow = true)
+        RoundButton(Icons.Default.SkipPrevious, stringResource(R.string.rewind), onRewind, size = if (narrow) 36.dp else 40.dp, background = Palette.SurfaceHigh)
+        if (playing || s.recording) RoundButton(Icons.Default.Stop, stringResource(R.string.stop), onStop, size = big, background = Palette.SurfaceTop)
+        else RoundButton(Icons.Default.PlayArrow, stringResource(R.string.play), onPlay, size = big, background = Palette.Violet, tint = Color.White, glow = true)
         RoundButton(
-            Icons.Default.FiberManualRecord, stringResource(R.string.record), onRecord, size = 50.dp, enabled = !s.recording,
+            Icons.Default.FiberManualRecord, stringResource(R.string.record), onRecord, size = big, enabled = !s.recording,
             background = if (s.recording) Palette.Record else Palette.SurfaceTop, tint = if (s.recording) Color.White else Palette.Record,
         )
-        Box(Modifier.weight(1f)) { PositionReadout(s, position) }
+        Box(Modifier.weight(1f)) { PositionReadout(s, position, countIn) }
         Column(
             Modifier.clip(RoundedCornerShape(Dims.RadiusMedium)).background(Palette.SurfaceHigh)
-                .clickable(enabled = !s.recording, onClick = onTempo).semantics { contentDescription = "Tempo" }.padding(horizontal = 10.dp, vertical = 5.dp),
+                .clickable(enabled = !s.recording, onClick = onTempo).semantics { contentDescription = "Tempo" }.padding(horizontal = if (narrow) 7.dp else 10.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(if (s.bpm % 1.0 == 0.0) "${s.bpm.toInt()}" else "%.1f".format(s.bpm), fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Text("BPM · ${s.beatsPerBar}/4", fontSize = 10.sp, color = Palette.TextDim, maxLines = 1)
         }
-        ToolButton(Icons.Default.Timer, stringResource(R.string.metronome), onMetronome, active = s.metronome, activeColor = Palette.Cyan)
+        ToolButton(Icons.Default.Timer, stringResource(R.string.metronome), onMetronome, active = s.metronome, activeColor = Palette.Cyan, size = small)
         // Bucle: toque = activar/desactivar; pulsación larga = editar rango.
         Box(
-            Modifier.size(Dims.TouchMin).clip(RoundedCornerShape(Dims.RadiusMedium)).background(if (s.loopEnabled) Palette.Cyan.copy(alpha = 0.18f) else Color.Transparent)
+            Modifier.size(small).clip(RoundedCornerShape(Dims.RadiusMedium)).background(if (s.loopEnabled) Palette.Cyan.copy(alpha = 0.18f) else Color.Transparent)
                 .combinedClickable(onClick = onLoop, onLongClick = onLoopEdit), contentAlignment = Alignment.Center,
         ) { Icon(Icons.Default.Loop, tr("Bucle", "Loop"), Modifier.size(22.dp), tint = if (s.loopEnabled) Palette.Cyan else Palette.TextDim) }
     }

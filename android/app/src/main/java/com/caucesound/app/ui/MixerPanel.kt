@@ -40,11 +40,14 @@ import com.caucesound.app.data.TrackState
 /** Mezclador: una tira por pista (medidor, fader, panorámica, mute, solo) y el máster. */
 @Composable
 fun MixerPanel(state: ProjectState, meters: State<FloatArray>, selectedTrack: String?, actions: StudioActions) {
+    // Poca altura (teléfono en horizontal): las tiras pasan a un formato ancho con las perillas al lado del fader,
+    // para que el fader conserve un recorrido útil en vez de aplastarse.
+    val short = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
     Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         // Primer bus (reverb compartida): las pistas normales le envían con la perilla «Send».
         val bus = state.tracks.firstOrNull { it.isBus }
         state.tracks.forEachIndexed { i, t ->
-            Strip(t, { meters.value.getOrElse(i + 1) { 0f } }, t.id == selectedTrack, bus, actions)
+            Strip(t, { meters.value.getOrElse(i + 1) { 0f } }, t.id == selectedTrack, bus, actions, short)
         }
         if (bus == null) {
             Column(
@@ -59,19 +62,57 @@ fun MixerPanel(state: ProjectState, meters: State<FloatArray>, selectedTrack: St
                     fontSize = 10.sp, color = Palette.TextFaint)
             }
         }
-        MasterStrip(state.masterDb, { meters.value.getOrElse(0) { 0f } }, actions)
+        MasterStrip(state.masterDb, { meters.value.getOrElse(0) { 0f } }, actions, short)
     }
 }
 
 internal fun kindLabel(t: TrackState) = when (t.kind) { "drums" -> "DRUMS"; "synth" -> "SYNTH"; "bus" -> "BUS"; else -> "AUDIO" }
 
 @Composable
-private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: TrackState?, actions: StudioActions) {
+private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: TrackState?, actions: StudioActions, short: Boolean = false) {
     var vol by remember(t.id, t.volumeDb) { mutableFloatStateOf(t.volumeDb.clampDb()) }
     var pan by remember(t.id, t.pan) { mutableFloatStateOf(t.pan) }
     val sendLevel = bus?.let { t.sends[it.id] } ?: 0f
     var send by remember(t.id, bus?.id, sendLevel) { mutableFloatStateOf(sendLevel) }
     val color = Color(t.color.toInt())
+    val panKnob: @Composable () -> Unit = {
+        Knob("Pan", pan, -1f, 1f, 0f, { pan = it; actions.setPanLive(t.id, it) }, onEnd = actions::commitMixer, size = 40.dp, color = Palette.Solo,
+            format = { if (kotlin.math.abs(it) < 0.02f) "C" else if (it < 0) "L${(-it * 100).toInt()}" else "R${(it * 100).toInt()}" })
+    }
+    val sendKnob: @Composable () -> Unit = {
+        if (bus != null && !t.isBus) Knob("Send", send, 0f, 1f, 0f, { send = it; actions.setSendLive(t.id, bus.id, it) }, onEnd = actions::commitMixer, size = 40.dp,
+            color = Palette.Violet, format = { "${(it * 100).toInt()}%" })
+    }
+    val fxPill: @Composable () -> Unit = {
+        PillToggle(if (t.inserts.isEmpty()) "FX" else "FX ${t.inserts.count { !it.bypass }}", t.inserts.any { !it.bypass },
+            { actions.selectTrack(t.id); actions.openPanel(Panel.FX) }, color = Palette.Violet, height = 30.dp, minWidth = 60.dp)
+    }
+    if (short) {
+        Column(
+            Modifier.width(176.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
+                .border(if (selected) 2.dp else 1.dp, if (selected) color else Palette.Grid, RoundedCornerShape(16.dp))
+                .clickable { actions.selectTrack(t.id) }.padding(8.dp),
+        ) {
+            Box(Modifier.fillMaxWidth().height(4.dp).background(color, RoundedCornerShape(2.dp)))
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(t.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(dbLabel(vol), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Palette.TextDim)
+            }
+            Row(Modifier.weight(1f).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
+                    fxPill(); panKnob(); sendKnob()
+                }
+                VerticalFader(vol, { vol = it; actions.setVolumeLive(t.id, it) }, actions::commitMixer, Modifier.width(40.dp).fillMaxHeight(), color = color)
+                LevelMeter(meter, Modifier.width(10.dp).fillMaxHeight())
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                PillToggle("M", t.mute, { actions.setMute(t.id, !t.mute) }, color = Palette.Mute, height = 36.dp, minWidth = 36.dp)
+                PillToggle("S", t.solo, { actions.setSolo(t.id, !t.solo) }, color = Palette.Solo, height = 36.dp, minWidth = 36.dp)
+                if (t.isAudio) PillToggle("REC", t.armed, { actions.setArmed(t.id, !t.armed) }, color = Palette.Record, height = 36.dp, minWidth = 56.dp)
+            }
+        }
+        return
+    }
     Column(
         Modifier.width(92.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
             .border(if (selected) 2.dp else 1.dp, if (selected) color else Palette.Grid, RoundedCornerShape(16.dp))
@@ -118,7 +159,7 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: Tra
 }
 
 @Composable
-private fun MasterStrip(masterDb: Float, meter: () -> Float, actions: StudioActions) {
+private fun MasterStrip(masterDb: Float, meter: () -> Float, actions: StudioActions, short: Boolean = false) {
     var vol by remember(masterDb) { mutableFloatStateOf(masterDb.clampDb()) }
     Column(
         Modifier.width(100.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Palette.SurfaceHigh)
@@ -126,12 +167,12 @@ private fun MasterStrip(masterDb: Float, meter: () -> Float, actions: StudioActi
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("MASTER", fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Spacer(Modifier.height(46.dp))
+        Spacer(Modifier.height(if (short) 4.dp else 46.dp))
         Row(Modifier.weight(1f).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             VerticalFader(vol, { vol = it; actions.setMasterLive(it) }, actions::commitMixer, Modifier.width(40.dp).fillMaxHeight(), color = Palette.Violet)
             LevelMeter(meter, Modifier.width(14.dp).fillMaxHeight())
         }
         Text(dbLabel(vol), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Palette.TextDim)
-        Spacer(Modifier.height(46.dp))
+        Spacer(Modifier.height(if (short) 4.dp else 46.dp))
     }
 }

@@ -138,7 +138,8 @@ public:
     // --- Grabación -----------------------------------------------------------------------------------------------
     // Empieza a grabar en la pista armada (o trackId). El transporte debe ponerse en marcha (play) aparte o con
     // startTransport = true. channels: 1 (mono) o 2.
-    OpResult startRecording (const std::string& trackId, int channels, bool startTransport);
+    // countInBars: compases de cuenta previa (0..4) antes de que el transporte y la toma empiecen.
+    OpResult startRecording (const std::string& trackId, int channels, bool startTransport, int countInBars = 0);
     // Detiene la grabación (y el transporte) y crea el clip. Devuelve el id del clip.
     OpResult stopRecording();
     bool isRecording() const;
@@ -195,5 +196,6 @@ private:
     std::string paramGestureKey; // parámetro del gesto abierto ("" = ninguno)
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
+    bool recordingCountIn = false; // la toma en curso empezó con cuenta previa
 };
 } // namespace cs

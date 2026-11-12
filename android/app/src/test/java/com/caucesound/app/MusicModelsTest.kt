@@ -104,6 +104,25 @@ class MusicModelsTest {
         assertTrue(com.caucesound.app.ui.Scale.MAJOR.contains(1, 1)) // la tónica siempre pertenece, también en octavas bajas
     }
 
+    @Test fun tapTempoUsesTheMedianAndResetsAfterAPause() {
+        val t = com.caucesound.app.data.TapTempo()
+        assertEquals(null, t.tap(1000))
+        assertEquals(120.0, t.tap(1500)!!, 1e-9)
+        t.tap(2000); t.tap(2500)
+        // Un toque tardío (700 ms) no mueve la mediana: sigue en 120.
+        assertEquals(120.0, t.tap(3200)!!, 1e-9)
+        assertEquals(120.0, t.tap(3700)!!, 1e-9)
+        // Pausa larga: empieza de cero con el tempo nuevo.
+        assertEquals(null, t.tap(10_000))
+        assertEquals(1, t.count)
+        assertEquals(140.0, t.tap(10_000 + 429)!!, 0.2)
+        // Límites del motor (20–400 BPM).
+        val fast = com.caucesound.app.data.TapTempo(); fast.tap(0)
+        assertEquals(400.0, fast.tap(50)!!, 1e-9)
+        // Cuenta previa: 4, 3, 2, 1 a 120 BPM (24000 frames por tiempo).
+        assertEquals(listOf(4, 4, 3, 1, 1), listOf(96000L, 72001L, 72000L, 24000L, 1L).map { MusicTime.countInBeatsLeft(it, 120.0) })
+    }
+
     @Test fun pianoRollEditOperations() {
         val a = NoteState(60, 100, 0, 0, 240)
         val b = NoteState(64, 90, 0, 480, 240)

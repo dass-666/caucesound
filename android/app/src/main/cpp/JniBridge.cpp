@@ -54,6 +54,7 @@ JNIEXPORT jstring JNICALL Java_com_caucesound_app_audio_NativeEngine_command (JN
 }
 
 JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_position (JNIEnv*, jobject) { return (jlong) native().engine.position(); }
+JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_countInRemaining (JNIEnv*, jobject) { return (jlong) native().engine.countInRemaining(); }
 JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_isPlaying (JNIEnv*, jobject) { return native().engine.isPlaying(); }
 JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_recordedFrames (JNIEnv*, jobject) { return (jlong) native().session.recordingFrames(); }
 

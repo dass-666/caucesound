@@ -168,8 +168,7 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
 
     Column(Modifier.fillMaxSize()) {
         // --- Herramientas: fila fija (rejilla, modo, escala, zoom) y fila de acciones según haya selección ---
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        val fixedTools: @Composable () -> Unit = {
             val grids = listOf(PPQ.toLong(), PPQ / 2L, PPQ / 4L, PPQ / 8L)
             Segmented(listOf("1/4", "1/8", "1/16", "1/32"), grids.indexOf(grid).coerceAtLeast(0), { grid = grids[it] }, height = 40.dp)
             ToolButton(Icons.Default.Edit, tr("Dibujar notas", "Draw notes"), { drawMode = true }, active = drawMode)
@@ -190,8 +189,7 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
             ToolButton(Icons.Default.KeyboardArrowUp, tr("Octava arriba", "Octave up"), { scrollOctave(true) })
             ToolButton(Icons.Default.KeyboardArrowDown, tr("Octava abajo", "Octave down"), { scrollOctave(false) })
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp).padding(bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        val contextTools: @Composable () -> Unit = {
             if (selection.isNotEmpty()) {
                 Text(tr("${selection.size} sel.", "${selection.size} sel."), style = ValueText, color = Palette.VioletSoft, modifier = Modifier.padding(horizontal = 4.dp))
                 CauceButton(tr("Duplicar", "Duplicate"), { val (l, sl) = PianoRollOps.duplicate(notes, selection); selection = sl; commit(l) }, icon = Icons.Default.ContentCopy, height = 40.dp)
@@ -209,6 +207,17 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
                 }, icon = Icons.Default.ContentCopy, height = 40.dp)
                 CauceButton(tr("+1 compás", "+1 bar"), { actions.resizeMidiClip(clip.id, clip.start, clip.length + 4L * PPQ * state.beatsPerBar / 4) }, height = 40.dp)
             }
+        }
+        // En horizontal (poca altura) las dos filas se funden en una sola, desplazable, para dejar sitio a las notas.
+        val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
+        if (compact) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { fixedTools(); contextTools() }
+        } else {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { fixedTools() }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp).padding(bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { contextTools() }
         }
 
         // --- Regla ---
@@ -461,7 +470,7 @@ private fun VelocityLane(
     val sel by rememberUpdatedState(selection)
     val px by rememberUpdatedState(pxPerTick)
     val ox by rememberUpdatedState(offX)
-    Row(Modifier.fillMaxWidth().height(VEL_LANE_H).background(Palette.Surface)) {
+    Row(Modifier.fillMaxWidth().height(if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500) 44.dp else VEL_LANE_H).background(Palette.Surface)) {
         Box(Modifier.width(KEYS_W).fillMaxHeight(), contentAlignment = Alignment.Center) {
             Text(tr("Fuerza", "Velocity"), fontSize = 10.sp, color = Palette.TextFaint)
         }

@@ -477,7 +477,18 @@ void Engine::process (const float* input, int inChannels, float* output, int out
     while (done < frames)
     {
         int n = std::min (maxBlock, frames - done);
-        const bool rolling = playing.load (std::memory_order_relaxed);
+        const bool transportOn = playing.load (std::memory_order_relaxed);
+        // Cuenta previa: mientras dura, el transporte está «en marcha» para la interfaz pero el motor no avanza,
+        // no reproduce el arreglo ni graba; solo suenan los clics (y los instrumentos tocados en vivo).
+        if (transportOn)
+        {
+            const Frame ci = countInRequest.exchange (-1, std::memory_order_acq_rel);
+            if (ci > 0) { countInLeft = ci; countInTotal = ci; }
+        }
+        else countInLeft = 0;
+        const bool counting = countInLeft > 0;
+        if (counting && (Frame) n > countInLeft) n = (int) countInLeft;
+        const bool rolling = transportOn && ! counting;
         if (prevRolling && ! rolling) notesOff (g, false); // stop: las notas pasan a release
         prevRolling = rolling;
         const bool looping = rolling && loopOn.load (std::memory_order_relaxed) && ! recording.load (std::memory_order_relaxed);
@@ -509,6 +520,30 @@ void Engine::process (const float* input, int inChannels, float* output, int out
                     const float v = click[(size_t) (x - b)] * mg;
                     L[x - pos] += v;
                     R[x - pos] += v;
+                }
+            }
+        }
+
+        if (counting && g && g->bpm > 0)
+        {
+            // Mismos clics que el metrónomo, contados desde el inicio de la cuenta; suenan aunque el metrónomo esté
+            // apagado (para eso se pidió la cuenta) y nunca más bajos que su volumen por defecto.
+            const double spb = 60.0 * rate / g->bpm;
+            const Frame at = countInTotal - countInLeft;
+            const float mg = std::max (0.5f, metronomeGain.load (std::memory_order_relaxed));
+            Frame k0 = (Frame) std::floor ((double) (at - (Frame) clickHi.size()) / spb);
+            if (k0 < 0) k0 = 0;
+            const Frame k1 = (Frame) std::floor ((double) (at + n - 1) / spb);
+            for (Frame k = k0; k <= k1; ++k)
+            {
+                const Frame b = (Frame) std::llround ((double) k * spb);
+                const std::vector<float>& click = (g->beatsPerBar > 0 && k % g->beatsPerBar == 0) ? clickHi : clickLo;
+                const Frame from = std::max (b, at), to = std::min (b + (Frame) click.size(), at + n);
+                for (Frame x = from; x < to; ++x)
+                {
+                    const float v = click[(size_t) (x - b)] * mg;
+                    L[x - at] += v;
+                    R[x - at] += v;
                 }
             }
         }
@@ -565,8 +600,10 @@ void Engine::process (const float* input, int inChannels, float* output, int out
                 loopNotesOff (g); // ninguna nota cruza el reinicio del bucle
             }
         }
+        if (counting) countInLeft -= n;
         done += n;
     }
+    countInOut.store (countInLeft, std::memory_order_relaxed);
     positionOut.store (pos, std::memory_order_release);
     masterPeakOut.store (mPeak, std::memory_order_relaxed);
 }

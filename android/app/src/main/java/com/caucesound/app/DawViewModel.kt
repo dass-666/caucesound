@@ -284,7 +284,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             val armed = s.tracks.firstOrNull { it.armed } ?: run { toast(str(R.string.msg_arm_track)); return@launch }
             if (!withContext(control) { NativeEngine.setInputEnabled(true) }) { toast(str(R.string.msg_mic_failed)); return@launch }
             guard.requestFocus()
-            val r = call(Cmd.startRecording(armed.id))
+            val r = call(Cmd.startRecording(armed.id, _countInBars.value))
             if (!r.ok) toast(r.error ?: "")
             refresh()
             refreshAudioStatus()
@@ -344,6 +344,10 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val prefs = app.getSharedPreferences("cauce_prefs", android.content.Context.MODE_PRIVATE)
     private val _favoritePresets = MutableStateFlow(prefs.getStringSet("favoritePresets", emptySet())!!.toSet())
     val favoritePresets: StateFlow<Set<String>> = _favoritePresets
+    // Cuenta previa antes de grabar (0, 1 o 2 compases): preferencia del dispositivo, no del proyecto.
+    private val _countInBars = MutableStateFlow(prefs.getInt("countInBars", 1).coerceIn(0, 2))
+    val countInBars: StateFlow<Int> = _countInBars
+    fun setCountInBars(bars: Int) { _countInBars.value = bars.coerceIn(0, 2); prefs.edit().putInt("countInBars", _countInBars.value).apply() }
     override fun toggleFavoritePreset(presetId: String) {
         val next = _favoritePresets.value.let { if (presetId in it) it - presetId else it + presetId }
         _favoritePresets.value = next

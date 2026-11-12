@@ -227,6 +227,9 @@ object StateParser {
 object MusicTime {
     fun framesPerBeat(bpm: Double): Double = 60.0 * SAMPLE_RATE / bpm
 
+    /** Tiempos de cuenta previa que faltan (4, 3, 2, 1) para 'frames' restantes. */
+    fun countInBeatsLeft(frames: Long, bpm: Double): Int = kotlin.math.ceil(frames / framesPerBeat(bpm)).toInt().coerceAtLeast(1)
+
     /** "compás.tiempo" empezando en 1.1 */
     fun barsBeats(frame: Long, bpm: Double, beatsPerBar: Int): String {
         val beat = (frame / framesPerBeat(bpm)).toLong()
@@ -266,4 +269,25 @@ object MusicTime {
     fun noteName(key: Int): String = NAMES[key % 12] + (key / 12 - 1)
     fun isBlack(key: Int): Boolean = (key % 12) in intArrayOf(1, 3, 6, 8, 10)
     fun framesToMs(f: Long): Double = f * 1000.0 / SAMPLE_RATE
+}
+
+
+/**
+ * Tap tempo: BPM a partir de los toques del usuario. Usa la mediana de los últimos intervalos (hasta 8) para que
+ * un toque impreciso no desvíe el resultado, y empieza de cero si pasan más de 2 s entre toques.
+ */
+class TapTempo {
+    private val taps = ArrayList<Long>()
+    /** Registra un toque (tiempo monotónico en ms). Devuelve el BPM estimado o null si aún no hay 2 toques. */
+    fun tap(nowMs: Long): Double? {
+        if (taps.isNotEmpty() && nowMs - taps.last() > 2000) taps.clear()
+        taps += nowMs
+        while (taps.size > 9) taps.removeAt(0)
+        if (taps.size < 2) return null
+        val gaps = taps.zipWithNext { a, b -> (b - a).toDouble() }.sorted()
+        val median = if (gaps.size % 2 == 1) gaps[gaps.size / 2] else (gaps[gaps.size / 2 - 1] + gaps[gaps.size / 2]) / 2
+        if (median <= 0) return null
+        return (60000.0 / median).coerceIn(20.0, 400.0)
+    }
+    val count: Int get() = taps.size
 }

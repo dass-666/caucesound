@@ -917,7 +917,7 @@ OpResult Session::setRecordLatencyOffset (Frame frames)
 }
 
 // --- Grabación ----------------------------------------------------------------------------------------------------
-OpResult Session::startRecording (const std::string& trackId, int channels, bool startTransport)
+OpResult Session::startRecording (const std::string& trackId, int channels, bool startTransport, int countInBars)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
@@ -937,7 +937,14 @@ OpResult Session::startRecording (const std::string& trackId, int channels, bool
     if (! recorder->start (err)) { recorder.reset(); return OpResult::fail ("no se pudo iniciar la grabación: " + err); }
     recordingSourceId = sid;
     recordingTrackId = t->id;
-    if (startTransport) engine.play();
+    recordingCountIn = false;
+    if (startTransport)
+    {
+        const int bars = std::clamp (countInBars, 0, 4);
+        const Frame countIn = proj.bpm > 0 ? (Frame) std::llround ((double) bars * proj.beatsPerBar * 60.0 * proj.sampleRate / proj.bpm) : 0;
+        recordingCountIn = countIn > 0;
+        if (countIn > 0) engine.playWithCountIn (countIn); else engine.play();
+    }
     OpResult r;
     r.id = sid;
     return r;
@@ -961,6 +968,8 @@ OpResult Session::stopRecording()
     if (startPos < 0)
     {
         removeFile (part); removeFile (sidecar);
+        // Parar durante la cuenta previa no es un error: simplemente no hay toma (resultado correcto, sin id).
+        if (recordingCountIn) { recordingCountIn = false; return OpResult(); }
         return OpResult::fail ("no se recibió audio del micrófono");
     }
     if (std::rename (part.c_str(), absPath (rel).c_str()) != 0) return OpResult::fail ("no se pudo finalizar el archivo de grabación");

@@ -287,7 +287,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         }
         if (cmd == "seek") { e.seek (frame ("frame")); return json { { "ok", true } }.dump(); }
         if (cmd == "setMonitoring") { e.setMonitoring (flag ("on"), (float) num ("gain", 1.0)); return json { { "ok", true } }.dump(); }
-        if (cmd == "startRecording") return result (s.startRecording (str ("trackId"), (int) num ("channels", 1), true)).dump();
+        if (cmd == "startRecording") return result (s.startRecording (str ("trackId"), (int) num ("channels", 1), true, (int) num ("countInBars", 0))).dump();
         if (cmd == "stopRecording") return result (s.stopRecording()).dump();
         if (cmd == "export")
         {

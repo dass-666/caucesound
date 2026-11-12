@@ -78,6 +78,6 @@ object Cmd {
     fun stop() = c("stop")
     fun seek(frame: Long) = c("seek", "frame" to frame)
     fun setMonitoring(on: Boolean) = c("setMonitoring", "on" to on, "gain" to 1.0)
-    fun startRecording(trackId: String) = c("startRecording", "trackId" to trackId, "channels" to 1)
+    fun startRecording(trackId: String, countInBars: Int = 0) = c("startRecording", "trackId" to trackId, "channels" to 1, "countInBars" to countInBars)
     fun export(path: String, bits: Int) = c("export", "path" to path, "bits" to bits, "tail" to SAMPLE_RATE / 2)
 }

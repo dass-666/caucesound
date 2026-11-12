@@ -96,26 +96,44 @@ import kotlin.math.max
 
 /** Diálogos del estudio (tempo, fundidos, ganancia, exportación, pista, ajustes de audio). */
 // ----------------------------------------------------------------------------------------------------------------
+/** Estado editable del diálogo de tempo (fuera del diálogo para poder probar su contenido en la JVM). */
+internal class TempoForm(s: ProjectState, countInBars: Int) {
+    var bpm by mutableStateOf("%.1f".format(s.bpm).replace(',', '.'))
+    var bpb by mutableStateOf(s.beatsPerBar.toString())
+    var bars by mutableStateOf(countInBars.coerceIn(0, 2))
+    var taps by mutableStateOf(0)
+    private val tapper = com.caucesound.app.data.TapTempo()
+    val bpmVal get() = bpm.replace(',', '.').toDoubleOrNull()
+    val bpbVal get() = bpb.toIntOrNull()
+    val valid get() = bpmVal.let { it != null && it in 20.0..400.0 } && bpbVal.let { it != null && it in 1..16 }
+    fun tap(nowMs: Long) { val r = tapper.tap(nowMs); taps = tapper.count; if (r != null) bpm = "%.1f".format(r).replace(',', '.') }
+}
+
 @Composable
-internal fun TempoDialog(s: ProjectState, onDismiss: () -> Unit, onOk: (Double, Int) -> Unit) {
-    var bpm by remember { mutableStateOf("%.1f".format(s.bpm).replace(',', '.')) }
-    var bpb by remember { mutableStateOf(s.beatsPerBar.toString()) }
-    val bpmVal = bpm.replace(',', '.').toDoubleOrNull()
-    val bpbVal = bpb.toIntOrNull()
-    val valid = bpmVal != null && bpmVal in 20.0..400.0 && bpbVal != null && bpbVal in 1..16
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.tempo)) },
-        text = {
-            Column {
-                OutlinedTextField(bpm, { bpm = it.take(6) }, label = { Text("BPM (20–400)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(bpb, { bpb = it.take(2) }, label = { Text(stringResource(R.string.beats_per_bar)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Text(stringResource(R.string.tempo_note), fontSize = 12.sp, color = Palette.TextDim)
-            }
-        },
-        confirmButton = { TextButton(enabled = valid, onClick = { onOk(bpmVal!!, bpbVal!!) }) { Text("OK") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
+internal fun TempoDialog(s: ProjectState, countInBars: Int = 0, onDismiss: () -> Unit, onOk: (Double, Int, Int) -> Unit) {
+    val form = remember { TempoForm(s, countInBars) }
+    CauceDialog(stringResource(R.string.tempo), onDismiss, confirm = "OK", onConfirm = { onOk(form.bpmVal!!, form.bpbVal!!, form.bars) }, dismiss = stringResource(R.string.cancel), confirmEnabled = form.valid) {
+        TempoFormContent(form)
+    }
+}
+
+@Composable
+internal fun TempoFormContent(form: TempoForm, now: () -> Long = { android.os.SystemClock.elapsedRealtime() }) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(form.bpm, { form.bpm = it.take(6) }, label = { Text("BPM (20–400)") }, singleLine = true, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            // Tap tempo: toca al ritmo; el BPM sale de la mediana de los últimos toques.
+            CauceButton(if (form.taps < 2) tr("Tocar", "Tap") else tr("Tocar", "Tap") + " · ${form.taps}", { form.tap(now()) }, kind = ButtonKind.Secondary, height = 56.dp)
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(form.bpb, { form.bpb = it.take(2) }, label = { Text(stringResource(R.string.beats_per_bar)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        Spacer(Modifier.height(12.dp))
+        Text(tr("Cuenta previa al grabar", "Count-in before recording"), fontSize = 12.sp, color = Palette.TextDim)
+        Spacer(Modifier.height(4.dp))
+        Segmented(listOf(tr("No", "Off"), tr("1 compás", "1 bar"), tr("2 compases", "2 bars")), form.bars, { form.bars = it })
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.tempo_note), fontSize = 12.sp, color = Palette.TextDim)
+    }
 }
 
 @Composable

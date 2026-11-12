@@ -17,6 +17,8 @@ object NativeEngine {
     external fun command(json: String): String
     external fun position(): Long
     external fun isPlaying(): Boolean
+    /** Frames de cuenta previa que faltan antes de que empiece la toma (0 = sin cuenta en curso). */
+    external fun countInRemaining(): Long
     external fun recordedFrames(): Long
     external fun meters(numTracks: Int): FloatArray
     external fun peaks(sourceId: String, from: Long, to: Long, buckets: Int): FloatArray
