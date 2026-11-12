@@ -27,7 +27,7 @@ emula y es mucho más lento que un teléfono).
 | Núcleo | x86-64 nativo | ARM64 (QEMU) |
 |---|---|---|
 | `vs_core` + `CoreTests.cpp` (59 pruebas) | 59/59 | 57/59. Las 2 que fallan son **umbrales de CPU** (`cpu / seconds < 0.25`), esperable bajo emulación. Todas las pruebas de calidad, latencia, asignaciones y estado pasan |
-| `solo_core` + sus 10 archivos de prueba (144 pruebas) | 144/144 (2,5 millones de comprobaciones) | SOLO_ARM_RESULT |
+| `solo_core` + sus 10 archivos de prueba (144 pruebas) | 144/144 (2,5 millones de comprobaciones) | 143/144. Falla `tone_oversampling_reduces_aliasing`: en ARM el sobremuestreo 2x ya mide −45,4 dB de energía no armónica (en x86 −27,7 dB), así que la condición «4x mejora 3 dB sobre 2x» no se cumple. No es un cierre ni un error de memoria, pero indica que **el resultado numérico difiere entre x86 y ARM** (hipótesis sin verificar: contracción FMA de GCC en aarch64). Hay que investigarlo antes de integrar el amplificador de guitarra |
 
 Pendiente de medir en el Samsung: el coste real de CPU de VocalShift (en x86 sus pruebas indican ~1,5–2,5 % de un
 núcleo para el pitch solo y ~27–33 % para la segunda voz completa según su propia medición). En un teléfono de gama
