@@ -24,7 +24,7 @@ arm64), **Render JVM** (pantalla dibujada con Robolectric y revisada), **Físico
 | Motor x86-64 Release | **114/114** (94 anteriores + 20 nuevas) |
 | ASan + UBSan | **112/112** prueba por prueba sobre el commit `cb2463d`; tras el último cambio (A/B igualado) se repitieron las 33 pruebas afectadas (`vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`, `project`): 33/33. Las 2 pruebas nuevas están incluidas en esa repetición |
 | TSan | **112/112** prueba por prueba sobre el commit `cb2463d`, sin avisos; tras el último cambio se repitieron las pruebas afectadas: ver la línea siguiente |
-| TSan, repetición tras el último cambio | `vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`: 15/15. `project` (18 pruebas): en curso al cerrar este documento |
+| TSan, repetición tras el último cambio | `vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`: 15/15. `project` (18 pruebas): 18/18. Total 33/33, sin avisos |
 | ARM64 | **Solo compilación** (NDK, arm64-v8a dentro del APK). Esta sesión no tenía QEMU ni compilador cruzado: las pruebas **no** se ejecutaron en ARM64 |
 | Android JVM y Robolectric | **59/59** |
 | Lint | 0 errores, 37 avisos (no ocultados) |
