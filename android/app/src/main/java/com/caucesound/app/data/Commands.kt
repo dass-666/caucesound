@@ -33,6 +33,8 @@ object Cmd {
     fun vocalPresets() = c("vocalPresets")
     fun vocalProcess(clipId: String, params: VocalParams) = c("vocalProcess", "clipId" to clipId, "params" to params.toJson())
     fun clipVersion(clipId: String, original: Boolean, match: Boolean? = null) = c("clipVersion", "clipId" to clipId, "original" to original, "match" to match)
+    fun vocalPreview(clipId: String, params: VocalParams, from: Long, length: Long) = c("vocalPreview", "clipId" to clipId, "params" to params.toJson(), "from" to from, "length" to length)
+    fun previewListen(clipId: String, on: Boolean) = c("previewListen", "clipId" to clipId, "on" to on)
     fun discardProcess(clipId: String) = c("discardProcess", "clipId" to clipId)
     fun jobStatus(jobId: String) = c("jobStatus", "jobId" to jobId)
     fun jobCancel(jobId: String) = c("jobCancel", "jobId" to jobId)

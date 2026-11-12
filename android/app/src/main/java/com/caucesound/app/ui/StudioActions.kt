@@ -81,6 +81,9 @@ interface StudioActions {
     /** Comparación A/B: elige qué versión del clip suena, sin mover nada ni reiniciar la reproducción. */
     /** match: null no cambia; true/false activa o desactiva la comparación a volumen igualado. */
     fun setClipVersion(clipId: String, original: Boolean, match: Boolean? = null) {}
+    /** Procesa en segundo plano una región corta (frames relativos al clip) y la reproduce en su sitio. No cambia el proyecto. */
+    fun vocalPreview(clipId: String, params: com.caucesound.app.data.VocalParams, from: Long, length: Long) {}
+    fun previewListen(clipId: String, on: Boolean) {}
     fun discardProcess(clipId: String) {}
     /** Reproduce desde el inicio del clip (para escuchar el resultado). */
     fun auditionClip(clipId: String) {}

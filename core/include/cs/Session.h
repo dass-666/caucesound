@@ -151,7 +151,16 @@ public:
     // temporal se borra. Reprocesar parte siempre del original.
     OpResult vocalProcess (const std::string& clipId, const vocal::Params& params);
     // Comparación A/B: elige qué versión suena (original = true). Misma posición en el tiempo; no entra en deshacer.
-    // match: -1 no cambia, 0 desactiva y 1 activa la comparación a volumen igualado (ver ClipModel::procMatch).
+    // Escucha previa (0.6): procesa en segundo plano una región corta del original (from y length relativos al clip,
+    // en frames; máximo kPreviewMaxSeconds) y la guarda en memoria. No es tiempo real ni cambia el proyecto. Si la
+    // región y los parámetros no han cambiado devuelve id == "cached" sin volver a procesar.
+    static constexpr double kPreviewMaxSeconds = 8.0;
+    OpResult vocalPreview (const std::string& clipId, const vocal::Params& params, Frame from, Frame length);
+    // Con la escucha activa, el clip suena como el original con la región de prueba sustituida por la procesada. Solo
+    // en la reproducción en vivo: nunca se guarda ni se exporta.
+    OpResult setPreviewListen (const std::string& clipId, bool on);
+    // match: -1 no cambia, 0 desactiva y 1 activa la escucha a volumen igualado. Es un estado temporal de escucha:
+    // no se guarda, no entra en deshacer y no afecta a ninguna exportación. Solo un clip a la vez.
     OpResult setClipVersion (const std::string& clipId, bool original, int match = -1);
     // Descarta el procesado: el clip vuelve a ser solo el original (con deshacer).
     OpResult discardProcess (const std::string& clipId);
@@ -241,6 +250,21 @@ private:
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
     bool recordingCountIn = false; // la toma en curso empezó con cuenta previa
+    struct VocalPreview
+    {
+        std::string clipId, key, srcId;
+        Frame baseOffset = 0, baseLength = 0; // el original del clip cuando se hizo la prueba
+        Frame from = 0, length = 0, skip = 0; // región dentro del clip; skip = pre-roll descartado del audio procesado
+        std::shared_ptr<const AudioData> audio;
+        std::string paramsJson;
+        double seconds = 0;
+        bool valid() const { return audio != nullptr; }
+    };
+    VocalPreview preview;        // última prueba de VocalShift (en memoria; nunca se guarda)
+    bool listenPreview = false;  // la prueba está sonando en lugar de esa región del clip
+    void clearPreviewLocked();
+    void applyPreviewLocked (const std::string& projectId, VocalPreview&& p);
+    std::string listenMatchClip; // clip que se escucha a volumen igualado ("" = ninguno); nunca se guarda
     JobRunner jobs; // el último miembro: se destruye primero, así ningún trabajo sobrevive al resto de la sesión
 };
 } // namespace cs

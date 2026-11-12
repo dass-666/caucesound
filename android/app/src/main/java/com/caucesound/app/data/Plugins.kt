@@ -49,7 +49,8 @@ data class VocalPreset(val id: String, val name: String, val description: String
 
 /** Procesado no destructivo de un clip: existe la versión original y la procesada; `playingOriginal` dice cuál suena. */
 data class ClipProcess(val plugin: String, val version: String, val params: VocalParams, val playingOriginal: Boolean, val origLength: Long, val procLength: Long,
-    /** Nivel RMS de la versión procesada respecto a la original (dB), medido por el motor; match = B suena compensada al comparar. */
+    /** Nivel RMS de la versión procesada respecto a la original (dB), medido por el motor; match = B se está escuchando
+     *  compensada para comparar. Es un estado de escucha: no se guarda ni afecta a la exportación. */
     val levelDb: Float = 0f, val match: Boolean = false)
 
 /** Trabajo offline en curso o terminado (cola del motor). state: queued, running, done, failed, cancelled. */
@@ -112,6 +113,9 @@ data class SoloFamily(val request: SoloRequest, val proposals: List<SoloProposal
 
 /** Tonalidad confirmada por el usuario y guardada con el proyecto (a mano o tras analizar un audio). */
 data class HarmonyState(val keyRoot: Int, val minor: Boolean, val source: String, val chords: Int, val chordsBpm: Double)
+
+/** Escucha previa de VocalShift: una región corta procesada en memoria por el motor. No forma parte del proyecto. */
+data class VocalPreviewState(val clipId: String, val from: Long, val length: Long, val listening: Boolean, val params: VocalParams)
 
 /** Estado de interfaz de los plugins: no forma parte del proyecto. */
 data class PluginUi(

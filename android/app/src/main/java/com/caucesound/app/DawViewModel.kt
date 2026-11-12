@@ -378,11 +378,31 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "vocalshift", clipId, "queued", 0f), vocalResult = null)
             followJob(r.raw.optString("jobId")) { res ->
                 _plugins.value = _plugins.value.copy(vocalResult = com.caucesound.app.data.PluginParser.vocalResult(res))
+                // La comparación empieza a volumen igualado (solo de escucha; se apaga al salir de la pantalla).
+                call(Cmd.clipVersion(clipId, false, true))
                 refresh()
                 toast(tr("Voz procesada. Compara original y procesada.", "Voice processed. Compare original and processed."))
             }
         }
     }
+
+    override fun vocalPreview(clipId: String, params: com.caucesound.app.data.VocalParams, from: Long, length: Long) {
+        viewModelScope.launch {
+            val r = call(Cmd.vocalPreview(clipId, params, from, length))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            suspend fun listen() {
+                val on = call(Cmd.previewListen(clipId, true))
+                if (!on.ok) { toast(on.error ?: ""); refresh(); return }
+                refresh()
+                val c = _state.value?.clip(clipId)?.second ?: return
+                call(Cmd.stop()); call(Cmd.seek(c.start + from)); play()
+            }
+            if (r.raw.optBoolean("cached")) { listen(); return@launch } // nada cambió: no se repite el cálculo
+            _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "vocalPreview", clipId, "queued", 0f))
+            followJob(r.raw.optString("jobId")) { listen() }
+        }
+    }
+    override fun previewListen(clipId: String, on: Boolean) = edit(Cmd.previewListen(clipId, on))
 
     override fun cancelJob() { _plugins.value.job?.takeIf { it.active }?.let { j -> viewModelScope.launch { call(Cmd.jobCancel(j.id)) } } }
     override fun setClipVersion(clipId: String, original: Boolean, match: Boolean?) = edit(Cmd.clipVersion(clipId, original, match))

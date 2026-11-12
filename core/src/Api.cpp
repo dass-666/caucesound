@@ -337,6 +337,21 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             if (j.value ("ok", false)) j["jobId"] = j.value ("id", std::string());
             return j.dump();
         }
+        if (cmd == "vocalPreview")
+        {
+            vocal::Params p;
+            if (! vocal::Params::fromJson (q.value ("params", json::object()).dump(), p)) return result (OpResult::fail ("parámetros no válidos")).dump();
+            json j = result (s.vocalPreview (str ("clipId"), p, q.contains ("from") ? (Frame) safeInt (q["from"]) : 0, q.contains ("length") ? (Frame) safeInt (q["length"]) : 0));
+            if (j.value ("ok", false))
+            {
+                const std::string id = j.value ("id", std::string());
+                j["cached"] = id == "cached";
+                if (id != "cached") j["jobId"] = id;
+                j.erase ("id");
+            }
+            return j.dump();
+        }
+        if (cmd == "previewListen") return result (s.setPreviewListen (str ("clipId"), flag ("on"))).dump();
         if (cmd == "clipVersion") return result (s.setClipVersion (str ("clipId"), flag ("original"), q.contains ("match") && q["match"].is_boolean() ? (q["match"].get<bool>() ? 1 : 0) : -1)).dump();
         if (cmd == "discardProcess") return result (s.discardProcess (str ("clipId"))).dump();
         if (cmd == "jobStatus")

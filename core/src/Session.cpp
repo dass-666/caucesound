@@ -253,6 +253,46 @@ TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, Rende
     if (t.kind == "bus") tr.busIndex = busIndexOf (t.id);
     for (const auto& c : t.clips)
     {
+        // Escucha previa de VocalShift: original + región de prueba procesada. Solo en vivo y solo si el clip sigue
+        // siendo el mismo que cuando se hizo la prueba (si se recortó o movió su audio, la prueba ya no vale).
+        if (! offline && listenPreview && preview.valid() && c.id == preview.clipId)
+        {
+            const std::string& srcId = c.processed() ? c.origSourceId : c.sourceId;
+            const Frame baseOffset = c.processed() ? c.origOffset : c.sourceOffset;
+            const Frame baseLength = c.processed() ? c.origLength : c.length;
+            auto src = pool.find (srcId);
+            if (src != pool.end() && srcId == preview.srcId && baseOffset == preview.baseOffset && baseLength == preview.baseLength
+                && preview.from >= 0 && preview.from + preview.length <= baseLength)
+            {
+                const float gn = dbToGain (c.gainDb);
+                const Frame edge = std::min<Frame> (preview.length / 4, proj.sampleRate / 100); // 10 ms para no chasquear
+                g.keepAlive.push_back (src->second->audio);
+                g.keepAlive.push_back (preview.audio);
+                if (preview.from > 0)
+                {
+                    ClipRT a;
+                    a.data = src->second->audio.get();
+                    a.start = c.start; a.length = preview.from; a.sourceOffset = baseOffset;
+                    a.fadeIn = std::min (c.fadeIn, a.length); a.gain = gn;
+                    tr.clips.push_back (a);
+                }
+                ClipRT b;
+                b.data = preview.audio.get();
+                b.start = c.start + preview.from; b.length = preview.length; b.sourceOffset = preview.skip;
+                b.fadeIn = edge; b.fadeOut = edge; b.gain = gn;
+                tr.clips.push_back (b);
+                const Frame rest = baseLength - preview.from - preview.length;
+                if (rest > 0)
+                {
+                    ClipRT d;
+                    d.data = src->second->audio.get();
+                    d.start = c.start + preview.from + preview.length; d.length = rest; d.sourceOffset = baseOffset + preview.from + preview.length;
+                    d.fadeOut = std::min (c.fadeOut, d.length); d.gain = gn;
+                    tr.clips.push_back (d);
+                }
+                continue;
+            }
+        }
         ClipRT rc;
         auto it = pool.find (c.sourceId);
         if (it != pool.end())
@@ -261,7 +301,9 @@ TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, Rende
             g.keepAlive.push_back (it->second->audio);
         }
         rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
-        rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.playGainDb());
+        rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; // Escucha A/B a volumen igualado: solo en el grafo en vivo y solo para el clip que se está comparando.
+        const bool listenMatch = ! offline && ! listenMatchClip.empty() && c.id == listenMatchClip && c.processed() && ! c.playingOriginal();
+        rc.gain = dbToGain (c.gainDb + (listenMatch ? -c.procLevelDb : 0.0f));
         tr.clips.push_back (rc);
     }
     std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
@@ -510,6 +552,8 @@ void Session::close()
     // mutuo: un trabajo nunca espera el cerrojo de la sesión, lo intenta y vuelve a mirar si lo han cancelado.
     jobs.cancelAll();
     jobs.waitIdle();
+    listenMatchClip.clear();
+    clearPreviewLocked();
     if (recorder) stopRecording();
     if (open && dirty) save();
     // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
@@ -534,6 +578,8 @@ void Session::abandonForTest()
     std::lock_guard<std::recursive_mutex> l (mtx);
     jobs.cancelAll();
     jobs.waitIdle();
+    listenMatchClip.clear();
+    clearPreviewLocked();
     if (recorder) { recorder->abandon(); recorder.reset(); }
     // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
     // proyecto siguiente heredaba la posición del anterior (p. ej. compás 40 tras reproducir A un rato) y sonaba
@@ -569,6 +615,10 @@ std::string Session::stateJson() const
             if (pool.find (c.sourceId) == pool.end()) missing.push_back (c.id);
     j["missingClips"] = missing;
     j["missingPlugins"] = missingPlugins();
+    j["listenMatchClip"] = listenMatchClip; // estado de escucha, no del proyecto
+    if (preview.valid())
+        j["vocalPreview"] = { { "clipId", preview.clipId }, { "from", preview.from }, { "length", preview.length }, { "listening", listenPreview },
+                              { "params", nlohmann::json::parse (preview.paramsJson, nullptr, false) }, { "seconds", preview.seconds } };
     return j.dump();
 }
 

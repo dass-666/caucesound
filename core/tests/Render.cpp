@@ -214,7 +214,12 @@ int main (int argc, char** argv)
         std::ofstream (out + "/vocal_presets.json") << cmd ({ { "cmd", "vocalPresets" } }).dump (1);
         const json job = wait (cmd ({ { "cmd", "vocalProcess" }, { "clipId", ic.id }, { "params", json::parse (vocal::Params().toJson()) } }).value ("jobId", std::string()));
         std::ofstream (out + "/vocal_job.json") << job.dump (1);
+        cmd ({ { "cmd", "clipVersion" }, { "clipId", ic.id }, { "original", false }, { "match", true } }); // comparando a volumen igualado
         std::ofstream (out + "/state_vocal.json") << json::parse (s.stateJson()).dump (1);
+        // Escucha previa de una región (0.6): la prueba existe y está sonando.
+        wait (cmd ({ { "cmd", "vocalPreview" }, { "clipId", ic.id }, { "params", json::parse (vocal::Params().toJson()) }, { "from", 48000 }, { "length", 96000 } }).value ("jobId", std::string()));
+        cmd ({ { "cmd", "previewListen" }, { "clipId", ic.id }, { "on", true } });
+        std::ofstream (out + "/state_vocal_preview.json") << json::parse (s.stateJson()).dump (1);
         std::ofstream (out + "/catalog.json") << cmd ({ { "cmd", "catalog" } }).dump (1);
         s.close();
         std::filesystem::remove_all (dir);

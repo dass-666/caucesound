@@ -126,7 +126,7 @@ std::string toJson (const ProjectModel& p, bool pretty)
                 jc["process"] = { { "plugin", c.procPlugin }, { "version", c.procVersion }, { "params", pp.is_discarded() ? json::object() : pp },
                                   { "origSourceId", c.origSourceId }, { "origOffset", c.origOffset }, { "origLength", c.origLength },
                                   { "procSourceId", c.procSourceId }, { "procLength", c.procLength },
-                                  { "levelDb", c.procLevelDb }, { "match", c.procMatch } };
+                                  { "levelDb", c.procLevelDb } };
             }
             jt["clips"].push_back (jc);
         }
@@ -236,7 +236,7 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                     c.procLength = jp.value ("procLength", (Frame) 0);
                     const float lv = jp.value ("levelDb", 0.0f);
                     c.procLevelDb = std::isfinite (lv) ? std::clamp (lv, -24.0f, 24.0f) : 0.0f;
-                    c.procMatch = jp.value ("match", false);
+                    // "match" (0.5.0) se ignora a propósito: el igualado ya no es un dato del proyecto.
                 }
                 t.clips.push_back (c);
             }

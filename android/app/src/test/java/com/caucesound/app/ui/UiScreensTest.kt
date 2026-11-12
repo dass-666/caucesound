@@ -9,6 +9,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
@@ -77,6 +80,8 @@ class UiScreensTest {
         override fun cancelJob() { calls += "cancelJob" }
         override fun setClipVersion(clipId: String, original: Boolean, match: Boolean?) { calls += "version:$original" + (match?.let { ":match=$it" } ?: "") }
         override fun discardProcess(clipId: String) { calls += "discard" }
+        override fun vocalPreview(clipId: String, params: com.caucesound.app.data.VocalParams, from: Long, length: Long) { calls += "preview:$from:$length"; vocal = params }
+        override fun previewListen(clipId: String, on: Boolean) { calls += "previewListen:$on" }
         override fun auditionClip(clipId: String) { calls += "audition" }
         override fun soloAnalyze(clipId: String) { calls += "analyze:$clipId" }
         override fun confirmAnalysis(keyRoot: Int, minor: Boolean, bpm: Double?, useChords: Boolean) { calls += "confirm:$keyRoot:$minor:${bpm?.let { Math.round(it) }}:$useChords" }
@@ -146,6 +151,7 @@ class UiScreensTest {
 
     // --- Misión 0.5: Solo AI 2.0 y VocalShift. Todos los datos son JSON reales del motor (cs_render --fixtures05). ---
     private val stateVocal: ProjectState by lazy { StateParser.state(res("state_vocal.json"))!! }
+    private val stateVocalPreview: ProjectState by lazy { StateParser.state(res("state_vocal_preview.json"))!! }
     private val stateBeat: ProjectState by lazy { StateParser.state(res("state_beat.json"))!! }
     private val presets by lazy { com.caucesound.app.data.PluginParser.vocalPresets(res("vocal_presets.json")) }
     private val analysis by lazy { com.caucesound.app.data.BeatAnalysis.parse(org.json.JSONObject(res("analysis.json")).getJSONObject("result")) }
@@ -261,6 +267,48 @@ class UiScreensTest {
         compose.onNodeWithTag("vocal_preset_${other.id}").performScrollTo().performClick()
         compose.onNodeWithTag("vocal_process").performScrollTo().performClick()
         assertEquals(other.params, rec.vocal)
+    }
+
+    @Test fun vocalshift_preview_renders_a_region_and_switches_between_original_and_test() {
+        val rec = Recorder()
+        val clip = stateVocalPreview.tracks.first { it.name == "Voz" }.clips.first()
+        val pv = stateVocalPreview.vocalPreview!!
+        assertTrue(pv.clipId == clip.id && pv.listening && pv.length == 96000L)
+        compose.setContent { Themed { VocalShiftPanel(stateVocalPreview, clip.id, ui(), emptyMap(), rec) } }
+        // Pide una región corta del original (aquí la toma entera cabe en los 6 s de prueba).
+        compose.onNodeWithTag("vocal_preview").performScrollTo().performClick()
+        assertEquals(listOf("preview:0:${clip.process!!.origLength}"), rec.calls)
+        rec.calls.clear()
+        compose.onNodeWithTag("vocal_preview_ab").performScrollTo()
+        compose.onNodeWithText(tr("Original", "Original")).performClick()
+        assertEquals(listOf("previewListen:false"), rec.calls)
+        shot("25_vocalshift_preview")
+    }
+
+    @Test fun vocalshift_preview_shows_real_progress_and_can_be_cancelled() {
+        val rec = Recorder()
+        val clip = stateVocal.tracks.first { it.name == "Voz" }.clips.first()
+        val job = com.caucesound.app.data.JobUi("job_1", "vocalPreview", clip.id, "running", 0.37f)
+        compose.setContent { Themed { VocalShiftPanel(stateVocal, clip.id, ui().copy(job = job), emptyMap(), rec) } }
+        compose.onNodeWithTag("vocal_preview_progress").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("37 %", substring = true).assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasTestTag("vocal_preview")).fetchSemanticsNodes().isEmpty()) // no se lanza otra mientras tanto
+        compose.onNodeWithTag("vocal_preview_cancel").performScrollTo().performClick()
+        assertEquals(listOf("cancelJob"), rec.calls)
+    }
+
+    /** Defecto de la 0.5: salir de VocalShift sin «Aceptar» dejaba activo el volumen igualado. Ahora salir lo apaga siempre. */
+    @Test fun leaving_vocalshift_turns_off_matched_volume_and_test_listening() {
+        val rec = Recorder()
+        val clip = stateVocalPreview.tracks.first { it.name == "Voz" }.clips.first()
+        assertTrue(clip.process!!.match)
+        var visible by mutableStateOf(true)
+        compose.setContent { Themed { if (visible) VocalShiftPanel(stateVocalPreview, clip.id, ui(), emptyMap(), rec) } }
+        compose.waitForIdle()
+        assertTrue(rec.calls.isEmpty()) // abrir la pantalla no cambia nada
+        visible = false
+        compose.waitForIdle()
+        assertEquals(setOf("version:false:match=false", "previewListen:false"), rec.calls.toSet())
     }
 
     @Test fun vocalshift_panel_compares_accepts_and_discards() {

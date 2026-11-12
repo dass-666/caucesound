@@ -34,6 +34,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,9 @@ import kotlin.math.roundToInt
  * Todos los controles corresponden a parámetros reales del motor de VocalShift.
  */
 @OptIn(ExperimentalLayoutApi::class)
+/** Duración de la escucha previa de VocalShift (el motor admite hasta 8 s). */
+private const val PREVIEW_SECONDS = 6
+
 @Composable
 fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginUi, waveforms: Map<String, FloatArray>, actions: StudioActions) {
     val sel = selectedClip?.let { state.clip(it) }
@@ -80,6 +85,19 @@ fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginU
     val job = plugins.job?.takeIf { it.type == "vocalshift" && it.targetId == clip.id && it.active }
     val process = clip.process
     fun edit(next: VocalParams) { p = next }
+    // «Igualar volumen» es solo para comparar: al salir de la pantalla (o cambiar de clip) se apaga siempre.
+    val matchOn by rememberUpdatedState(process?.match == true)
+    val previewOn by rememberUpdatedState(state.vocalPreview?.let { it.clipId == clip.id && it.listening } == true)
+    DisposableEffect(clip.id) {
+        onDispose {
+            if (matchOn) actions.setClipVersion(clip.id, false, false)
+            if (previewOn) actions.previewListen(clip.id, false)
+        }
+    }
+    val previewJob = plugins.job?.takeIf { it.type == "vocalPreview" && it.targetId == clip.id && it.active }
+    val baseLength = process?.origLength ?: clip.length
+    val previewLength = minOf(baseLength, PREVIEW_SECONDS * SAMPLE_RATE.toLong())
+    var previewFrom by remember(clip.id) { mutableStateOf(state.vocalPreview?.takeIf { it.clipId == clip.id && baseLength > previewLength }?.from ?: 0L) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         PanelHeader("VocalShift", "${clip.name.ifBlank { tr("Clip de audio", "Audio clip") }} · ${track.name}") {
@@ -146,6 +164,40 @@ fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginU
             }
         }
 
+        // Escucha previa: solo una región corta, calculada en segundo plano. No es monitorización en directo.
+        if (job == null) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Dims.Radius)).background(Palette.Surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("Prueba rápida", "Quick test"), fontWeight = FontWeight.Bold)
+                Text(tr("Procesa solo %.0f s de la toma para oír estos ajustes antes de procesarla entera. Se calcula primero y suena después.",
+                    "Processes only %.0f s of the take so you can hear these settings before processing all of it. It renders first, then plays.")
+                    .format(previewLength / SAMPLE_RATE.toDouble()), color = Palette.TextDim, fontSize = 12.sp)
+                if (baseLength > previewLength) {
+                    val maxStart = (baseLength - previewLength) / SAMPLE_RATE.toFloat()
+                    LabeledSlider(tr("Inicio de la prueba", "Test start"), previewFrom / SAMPLE_RATE.toFloat(), 0f, maxStart, "%.1f s", "vocal_preview_from") {
+                        previewFrom = (it * SAMPLE_RATE).toLong().coerceIn(0L, baseLength - previewLength)
+                    }
+                }
+                if (previewJob != null) {
+                    Text(tr("Calculando la prueba… ${(previewJob.progress * 100).roundToInt()} %", "Rendering the test… ${(previewJob.progress * 100).roundToInt()} %"),
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("vocal_preview_progress"))
+                    LinearProgressIndicator(progress = { previewJob.progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Palette.Cyan, trackColor = Palette.SurfaceTop)
+                    CauceButton(tr("Cancelar", "Cancel"), actions::cancelJob, Modifier.fillMaxWidth().testTag("vocal_preview_cancel"), icon = Icons.Default.Close)
+                } else {
+                    CauceButton(tr("Escuchar prueba", "Hear a test"), { actions.vocalPreview(clip.id, p, previewFrom, previewLength) },
+                        Modifier.fillMaxWidth().testTag("vocal_preview"), icon = Icons.Default.PlayArrow, enabled = !state.recording && !clip.missing)
+                    state.vocalPreview?.takeIf { it.clipId == clip.id }?.let { pv ->
+                        Segmented(listOf(tr("Original", "Original"), tr("Prueba", "Test")), if (pv.listening) 1 else 0,
+                            { actions.previewListen(clip.id, it == 1) }, Modifier.fillMaxWidth().testTag("vocal_preview_ab"), height = 44.dp)
+                        val stale = pv.params.copy(preset = "") != p.copy(preset = "") || (baseLength > previewLength && pv.from != previewFrom)
+                        Text(if (stale) tr("Has cambiado los ajustes o el inicio: pulsa «Escuchar prueba» para oírlos.", "Settings or start changed: tap “Hear a test” to hear them.")
+                            else tr("La prueba suena en su sitio dentro de la toma; el resto es el original. No cambia el proyecto ni lo que se exporta.",
+                                "The test plays in place inside the take; the rest is the original. The project and exports are not changed."),
+                            color = if (stale) Palette.Accent else Palette.TextFaint, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
         // Procesar, con progreso real y cancelación.
         if (job != null) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Dims.Radius)).background(Palette.SurfaceHigh).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -175,7 +227,7 @@ fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginU
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PillToggle(tr("Igualar volumen", "Match volume"), process.match, { actions.setClipVersion(clip.id, process.playingOriginal, !process.match) },
                             color = Palette.Cyan, height = 40.dp, modifier = Modifier.testTag("vocal_match"))
-                        Text((if (process.match) tr("B suena %+.1f dB para comparar con justicia. Al aceptar vuelve a su volumen real.", "B plays at %+.1f dB for a fair comparison. Accepting restores its real level.")
+                        Text((if (process.match) tr("Solo para comparar: B se escucha a %+.1f dB. No cambia el proyecto ni lo que se exporta.", "For comparing only: B is heard at %+.1f dB. The project and exports are not changed.")
                             else tr("B es %+.1f dB respecto a A (volumen real).", "B is %+.1f dB relative to A (real level)."))
                             .format(if (process.match) -process.levelDb else process.levelDb), color = Palette.TextDim, fontSize = 11.sp, modifier = Modifier.weight(1f))
                     }

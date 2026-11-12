@@ -396,7 +396,10 @@ static double mixRmsDb (Fx& f, const std::string& path, Frame frames)
     return 10.0 * std::log10 (std::max (1e-12, sq / (double) std::max (1L, n)));
 }
 
-TEST (vocalshift_ab_compare_is_level_matched_until_accepted)
+// Regresión del defecto de la 0.5: «Igualar volumen» se guardaba en el clip y, si se salía de VocalShift sin pulsar
+// «Aceptar», la exportación y el proyecto guardado salían con la versión procesada atenuada. El igualado es solo
+// de escucha: nunca cambia lo que se exporta ni lo que se guarda.
+TEST (vocalshift_level_match_is_listen_only_and_never_reaches_export_or_the_saved_project)
 {
     Fx f ("vocal_match");
     CHECK (f.session.createProject (f.dir + "/p", "x").ok);
@@ -405,44 +408,252 @@ TEST (vocalshift_ab_compare_is_level_matched_until_accepted)
     CHECK (imp.ok);
     const std::string clip = imp.id;
     const Frame len = f.session.model().findClip (clip)->length;
-    // Un ajuste que cambia el nivel de forma clara: transformación con segunda voz fuerte.
     json p = kUrban;
-    p["secondGainDb"] = 0;
+    p["secondGainDb"] = 0; // un ajuste que cambia el nivel de forma clara
     const json done = waitJob (f, f.cmd ({ { "cmd", "vocalProcess" }, { "clipId", clip }, { "params", p } }).value ("jobId", std::string()));
     CHECK_MSG (done.value ("state", std::string()) == "done", done.dump());
     f.session.jobRunner().waitIdle();
-    const ClipModel c = *f.session.model().findClip (clip);
     const double level = done["result"].value ("levelDb", 0.0);
     MEASURE ("la versión procesada mide %+.2f dB respecto a la original (RMS)", level);
-    CHECK (std::fabs (level) >= 0.1 && std::fabs (c.procLevelDb - (float) level) < 1e-3f && c.procMatch); // empieza igualada
+    CHECK (std::fabs (level) >= 1.0);
+    CHECK (std::fabs (f.session.model().findClip (clip)->procLevelDb - (float) level) < 1e-3f);
 
-    // Con la comparación igualada, A y B suenan al mismo nivel (±0,5 dB) en la mezcla real.
-    const double bMatched = mixRmsDb (f, f.dir + "/b1.wav", len);
-    CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", true } }).value ("ok", false));
-    const double aLevel = mixRmsDb (f, f.dir + "/a.wav", len);
-    MEASURE ("A/B igualado: A %.2f dB, B %.2f dB", aLevel, bMatched);
-    CHECK (std::fabs (aLevel - bMatched) < 0.5);
-    CHECK (f.session.model().findClip (clip)->procMatch); // cambiar de versión no toca el ajuste
+    // Lo que se oye en vivo (el mismo camino que el callback de audio): RMS de la región del clip.
+    auto liveRmsDb = [&]
+    {
+        f.engine.stop();
+        f.engine.seek (48000);
+        f.engine.play();
+        std::vector<float> out (512 * 2);
+        double sq = 0;
+        long n = 0;
+        for (Frame done = 0; done < len; done += 512)
+        {
+            f.engine.process (nullptr, 0, out.data(), 2, 512);
+            for (float v : out) { sq += (double) v * v; ++n; }
+        }
+        f.engine.stop();
+        return 10.0 * std::log10 (std::max (1e-12, sq / (double) n));
+    };
+    const std::string savedBefore = toJson (f.session.model(), false);
+    const bool undoBefore = json::parse (f.session.stateJson()).value ("canUndo", false);
+    const double liveReal = liveRmsDb();
 
-    // Sin igualar (lo que hace «Aceptar»): B vuelve a su nivel real, y A no cambia nunca.
-    const size_t undoBefore = json::parse (f.session.stateJson()).value ("canUndo", false) ? 1 : 0;
+    // El usuario compara con «Igualar volumen» activo y se va sin pulsar «Aceptar».
+    CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", false }, { "match", true } }).value ("ok", false));
+    CHECK (json::parse (f.session.stateJson()).value ("listenMatchClip", std::string()) == clip);
+    const double liveMatched = liveRmsDb();
+    MEASURE ("escucha en vivo: procesada %.2f dB, con el igualado %.2f dB (diferencia %.2f, medida %.2f)", liveReal, liveMatched, liveReal - liveMatched, level);
+    CHECK (std::fabs ((liveReal - liveMatched) - level) < 0.3);                 // al escuchar sí se iguala
+    CHECK (toJson (f.session.model(), false) == savedBefore);                   // sin cambiar el proyecto
+    CHECK (json::parse (f.session.stateJson()).value ("canUndo", false) == undoBefore); // ni crear pasos de deshacer
+    const double exportedWhileMatching = mixRmsDb (f, f.dir + "/b1.wav", len);
     CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", false }, { "match", false } }).value ("ok", false));
-    const double bReal = mixRmsDb (f, f.dir + "/b2.wav", len);
-    CHECK (std::fabs ((bReal - aLevel) - level) < 0.5);
-    CHECK (! f.session.model().findClip (clip)->procMatch);
-    CHECK ((json::parse (f.session.stateJson()).value ("canUndo", false) ? 1u : 0u) == undoBefore);
-    CHECK (f.session.model().findClip (clip)->gainDb == 0.0f); // la ganancia del clip que ajusta el usuario no se toca
+    const double exportedReal = mixRmsDb (f, f.dir + "/b2.wav", len);
+    CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", true } }).value ("ok", false));
+    const double exportedOriginal = mixRmsDb (f, f.dir + "/a.wav", len);
+    MEASURE ("exportación: original %.2f dB, procesada %.2f dB, procesada con el igualado activo %.2f dB", exportedOriginal, exportedReal, exportedWhileMatching);
+    CHECK (std::fabs (exportedWhileMatching - exportedReal) < 0.05);            // el igualado no llega a la exportación
+    CHECK (std::fabs ((exportedReal - exportedOriginal) - level) < 0.5);        // y la procesada sale a su nivel real
 
-    // El ajuste se guarda con el proyecto.
+    // Tampoco se guarda: tras reabrir, nada queda igualado y la exportación sigue siendo la real.
     CHECK (f.cmd ({ { "cmd", "clipVersion" }, { "clipId", clip }, { "original", false }, { "match", true } }).value ("ok", false));
     CHECK (f.session.save().ok);
+    CHECK (toJson (f.session.model(), false).find ("\"match\"") == std::string::npos);
     f.session.close();
     CHECK (f.session.openProject (f.dir + "/p").ok);
-    const ClipModel r = *f.session.model().findClip (clip);
-    CHECK (r.procMatch && std::fabs (r.procLevelDb - c.procLevelDb) < 1e-3f);
-    // Descartar el procesado limpia el ajuste.
-    CHECK (f.session.discardProcess (clip).ok);
-    CHECK (! f.session.model().findClip (clip)->procMatch && f.session.model().findClip (clip)->procLevelDb == 0.0f);
+    CHECK (json::parse (f.session.stateJson()).value ("listenMatchClip", std::string ("x")).empty()); // cerrar lo apaga
+    CHECK (std::fabs (liveRmsDb() - liveReal) < 0.05);
+    CHECK (std::fabs (mixRmsDb (f, f.dir + "/b3.wav", len) - exportedReal) < 0.05);
+    CHECK (std::fabs (f.session.model().findClip (clip)->procLevelDb - (float) level) < 1e-3f); // la medida sí se conserva
+    CHECK (f.session.model().findClip (clip)->gainDb == 0.0f);                                  // la ganancia del usuario no se toca
+
+    // Un proyecto guardado por la 0.5.0 con "match": true se abre sin igualado (y sin perder nada más).
+    f.session.close();
+    std::string raw;
+    CHECK (readFile (f.dir + "/p/project.json", raw));
+    const size_t at = raw.find ("\"levelDb\"");
+    CHECK (at != std::string::npos);
+    raw.insert (at, "\"match\": true, ");
+    std::string err;
+    CHECK (atomicWriteFile (f.dir + "/p/project.json", raw, err, true));
+    CHECK (f.session.openProject (f.dir + "/p").ok);
+    CHECK (f.session.model().findClip (clip)->processed());
+    CHECK (std::fabs (mixRmsDb (f, f.dir + "/b4.wav", len) - exportedReal) < 0.05);
+    CHECK (std::fabs (liveRmsDb() - liveReal) < 0.05);
+}
+
+// Reproducción en vivo (camino del callback) de 'frames' desde 'from': canal izquierdo.
+static std::vector<float> liveLeft (Fx& f, Frame from, Frame frames)
+{
+    f.engine.stop();
+    f.engine.seek (from);
+    f.engine.play();
+    std::vector<float> out (512 * 2), left;
+    left.reserve ((size_t) frames + 512);
+    while ((Frame) left.size() < frames)
+    {
+        f.engine.process (nullptr, 0, out.data(), 2, 512);
+        for (int i = 0; i < 512; ++i) left.push_back (out[(size_t) i * 2]);
+    }
+    f.engine.stop();
+    left.resize ((size_t) frames);
+    return left;
+}
+
+static double maxDiff (const std::vector<float>& a, const std::vector<float>& b, Frame from, Frame to)
+{
+    double d = 0;
+    for (Frame i = from; i < to; ++i) d = std::max (d, (double) std::fabs (a[(size_t) i] - b[(size_t) i]));
+    return d;
+}
+
+static int audioFiles (const std::string& projectDir) { return (int) listDir (projectDir + "/audio").size(); }
+
+// Escucha previa (0.6): una región corta se procesa en segundo plano y se oye en su sitio dentro del clip, sin
+// tocar el proyecto, sin archivos nuevos y sin repetir el cálculo si nada cambió.
+TEST (vocalshift_preview_renders_a_short_region_without_touching_the_project)
+{
+    Fx f ("vocal_preview");
+    CHECK (f.session.createProject (f.dir + "/p", "x").ok);
+    CHECK (f.session.addTrack ("Voz").ok);
+    const auto imp = f.session.importWav (writeVoice (f.dir + "/voz.wav", 3.0), f.session.model().tracks.back().id, 48000);
+    CHECK (imp.ok);
+    const std::string clip = imp.id;
+    const Frame start = 48000, len = f.session.model().findClip (clip)->length;
+    CHECK (f.session.save().ok);
+    const std::string saved = toJson (f.session.model(), false);
+    const int files = audioFiles (f.dir + "/p");
+    const bool canUndo = json::parse (f.session.stateJson()).value ("canUndo", false);
+    const auto original = liveLeft (f, start, len);
+    long clipped = 0;
+    CHECK (f.session.exportMix (f.dir + "/antes.wav", 24, 0, &clipped).ok);
+
+    // Sin prueba no hay nada que escuchar.
+    CHECK (! f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", true } }).value ("ok", true));
+
+    const Frame from = 48000, plen = 72000; // 1,5 s a partir del segundo 1 del clip
+    const json req = { { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", kUrban }, { "from", from }, { "length", plen } };
+    const json started = f.cmd (req);
+    CHECK_MSG (started.value ("ok", false) && ! started.value ("cached", true), started.dump());
+    const json done = waitJob (f, started.value ("jobId", std::string()));
+    CHECK_MSG (done.value ("state", std::string()) == "done", done.dump());
+    f.session.jobRunner().waitIdle();
+    MEASURE ("prueba de 1,5 s calculada en %.2f s", done["result"].value ("seconds", 0.0));
+
+    // El proyecto no cambió: ni datos, ni deshacer, ni archivos.
+    CHECK (toJson (f.session.model(), false) == saved);
+    CHECK (json::parse (f.session.stateJson()).value ("canUndo", false) == canUndo);
+    CHECK (audioFiles (f.dir + "/p") == files && tempFiles (f.dir + "/p") == 0);
+    const json st = json::parse (f.session.stateJson());
+    CHECK (st.at ("vocalPreview").value ("clipId", std::string()) == clip && ! st["vocalPreview"].value ("listening", true));
+
+    // Mismos parámetros y región: no se vuelve a calcular.
+    const json again = f.cmd (req);
+    CHECK (again.value ("ok", false) && again.value ("cached", false) && ! again.contains ("jobId"));
+
+    // Antes de activar la escucha, todo suena como el original.
+    CHECK (maxDiff (liveLeft (f, start, len), original, 0, len) < 1e-6);
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", true } }).value ("ok", false));
+    const auto withPreview = liveLeft (f, start, len);
+    const Frame edge = 480;
+    CHECK (maxDiff (withPreview, original, 0, from) < 1e-6);                          // antes de la región: original exacto
+    CHECK (maxDiff (withPreview, original, from + plen, len) < 1e-6);                 // después: original exacto
+    CHECK (maxDiff (withPreview, original, from + edge, from + plen - edge) > 0.02);  // dentro: procesado
+    // La escucha no llega a la exportación ni al proyecto.
+    CHECK (f.session.exportMix (f.dir + "/durante.wav", 24, 0, &clipped).ok);
+    CHECK (fileBytes (f.dir + "/durante.wav") == fileBytes (f.dir + "/antes.wav"));
+    CHECK (toJson (f.session.model(), false) == saved);
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", false } }).value ("ok", false));
+    CHECK (maxDiff (liveLeft (f, start, len), original, 0, len) < 1e-6);
+
+    // Otros parámetros: se calcula de nuevo. Con la escucha activa, el resultado nuevo sustituye al anterior.
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", true } }).value ("ok", false));
+    json p2 = kUrban;
+    p2["semitones"] = -4;
+    json req2 = req;
+    req2["params"] = p2;
+    const json s2 = f.cmd (req2);
+    CHECK (s2.value ("ok", false) && ! s2.value ("cached", true));
+    CHECK (waitJob (f, s2.value ("jobId", std::string())).value ("state", std::string()) == "done");
+    f.session.jobRunner().waitIdle();
+    const auto withPreview2 = liveLeft (f, start, len);
+    CHECK (maxDiff (withPreview2, withPreview, from + edge, from + plen - edge) > 0.02);
+    CHECK (json::parse (f.session.stateJson())["vocalPreview"].value ("listening", false));
+
+    // La prueba se parece a esa misma región del procesado completo (mismo motor, mismos parámetros).
+    CHECK (f.cmd (req).value ("ok", false));
+    f.session.jobRunner().waitIdle();
+    const auto pv = liveLeft (f, start, len);
+    const json full = waitJob (f, f.cmd ({ { "cmd", "vocalProcess" }, { "clipId", clip }, { "params", kUrban } }).value ("jobId", std::string()));
+    CHECK (full.value ("state", std::string()) == "done");
+    f.session.jobRunner().waitIdle();
+    CHECK (! json::parse (f.session.stateJson()).contains ("vocalPreview")); // el resultado completo retira la prueba
+    const auto processed = liveLeft (f, start, len);
+    double ab = 0, aa = 0, bb = 0;
+    for (Frame i = from + 4800; i < from + plen - 4800; ++i)
+    { ab += (double) pv[(size_t) i] * processed[(size_t) i]; aa += (double) pv[(size_t) i] * pv[(size_t) i]; bb += (double) processed[(size_t) i] * processed[(size_t) i]; }
+    const double corr = ab / std::sqrt (std::max (1e-12, aa * bb));
+    MEASURE ("parecido entre la prueba y el procesado completo en esa región: %.3f (1 = idénticos)", corr);
+    CHECK (corr > 0.8);
+
+    // La prueba de un clip ya procesado parte del original, y al reabrir no queda nada de ella.
+    CHECK (f.cmd (req2).value ("ok", false));
+    f.session.jobRunner().waitIdle();
+    CHECK (json::parse (f.session.stateJson()).contains ("vocalPreview"));
+    CHECK (f.session.save().ok);
+    CHECK (toJson (f.session.model(), false).find ("vocalPreview") == std::string::npos);
+    f.session.close();
+    CHECK (f.session.openProject (f.dir + "/p").ok);
+    CHECK (! json::parse (f.session.stateJson()).contains ("vocalPreview"));
+}
+
+TEST (vocalshift_preview_limits_cancel_and_stale_regions_are_safe)
+{
+    Fx f ("vocal_preview_edges");
+    CHECK (f.session.createProject (f.dir + "/p", "x").ok);
+    CHECK (f.session.addTrack ("Voz").ok);
+    const std::string trk = f.session.model().tracks.back().id;
+    const auto imp = f.session.importWav (writeVoice (f.dir + "/larga.wav", 12.0), trk, 0);
+    CHECK (imp.ok);
+    const std::string clip = imp.id;
+    // Región pedida fuera de rango o enorme: se recorta al clip y al máximo de 8 s.
+    const json big = f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", kUrban }, { "from", 1e30 }, { "length", 5 } });
+    CHECK (! big.value ("ok", true)); // número fuera de rango: rechazado con error, sin trabajo
+    const json huge = f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", kUrban }, { "from", 48000 }, { "length", 900000000 } });
+    CHECK_MSG (huge.value ("ok", false), huge.dump());
+    const json hd = waitJob (f, huge.value ("jobId", std::string()));
+    CHECK (hd.value ("state", std::string()) == "done" && hd["result"].value ("length", 0) == 8 * 48000);
+    // Clip inexistente y parámetros inválidos.
+    CHECK (! f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", "nope" }, { "params", kUrban } }).value ("ok", true));
+    // Mientras se calcula una prueba, ese clip no admite otro procesado; cancelar la deja sin efecto.
+    json p = kUrban;
+    p["semitones"] = 3;
+    const json a = f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", p }, { "from", 0 }, { "length", 8 * 48000 } });
+    CHECK (a.value ("ok", false));
+    const json b = f.cmd ({ { "cmd", "vocalProcess" }, { "clipId", clip }, { "params", p } });
+    CHECK (f.cmd ({ { "cmd", "jobCancel" }, { "jobId", a.value ("jobId", std::string()) } }).value ("ok", false));
+    const json ad = waitJob (f, a.value ("jobId", std::string()));
+    CHECK (ad.value ("state", std::string()) == "cancelled" || ad.value ("state", std::string()) == "done");
+    if (b.value ("ok", false)) f.cmd ({ { "cmd", "jobCancel" }, { "jobId", b.value ("jobId", std::string()) } });
+    f.session.jobRunner().waitIdle();
+
+    // Recortar el clip deja la prueba obsoleta: aunque la escucha siga activa, suena el clip real recortado.
+    const json c2 = f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", kUrban }, { "from", 48000 }, { "length", 48000 } });
+    if (c2.contains ("jobId")) waitJob (f, c2.value ("jobId", std::string()));
+    f.session.jobRunner().waitIdle();
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", true } }).value ("ok", false));
+    CHECK (f.session.trimClip (clip, 24000, 96000).ok);
+    const auto trimmedWithStalePreview = liveLeft (f, 0, 144000);
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", false } }).value ("ok", false));
+    CHECK (maxDiff (trimmedWithStalePreview, liveLeft (f, 0, 144000), 0, 144000) < 1e-6);
+
+    // Cerrar el proyecto con una prueba calculándose: sin bloqueo y sin restos.
+    const json c3 = f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", p }, { "from", 0 }, { "length", 96000 } });
+    CHECK (c3.value ("ok", false));
+    f.session.close();
+    CHECK (f.session.openProject (f.dir + "/p").ok);
+    CHECK (! json::parse (f.session.stateJson()).contains ("vocalPreview") && tempFiles (f.dir + "/p") == 0);
 }
 
 TEST (vocalshift_processes_only_the_trimmed_region_and_stereo_takes)

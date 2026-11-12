@@ -109,6 +109,7 @@ data class ProjectState(
     val harmony: HarmonyState? = null,
     /** Plugins que usa el proyecto y esta versión no tiene: se avisa y sus datos se conservan. */
     val missingPlugins: List<String> = emptyList(),
+    val vocalPreview: VocalPreviewState? = null,
 ) {
     fun clip(id: String): Pair<TrackState, ClipState>? {
         for (t in tracks) for (c in t.clips) if (c.id == id) return t to c
@@ -170,6 +171,7 @@ object StateParser {
         if (!o.optBoolean("open", false)) return null
         val p = o.getJSONObject("project")
         val missing = mutableSetOf<String>()
+        val listenMatch = o.optString("listenMatchClip") // escucha A/B igualada: estado de la sesión, no del proyecto
         o.optJSONArray("missingClips")?.let { for (i in 0 until it.length()) missing += it.getString(i) }
         val sources = mutableMapOf<String, SourceState>()
         val sArr = p.getJSONArray("sources")
@@ -191,7 +193,7 @@ object StateParser {
                     c.optJSONObject("process")?.let { pr ->
                         ClipProcess(pr.optString("plugin"), pr.optString("version"), VocalParams.fromJson(pr.optJSONObject("params")),
                             c.getString("sourceId") == pr.optString("origSourceId"), pr.optLong("origLength"), pr.optLong("procLength"),
-                            pr.optDouble("levelDb", 0.0).toFloat(), pr.optBoolean("match", false))
+                            pr.optDouble("levelDb", 0.0).toFloat(), c.getString("id") == listenMatch)
                     },
                 )
             }.sortedBy { it.start }
@@ -252,6 +254,7 @@ object StateParser {
                 HarmonyState(it.optInt("keyRoot"), it.optBoolean("minor"), it.optString("source"), it.optJSONArray("chords")?.length() ?: 0, it.optDouble("chordsBpm", 0.0))
             },
             o.optJSONArray("missingPlugins")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+            o.optJSONObject("vocalPreview")?.let { v -> VocalPreviewState(v.optString("clipId"), v.optLong("from"), v.optLong("length"), v.optBoolean("listening"), VocalParams.fromJson(v.optJSONObject("params"))) },
         )
     }
 

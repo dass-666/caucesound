@@ -5,7 +5,7 @@
  "progress": 1.0,
  "result": {
   "clipAltered": 0,
-  "clipId": "clp_2556999f64ef",
+  "clipId": "clp_6dc6b4387022",
   "inputFrames": 288000,
   "inputPeak": 0.3459113836288452,
   "latencySamples": 7200,
@@ -13,11 +13,11 @@
   "nonFiniteEvents": 0,
   "outputFrames": 324576,
   "outputPeak": 0.4692819118499756,
-  "seconds": 0.341926069,
-  "sourceId": "src_202b62b9b1f1",
+  "seconds": 0.320745167,
+  "sourceId": "src_02b39e96167b",
   "tailFrames": 36576
  },
  "state": "done",
- "targetId": "clp_2556999f64ef",
+ "targetId": "clp_6dc6b4387022",
  "type": "vocalshift"
 }
