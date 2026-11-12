@@ -20,6 +20,8 @@ enum P
     pAttack, pDecay, pSustain, pRelease,
     pCutoff, pResonance, pFilterEnv, pFilterDecay,
     pDrive, pVolume, pMono, pGlide, pPolyphony,
+    // Añadidos después (al final: los proyectos anteriores no los traen y toman el valor por defecto, 0 = sin efecto).
+    pPitchEnv, pPitchDecay, pVelToFilter,
     pCount
 };
 
@@ -45,6 +47,9 @@ const std::vector<ParameterInfo>& synthParams()
         { "mono", "Mono", 0, 1, 0 },
         { "glideMs", "Glide (ms)", 0, 1000, 0 },
         { "polyphony", "Voices", 1, (float) kSynthMaxVoices, 8 },
+        { "pitchEnvSt", "Pitch env (st)", 0, 24, 0 },      // caída de tono al atacar (golpe de 808, chasquido de pluck)
+        { "pitchDecayMs", "Pitch decay (ms)", 5, 500, 60 },
+        { "velToFilter", "Velocity > filter", 0, 1, 0 },   // tocar fuerte abre el filtro (hasta 2 octavas)
     };
     return ps;
 }
@@ -52,7 +57,7 @@ const std::vector<ParameterInfo>& synthParams()
 struct Snapshot
 {
     int w1, w2, oct, oct2, poly;
-    float mix, detune, att, dec, sus, rel, cutoff, res, fenv, fdec, drive, vol, glide;
+    float mix, detune, att, dec, sus, rel, cutoff, res, fenv, fdec, drive, vol, glide, penv, pdec, velFilter;
     bool mono;
 };
 
@@ -123,6 +128,8 @@ public:
         const double attK = rateFor (s.att), decK = 1.0 - std::exp (-1.0 / (std::max (1.0f, s.dec) * 0.001 * sr / 4.0));
         const double relK = 1.0 - std::exp (-1.0 / (std::max (1.0f, s.rel) * 0.001 * sr / 4.0));
         const double fdecK = std::exp (-1.0 / (std::max (1.0f, s.fdec) * 0.001 * sr / 4.0));
+        // Envolvente de tono: se evalúa cada 16 muestras de la voz, junto con el filtro (pow por bloque, no por muestra).
+        const double pdecK16 = std::exp (-16.0 / (std::max (5.0f, s.pdec) * 0.001 * sr / 4.0));
         const double glideK = s.glide > 0 ? 1.0 - std::exp (-1.0 / (s.glide * 0.001 * sr / 4.0)) : 1.0;
         const double driveGain = 1.0 + s.drive * 8.0, driveNorm = 1.0 / std::tanh (driveGain);
         const double k = 2.0 - 2.0 * std::clamp ((double) s.res, 0.0, 0.95);
@@ -156,14 +163,20 @@ public:
                 // Coeficientes del filtro cada 16 muestras de la propia voz (determinista).
                 if ((v.age & 15) == 0)
                 {
-                    double fc = s.cutoff * std::pow (2.0, (double) s.fenv * 6.0 * v.fenv);
+                    if (s.penv > 0.0f)
+                    {
+                        v.pmul = v.penv > 1e-4 ? std::pow (2.0, (double) s.penv * v.penv / 12.0) : 1.0;
+                        v.penv *= pdecK16;
+                    }
+                    else v.pmul = 1.0;
+                    double fc = s.cutoff * std::pow (2.0, (double) s.fenv * 6.0 * v.fenv + (double) s.velFilter * 2.0 * (v.velNorm - 0.5));
                     fc = std::clamp (fc, 20.0, sr * 0.45);
                     v.g = std::tan (dsp::kPi * fc / sr);
                     v.a1 = 1.0 / (1.0 + v.g * (v.g + k));
                 }
                 ++v.age;
 
-                const double dt1 = v.freq * ratio1 / sr;
+                const double dt1 = std::min (0.45, v.freq * v.pmul * ratio1 / sr);
                 const double dt2 = dt1 * ratio2;
                 double o = osc (s.w1, v.ph1, dt1);
                 if (s.mix > 0.0f) o = o * (1.0 - s.mix) + osc (s.w2, v.ph2, dt2) * s.mix;
@@ -198,7 +211,8 @@ private:
         uint64_t order = 0, age = 0;
         double env = 0, fenv = 0, freq = 440, target = 440, ph1 = 0, ph2 = 0;
         double ic1 = 0, ic2 = 0, g = 0, a1 = 1;
-        float velGain = 1;
+        double penv = 0, pmul = 1;
+        float velGain = 1, velNorm = 0.5f;
     };
 
     double rateFor (float ms) const { return 1.0 / std::max (1.0, ms * 0.001 * sr); }
@@ -230,6 +244,7 @@ private:
         s.att = g (pAttack); s.dec = g (pDecay); s.sus = g (pSustain); s.rel = g (pRelease);
         s.cutoff = g (pCutoff); s.res = g (pResonance); s.fenv = g (pFilterEnv); s.fdec = g (pFilterDecay);
         s.drive = g (pDrive); s.vol = g (pVolume); s.mono = g (pMono) >= 0.5f; s.glide = g (pGlide);
+        s.penv = g (pPitchEnv); s.pdec = g (pPitchDecay); s.velFilter = g (pVelToFilter);
         s.poly = std::clamp ((int) std::lround (g (pPolyphony)), 1, kSynthMaxVoices);
         return s;
     }
@@ -245,9 +260,11 @@ private:
         {
             v.stage = Attack; // desde el nivel actual: sin clic al robar una voz
             v.fenv = 1.0;
+            v.penv = 1.0;
             if (v.age == 0) { v.ph1 = 0; v.ph2 = 0.25; }
         }
         v.velGain = 0.25f + 0.75f * (float) vel / 127.0f;
+        v.velNorm = (float) vel / 127.0f;
         v.order = ++counter;
     }
 
@@ -324,23 +341,36 @@ ProcessorPtr createSynth() { return std::make_shared<Synth>(); }
 const std::vector<SynthPreset>& synthPresets()
 {
     // Nombres descriptivos: son sonidos de síntesis, no imitaciones fieles de instrumentos acústicos.
+    // Los valores se eligieron por criterio de síntesis y se comprueban con medidas (afinación, nivel, cola, clics) en
+    // TestQuality.cpp; no se han escuchado en un dispositivo.
     static const std::vector<SynthPreset> p = {
-        { "sub_bass", "Sub Bass", { { "osc1Wave", 0 }, { "osc2Wave", 1 }, { "osc2Mix", 0.15f }, { "octave", -1 }, { "attackMs", 4 }, { "decayMs", 400 },
-                                    { "sustain", 0.9f }, { "releaseMs", 140 }, { "cutoffHz", 600 }, { "resonance", 0 }, { "volumeDb", -3 }, { "mono", 1 }, { "polyphony", 1 } } },
-        { "bass_808", "808 Bass", { { "osc1Wave", 0 }, { "octave", -1 }, { "attackMs", 2 }, { "decayMs", 1800 }, { "sustain", 0.0f }, { "releaseMs", 350 },
-                                    { "cutoffHz", 2500 }, { "resonance", 0 }, { "drive", 0.45f }, { "volumeDb", -5 }, { "mono", 1 }, { "glideMs", 70 }, { "polyphony", 1 } } },
-        { "lead", "Lead", { { "osc1Wave", 2 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Detune", 12 }, { "attackMs", 6 }, { "decayMs", 400 }, { "sustain", 0.75f },
-                            { "releaseMs", 220 }, { "cutoffHz", 2800 }, { "resonance", 0.3f }, { "filterEnv", 0.35f }, { "filterDecayMs", 350 }, { "volumeDb", -9 }, { "polyphony", 6 } } },
-        { "soft_keys", "Soft Keys", { { "osc1Wave", 1 }, { "osc2Wave", 0 }, { "osc2Mix", 0.35f }, { "osc2Octave", 1 }, { "attackMs", 3 }, { "decayMs", 900 },
-                                      { "sustain", 0.25f }, { "releaseMs", 450 }, { "cutoffHz", 3000 }, { "resonance", 0.05f }, { "filterEnv", 0.2f }, { "filterDecayMs", 500 },
-                                      { "volumeDb", -6 }, { "polyphony", 10 } } },
-        { "pad", "Pad", { { "osc1Wave", 2 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Detune", 18 }, { "attackMs", 600 }, { "decayMs", 1200 }, { "sustain", 0.8f },
-                          { "releaseMs", 1600 }, { "cutoffHz", 1600 }, { "resonance", 0.15f }, { "volumeDb", -12 }, { "polyphony", 10 } } },
-        { "pluck", "Pluck", { { "osc1Wave", 2 }, { "osc2Wave", 3 }, { "osc2Mix", 0.3f }, { "attackMs", 1 }, { "decayMs", 260 }, { "sustain", 0.0f }, { "releaseMs", 220 },
-                              { "cutoffHz", 500 }, { "resonance", 0.25f }, { "filterEnv", 0.6f }, { "filterDecayMs", 180 }, { "volumeDb", -6 }, { "polyphony", 8 } } },
-        { "synth_bass", "Synth Bass", { { "osc1Wave", 3 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Octave", -1 }, { "octave", -1 }, { "attackMs", 2 }, { "decayMs", 300 },
-                                        { "sustain", 0.6f }, { "releaseMs", 120 }, { "cutoffHz", 700 }, { "resonance", 0.4f }, { "filterEnv", 0.45f },
-                                        { "filterDecayMs", 220 }, { "volumeDb", -3 }, { "mono", 1 }, { "glideMs", 25 }, { "polyphony", 1 } } },
+        // Sub: seno casi puro, sostenido, sin armónicos que ensucien el bombo.
+        { "sub_bass", "Sub Bass", "bass", { { "osc1Wave", 0 }, { "osc2Wave", 1 }, { "osc2Mix", 0.12f }, { "octave", -1 }, { "attackMs", 4 }, { "decayMs", 400 },
+                                    { "sustain", 0.9f }, { "releaseMs", 140 }, { "cutoffHz", 500 }, { "resonance", 0 }, { "volumeDb", -3 }, { "mono", 1 }, { "polyphony", 1 } } },
+        // 808: seno con caída de tono de una octava en ~50 ms (el golpe), saturación para que se oiga en altavoces
+        // pequeños, cola larga y glide entre notas ligadas.
+        { "bass_808", "808 Bass", "bass", { { "osc1Wave", 0 }, { "octave", -1 }, { "attackMs", 1 }, { "decayMs", 2200 }, { "sustain", 0.0f }, { "releaseMs", 400 },
+                                    { "cutoffHz", 1800 }, { "resonance", 0 }, { "drive", 0.5f }, { "pitchEnvSt", 12 }, { "pitchDecayMs", 50 },
+                                    { "volumeDb", -5 }, { "mono", 1 }, { "glideMs", 60 }, { "polyphony", 1 } } },
+        // Bajo de sintetizador: cuadrada + sierra una octava abajo, filtro con envolvente que responde a la fuerza.
+        { "synth_bass", "Synth Bass", "bass", { { "osc1Wave", 3 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Octave", -1 }, { "octave", -1 }, { "attackMs", 2 }, { "decayMs", 300 },
+                                        { "sustain", 0.6f }, { "releaseMs", 120 }, { "cutoffHz", 650 }, { "resonance", 0.4f }, { "filterEnv", 0.45f },
+                                        { "filterDecayMs", 220 }, { "velToFilter", 0.35f }, { "volumeDb", -3 }, { "mono", 1 }, { "glideMs", 25 }, { "polyphony", 1 } } },
+        // Lead: dos sierras desafinadas, filtro que se abre al atacar y con la fuerza.
+        { "lead", "Lead", "lead", { { "osc1Wave", 2 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Detune", 14 }, { "attackMs", 5 }, { "decayMs", 450 }, { "sustain", 0.75f },
+                            { "releaseMs", 240 }, { "cutoffHz", 2600 }, { "resonance", 0.28f }, { "filterEnv", 0.4f }, { "filterDecayMs", 380 }, { "velToFilter", 0.4f },
+                            { "volumeDb", -9 }, { "polyphony", 6 } } },
+        // Pluck: ataque inmediato con un chasquido de tono muy corto, filtro que se cierra rápido.
+        { "pluck", "Pluck", "lead", { { "osc1Wave", 2 }, { "osc2Wave", 3 }, { "osc2Mix", 0.3f }, { "attackMs", 1 }, { "decayMs", 280 }, { "sustain", 0.0f }, { "releaseMs", 240 },
+                              { "cutoffHz", 600 }, { "resonance", 0.25f }, { "filterEnv", 0.62f }, { "filterDecayMs", 170 }, { "velToFilter", 0.6f },
+                              { "pitchEnvSt", 2 }, { "pitchDecayMs", 12 }, { "volumeDb", -6 }, { "polyphony", 8 } } },
+        // Teclas suaves: triángulo + seno a la octava; más brillo cuanto más fuerte se toca.
+        { "soft_keys", "Soft Keys", "keys", { { "osc1Wave", 1 }, { "osc2Wave", 0 }, { "osc2Mix", 0.35f }, { "osc2Octave", 1 }, { "attackMs", 3 }, { "decayMs", 900 },
+                                      { "sustain", 0.25f }, { "releaseMs", 450 }, { "cutoffHz", 2200 }, { "resonance", 0.05f }, { "filterEnv", 0.2f }, { "filterDecayMs", 500 },
+                                      { "velToFilter", 0.5f }, { "volumeDb", -6 }, { "polyphony", 10 } } },
+        // Pad: sierras desafinadas con ataque y cola lentos.
+        { "pad", "Pad", "pad", { { "osc1Wave", 2 }, { "osc2Wave", 2 }, { "osc2Mix", 0.5f }, { "osc2Detune", 16 }, { "attackMs", 500 }, { "decayMs", 1200 }, { "sustain", 0.8f },
+                          { "releaseMs", 1600 }, { "cutoffHz", 1700 }, { "resonance", 0.12f }, { "volumeDb", -12 }, { "polyphony", 10 } } },
     };
     return p;
 }

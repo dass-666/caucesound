@@ -269,3 +269,53 @@ TEST (fast_sine_matches_std_sin)
     MEASURE ("seno rápido del oscilador: error máximo %.2g (%.0f dB)", err, 20 * std::log10 (err));
     CHECK (err < 1e-6);
 }
+
+// Parámetros nuevos del synth (caída de tono y fuerza → filtro): hacen lo que dicen, valen 0 por defecto y un
+// estado guardado antes de que existieran suena exactamente igual que antes.
+TEST (synth_pitch_envelope_and_velocity_filter_work_and_old_states_are_unchanged)
+{
+    // 1. Compatibilidad: un estado sin los parámetros nuevos = los mismos parámetros con los nuevos a 0.
+    const std::string old = R"({"osc1Wave":2,"osc2Wave":2,"osc2Mix":0.5,"osc2Detune":12,"attackMs":6,"decayMs":400,"sustain":0.75,
+        "releaseMs":220,"cutoffHz":2800,"resonance":0.3,"filterEnv":0.35,"filterDecayMs":350,"volumeDb":-9,"polyphony":6})";
+    auto a = makeInstrument ("cs.synth", old);
+    auto b = makeInstrument ("cs.synth", old);
+    CHECK (a && b);
+    setParam (*b, "pitchEnvSt", 0); setParam (*b, "velToFilter", 0); setParam (*b, "pitchDecayMs", 200);
+    CHECK (a->getParameter (parameterIndex (*a, "pitchEnvSt")) == 0.0f && a->getParameter (parameterIndex (*a, "velToFilter")) == 0.0f);
+    const auto va = play (*a, 60, 100, 0.5, 0.5), vb = play (*b, 60, 100, 0.5, 0.5);
+    float diff = 0, peak = 0;
+    for (size_t i = 0; i < va.size(); ++i) { diff = std::max (diff, std::fabs (va[i] - vb[i])); peak = std::max (peak, std::fabs (va[i])); }
+    CHECK (peak > 0.01f && diff == 0.0f);
+
+    // 2. Caída de tono: seno con 12 semitonos y 50 ms. Empieza cerca de una octava arriba y termina afinado.
+    auto s = makeInstrument ("cs.synth");
+    setParam (*s, "osc1Wave", 0); setParam (*s, "cutoffHz", 18000); setParam (*s, "sustain", 1); setParam (*s, "attackMs", 0.5f);
+    setParam (*s, "pitchEnvSt", 12); setParam (*s, "pitchDecayMs", 50);
+    const auto v = play (*s, 57, 100, 1.0, 0.2);
+    auto periodHz = [&] (size_t from) // frecuencia de un solo ciclo (entre dos cruces por cero ascendentes) desde 'from'
+    {
+        size_t first = 0, last = 0; int n = 0;
+        for (size_t i = from + 1; i < v.size() && n < 2; ++i)
+            if (v[i - 1] < 0 && v[i] >= 0) { if (n == 0) first = i; last = i; ++n; }
+        return n >= 2 ? kSr * (n - 1) / (double) (last - first) : 0.0;
+    };
+    const double early = periodHz (0), late = pitchHz (v, (size_t) (0.5 * kSr), 4096, 150, 330);
+    MEASURE ("caída de tono 12 st / 50 ms sobre La 220 Hz: el segundo ciclo va a %.0f Hz, a 0,5 s está en %.2f Hz (%.2f cents)", early, late, 1200 * std::log2 (late / 220.0));
+    CHECK (early > 330.0 && early < 445.0);
+    CHECK (std::fabs (1200 * std::log2 (late / 220.0)) < 1.0);
+
+    // 3. Fuerza → filtro: con velToFilter, una nota fuerte tiene más energía aguda (respecto a su nivel) que una suave.
+    auto bright = [&] (float velToFilter, int vel)
+    {
+        auto k = makeInstrument ("cs.synth");
+        setParam (*k, "osc1Wave", 2); setParam (*k, "cutoffHz", 800); setParam (*k, "sustain", 1); setParam (*k, "velToFilter", velToFilter);
+        const auto x = play (*k, 48, vel, 0.5, 0.1);
+        double hi = 0, all = 0; // energía de la derivada (realza agudos) frente a la total
+        for (size_t i = (size_t) (0.1 * kSr) + 1; i < (size_t) (0.4 * kSr); ++i) { hi += (double) (x[i] - x[i - 1]) * (x[i] - x[i - 1]); all += (double) x[i] * x[i]; }
+        return 10.0 * std::log10 (hi / all);
+    };
+    const double loudOn = bright (1.0f, 127), softOn = bright (1.0f, 30), loudOff = bright (0.0f, 127), softOff = bright (0.0f, 30);
+    MEASURE ("brillo relativo (dB): con fuerza→filtro, fuerte %.1f / suave %.1f; sin él, fuerte %.1f / suave %.1f", loudOn, softOn, loudOff, softOff);
+    CHECK (loudOn - softOn > 3.0);
+    CHECK (std::fabs (loudOff - softOff) < 0.5);
+}

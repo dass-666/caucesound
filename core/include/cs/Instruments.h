@@ -14,7 +14,7 @@ constexpr int kSynthMaxVoices = 16;
 
 struct SynthPreset
 {
-    std::string id, name;
+    std::string id, name, category; // category: "bass" | "lead" | "keys" | "pad"
     std::vector<std::pair<std::string, float>> values; // id de parámetro -> valor (el resto, por defecto)
 };
 const std::vector<SynthPreset>& synthPresets();

@@ -3,7 +3,7 @@ package com.caucesound.app.data
 import org.json.JSONObject
 
 data class ParamInfo(val id: String, val name: String, val min: Float, val max: Float, val default: Float)
-data class PresetInfo(val id: String, val name: String)
+data class PresetInfo(val id: String, val name: String, val category: String = "")
 data class KitInfo(val id: String, val name: String, val lanes: List<String>)
 data class EffectInfo(val type: String, val params: List<ParamInfo>)
 data class TemplateInfo(val id: String, val bpm: Double, val kit: String, val tracks: List<String>)
@@ -31,7 +31,7 @@ data class Catalog(
             fun params(key: String) = o.optJSONArray(key)?.let { a ->
                 (0 until a.length()).map { a.getJSONObject(it).let { p -> ParamInfo(p.getString("id"), p.optString("name"), p.getDouble("min").toFloat(), p.getDouble("max").toFloat(), p.getDouble("default").toFloat()) } }
             } ?: emptyList()
-            val presets = o.optJSONArray("synthPresets")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { p -> PresetInfo(p.getString("id"), p.getString("name")) } } } ?: emptyList()
+            val presets = o.optJSONArray("synthPresets")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { p -> PresetInfo(p.getString("id"), p.getString("name"), p.optString("category")) } } } ?: emptyList()
             val kits = o.optJSONArray("drumKits")?.let { a ->
                 (0 until a.length()).map { a.getJSONObject(it).let { k -> KitInfo(k.getString("id"), k.getString("name"), k.getJSONArray("lanes").let { l -> (0 until l.length()).map { l.getString(it) } }) } }
             } ?: emptyList()

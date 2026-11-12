@@ -74,7 +74,7 @@ namespace
 json catalog()
 {
     json presets = json::array();
-    for (const auto& p : synthPresets()) presets.push_back ({ { "id", p.id }, { "name", p.name } });
+    for (const auto& p : synthPresets()) presets.push_back ({ { "id", p.id }, { "name", p.name }, { "category", p.category } });
     json kits = json::array();
     for (const auto& k : drumKits()) kits.push_back ({ { "id", k.id }, { "name", k.name }, { "lanes", k.laneNames } });
     auto params = [] (const char* type)

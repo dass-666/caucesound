@@ -756,36 +756,64 @@
    "max": 16.0,
    "min": 1.0,
    "name": "Voices"
+  },
+  {
+   "default": 0.0,
+   "id": "pitchEnvSt",
+   "max": 24.0,
+   "min": 0.0,
+   "name": "Pitch env (st)"
+  },
+  {
+   "default": 60.0,
+   "id": "pitchDecayMs",
+   "max": 500.0,
+   "min": 5.0,
+   "name": "Pitch decay (ms)"
+  },
+  {
+   "default": 0.0,
+   "id": "velToFilter",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Velocity > filter"
   }
  ],
  "synthPresets": [
   {
+   "category": "bass",
    "id": "sub_bass",
    "name": "Sub Bass"
   },
   {
+   "category": "bass",
    "id": "bass_808",
    "name": "808 Bass"
   },
   {
+   "category": "bass",
+   "id": "synth_bass",
+   "name": "Synth Bass"
+  },
+  {
+   "category": "lead",
    "id": "lead",
    "name": "Lead"
   },
   {
-   "id": "soft_keys",
-   "name": "Soft Keys"
-  },
-  {
-   "id": "pad",
-   "name": "Pad"
-  },
-  {
+   "category": "lead",
    "id": "pluck",
    "name": "Pluck"
   },
   {
-   "id": "synth_bass",
-   "name": "Synth Bass"
+   "category": "keys",
+   "id": "soft_keys",
+   "name": "Soft Keys"
+  },
+  {
+   "category": "pad",
+   "id": "pad",
+   "name": "Pad"
   }
  ],
  "templates": [

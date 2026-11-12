@@ -9,9 +9,9 @@
  "project": {
   "beatsPerBar": 4,
   "bpm": 140.0,
-  "createdAt": 1794475478895,
+  "createdAt": 1794488335768,
   "format": "caucesound-project",
-  "id": "prj_f7ef53593436",
+  "id": "prj_3c32289ac14d",
   "loop": {
    "enabled": false,
    "end": 15360,
@@ -19,7 +19,7 @@
   },
   "masterDb": 0.0,
   "metronome": false,
-  "modifiedAt": 1794475478918,
+  "modifiedAt": 1794488335797,
   "name": "Beat trap 140",
   "ppq": 960,
   "recordLatencyOffset": 0,
@@ -31,7 +31,7 @@
     "armed": false,
     "clips": [],
     "color": 4287323382,
-    "id": "trk_f8f7b73f6b4b",
+    "id": "trk_679f4814c6d2",
     "inserts": [],
     "instrument": {
      "preset": "",
@@ -41,11 +41,11 @@
     "kind": "drums",
     "midiClips": [
      {
-      "id": "mcl_7f4bb43fad51",
+      "id": "mcl_ce6231e90861",
       "length": 30720,
       "name": "A",
       "notes": [],
-      "patternId": "pat_6e105202461e",
+      "patternId": "pat_aabc0b882be6",
       "start": 0
      }
     ],
@@ -54,7 +54,7 @@
     "pan": 0.0,
     "patterns": [
      {
-      "id": "pat_6e105202461e",
+      "id": "pat_aabc0b882be6",
       "lanes": [
        [
         127,
@@ -213,17 +213,17 @@
     "armed": false,
     "clips": [],
     "color": 4282090230,
-    "id": "trk_5e892215c6ff",
+    "id": "trk_ac7fd90312a0",
     "inserts": [],
     "instrument": {
      "preset": "bass_808",
-     "state": "{\"attackMs\":2.0,\"cutoffHz\":2500.0,\"decayMs\":1800.0,\"drive\":0.44999998807907104,\"filterDecayMs\":300.0,\"filterEnv\":0.0,\"glideMs\":70.0,\"mono\":1.0,\"octave\":-1.0,\"osc1Wave\":0.0,\"osc2Detune\":0.0,\"osc2Mix\":0.0,\"osc2Octave\":0.0,\"osc2Wave\":2.0,\"polyphony\":1.0,\"preset\":\"bass_808\",\"releaseMs\":350.0,\"resonance\":0.0,\"sustain\":0.0,\"volumeDb\":-5.0}",
+     "state": "{\"attackMs\":1.0,\"cutoffHz\":1800.0,\"decayMs\":2200.0,\"drive\":0.5,\"filterDecayMs\":300.0,\"filterEnv\":0.0,\"glideMs\":60.0,\"mono\":1.0,\"octave\":-1.0,\"osc1Wave\":0.0,\"osc2Detune\":0.0,\"osc2Mix\":0.0,\"osc2Octave\":0.0,\"osc2Wave\":2.0,\"pitchDecayMs\":50.0,\"pitchEnvSt\":12.0,\"polyphony\":1.0,\"preset\":\"bass_808\",\"releaseMs\":400.0,\"resonance\":0.0,\"sustain\":0.0,\"velToFilter\":0.0,\"volumeDb\":-5.0}",
      "type": "cs.synth"
     },
     "kind": "synth",
     "midiClips": [
      {
-      "id": "mcl_d55fc88dfa5e",
+      "id": "mcl_f8dad6a6f44e",
       "length": 30720,
       "name": "808",
       "notes": [
@@ -299,30 +299,30 @@
     "armed": false,
     "clips": [],
     "color": 4280472558,
-    "id": "trk_8b9681c05bc3",
+    "id": "trk_6efe63f40194",
     "inserts": [
      {
       "bypass": false,
-      "id": "fx_78141ef21218",
+      "id": "fx_44786bf8e486",
       "state": "{\"highDb\":0.0,\"lowDb\":0.0,\"midDb\":0.0,\"midHz\":1000.0}",
       "type": "cs.eq"
      },
      {
       "bypass": false,
-      "id": "fx_37867a533227",
+      "id": "fx_79953b81993a",
       "state": "{\"damping\":0.4000000059604645,\"mix\":0.3499999940395355,\"size\":0.6000000238418579,\"width\":1.0}",
       "type": "cs.reverb"
      }
     ],
     "instrument": {
      "preset": "pluck",
-     "state": "{\"attackMs\":1.0,\"cutoffHz\":500.0,\"decayMs\":260.0,\"drive\":0.0,\"filterDecayMs\":180.0,\"filterEnv\":0.6000000238418579,\"glideMs\":0.0,\"mono\":0.0,\"octave\":0.0,\"osc1Wave\":2.0,\"osc2Detune\":0.0,\"osc2Mix\":0.30000001192092896,\"osc2Octave\":0.0,\"osc2Wave\":3.0,\"polyphony\":8.0,\"preset\":\"pluck\",\"releaseMs\":220.0,\"resonance\":0.25,\"sustain\":0.0,\"volumeDb\":-6.0}",
+     "state": "{\"attackMs\":1.0,\"cutoffHz\":600.0,\"decayMs\":280.0,\"drive\":0.0,\"filterDecayMs\":170.0,\"filterEnv\":0.6200000047683716,\"glideMs\":0.0,\"mono\":0.0,\"octave\":0.0,\"osc1Wave\":2.0,\"osc2Detune\":0.0,\"osc2Mix\":0.30000001192092896,\"osc2Octave\":0.0,\"osc2Wave\":3.0,\"pitchDecayMs\":12.0,\"pitchEnvSt\":2.0,\"polyphony\":8.0,\"preset\":\"pluck\",\"releaseMs\":240.0,\"resonance\":0.25,\"sustain\":0.0,\"velToFilter\":0.6000000238418579,\"volumeDb\":-6.0}",
      "type": "cs.synth"
     },
     "kind": "synth",
     "midiClips": [
      {
-      "id": "mcl_6a583630dd9c",
+      "id": "mcl_a5d8cfad8f07",
       "length": 30720,
       "name": "Melodía",
       "notes": [
@@ -790,7 +790,7 @@
     "armed": true,
     "clips": [],
     "color": 4294286859,
-    "id": "trk_e1a5e9bb89c0",
+    "id": "trk_3b0d1a6d8d17",
     "inserts": [],
     "kind": "audio",
     "midiClips": [],
