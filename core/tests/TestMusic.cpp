@@ -776,6 +776,13 @@ TEST (ui_fixtures_from_engine)
         }
     CHECK (json::parse (cmd ({ { "cmd", "save" } }))["ok"] == true);
     const std::string state = f.session.stateJson();
+    // Variante con un bus de reverb y un envío del primer synth (para el mezclador).
+    const auto bus = json::parse (cmd ({ { "cmd", "addTrack" }, { "name", "Reverb" }, { "kind", "bus" } }));
+    CHECK (bus["ok"] == true);
+    CHECK (json::parse (cmd ({ { "cmd", "addInsert" }, { "trackId", bus["id"] }, { "type", "cs.reverb" } }))["ok"] == true);
+    for (const auto& t : st["project"]["tracks"])
+        if (t["kind"] == "synth") { CHECK (json::parse (cmd ({ { "cmd", "setSend" }, { "trackId", t["id"] }, { "busId", bus["id"] }, { "level", 0.25 } }))["ok"] == true); break; }
+    const std::string stateBus = f.session.stateJson();
     const std::string catalog = cmd ({ { "cmd", "catalog" } });
     CHECK (json::parse (cmd ({ { "cmd", "createProject" }, { "folder", f.dir + "/vacio" }, { "name", "Idea vacía" }, { "template", "empty" } }))["ok"] == true);
     CHECK (json::parse (cmd ({ { "cmd", "save" } }))["ok"] == true);
@@ -786,6 +793,7 @@ TEST (ui_fixtures_from_engine)
         std::filesystem::create_directories (out);
         auto write = [&] (const char* name, const std::string& s) { std::ofstream (std::filesystem::path (out) / name) << json::parse (s).dump (1) << "\n"; };
         write ("state_trap.json", state);
+        write ("state_bus.json", stateBus);
         write ("catalog.json", catalog);
         write ("projects.json", projects);
     }

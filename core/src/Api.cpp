@@ -5,6 +5,7 @@
 #include "cs/Project.h"
 
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <stdexcept>
 
@@ -141,7 +142,17 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
     try
     {
         const std::string cmd = q["cmd"].get<std::string>();
-        auto str = [&] (const char* k) { return q.value (k, std::string()); };
+        // Las rutas de archivo deben ser absolutas: la app siempre las pasa así, y una relativa escribiría en el
+        // directorio actual del proceso (lo detectó el fuzzing: un id de pista usado como "path" creaba un WAV ahí).
+        auto str = [&] (const char* k)
+        {
+            std::string v = q.value (k, std::string());
+            static const char* pathKeys[] = { "folder", "path", "out", "archive", "dest", "root" };
+            for (const char* pk : pathKeys)
+                if (std::strcmp (k, pk) == 0 && ! v.empty() && ! std::filesystem::path (v).is_absolute())
+                    throw std::invalid_argument (std::string (k) + " debe ser una ruta absoluta");
+            return v;
+        };
         // Un argumento presente con tipo equivocado o fuera de rango es un error (antes se tomaba el valor por
         // defecto en silencio: p. ej. {"bpm":"rápido"} ponía el tempo a 120). Límite 1e9: cabe en int y en frames
         // (5,8 h a 48 kHz) y evita conversiones de double a entero fuera de rango (comportamiento indefinido).

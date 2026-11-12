@@ -30,6 +30,10 @@ interface StudioActions {
     fun setArmed(id: String, on: Boolean) {}
     fun setVolumeLive(id: String, db: Float) {}
     fun setPanLive(id: String, pan: Float) {}
+    /** Envío post-fader de una pista a un bus (0..1). Se aplica al instante; el estado se refresca con commitMixer. */
+    fun setSendLive(trackId: String, busId: String, level: Float) {}
+    /** Crea un bus «Reverb» con una reverb 100 % húmeda, listo para recibir envíos. */
+    fun addReverbBus() {}
     fun setMasterLive(db: Float) {}
     fun commitMixer() {}
 

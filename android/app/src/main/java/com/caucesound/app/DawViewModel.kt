@@ -353,6 +353,19 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     /** Deslizadores: se aplican al instante; el estado se refresca al soltar. */
     override fun setVolumeLive(id: String, db: Float) { viewModelScope.launch { call(Cmd.setVolume(id, db)) } }
     override fun setPanLive(id: String, pan: Float) { viewModelScope.launch { call(Cmd.setPan(id, pan)) } }
+    override fun setSendLive(trackId: String, busId: String, level: Float) {
+        viewModelScope.launch { call(Cmd.setSend(trackId, busId, level)) }
+    }
+    override fun addReverbBus() {
+        viewModelScope.launch {
+            val bus = call(Cmd.addTrack(str(R.string.bus_reverb_name), "bus"))
+            if (!bus.ok || bus.id == null) { toast(bus.error ?: ""); refresh(); return@launch }
+            val rev = call(Cmd.addInsert(bus.id, "cs.reverb"))
+            if (rev.ok && rev.id != null) call(Cmd.setInsertParam(rev.id, "mix", 1f))
+            call(Cmd.endParamGesture())
+            refresh()
+        }
+    }
     /** Al soltar una perilla o deslizador: cierra el gesto (una entrada de deshacer por giro) y refresca. */
     override fun commitMixer() { viewModelScope.launch { call(Cmd.endParamGesture()); refresh() } }
 

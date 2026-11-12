@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -57,7 +58,8 @@ class UiScreensTest {
         override fun setInsertBypass(insertId: String, bypass: Boolean) { calls += "bypass:$insertId:$bypass" }
         override fun play() { calls += "play" }
         override fun addPattern(trackId: String, copyFrom: String?) { calls += "addPattern:$copyFrom" }
-    }
+        override fun addReverbBus() { calls += "addReverbBus" }
+            }
 
     /** Igual que en la app: fondo y color de texto del Scaffold del estudio. */
     @androidx.compose.runtime.Composable
@@ -128,6 +130,33 @@ class UiScreensTest {
         shot("05_mixer")
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("M"))[0].performClick()
         assertEquals("mute:${state.tracks[0].id}:true", rec.calls.last())
+    }
+
+    @Test fun mixer_offers_reverb_bus_when_there_is_none() {
+        val rec = Recorder()
+        val meters = mutableStateOf(FloatArray(state.tracks.size + 1) { 0.3f })
+        compose.setContent { Themed { MixerPanel(state, meters, null, rec) } }
+        compose.onNode(androidx.compose.ui.test.hasText("Bus de reverb").or(androidx.compose.ui.test.hasText("Reverb bus")))
+            .performScrollTo().performClick()
+        assertEquals("addReverbBus", rec.calls.last())
+    }
+
+    @Test fun mixer_shows_engine_sends_to_the_bus() {
+        // Estado real del motor con un bus «Reverb» y un envío del 25 % desde el primer synth.
+        val st = StateParser.state(res("state_bus.json"))!!
+        val bus = st.tracks.single { it.isBus }
+        val synth = st.tracks.first { it.isSynth }
+        assertEquals(0.25f, synth.sends[bus.id]!!, 1e-6f)
+        val rec = Recorder()
+        val meters = mutableStateOf(FloatArray(st.tracks.size + 1) { 0.3f })
+        compose.setContent { Themed { MixerPanel(st, meters, null, rec) } }
+        shot("05b_mixer_bus")
+        compose.onNodeWithContentDescription("Send 25%").assertExists()
+        // Una perilla visible por pista que no es bus (la del bus es un hueco invisible sin semántica).
+        assertEquals(st.tracks.count { !it.isBus }, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Send", substring = true)).fetchSemanticsNodes().size)
+        // El giro de la perilla no se comprueba aquí: en Robolectric los gestos de arrastre y doble toque no llegan
+        // a ninguna Knob (también la de Pan, ya existente); queda para la prueba en el teléfono.
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Bus de reverb")).fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun effects_panel_shows_engine_chain() {

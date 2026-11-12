@@ -26,8 +26,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,19 +42,36 @@ import com.caucesound.app.data.TrackState
 @Composable
 fun MixerPanel(state: ProjectState, meters: State<FloatArray>, selectedTrack: String?, actions: StudioActions) {
     Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Primer bus (reverb compartida): las pistas normales le envían con la perilla «Send».
+        val bus = state.tracks.firstOrNull { it.isBus }
         state.tracks.forEachIndexed { i, t ->
-            Strip(t, { meters.value.getOrElse(i + 1) { 0f } }, t.id == selectedTrack, actions)
+            Strip(t, { meters.value.getOrElse(i + 1) { 0f } }, t.id == selectedTrack, bus, actions)
+        }
+        if (bus == null) {
+            Column(
+                Modifier.width(92.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).border(1.dp, Palette.Grid, RoundedCornerShape(16.dp))
+                    .clickable(onClick = actions::addReverbBus).padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+            ) {
+                Text("+", fontSize = 28.sp, color = Palette.Violet)
+                Text(tr("Bus de reverb", "Reverb bus"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextDim)
+                Spacer(Modifier.height(4.dp))
+                Text(tr("Una reverb compartida: menos CPU que una por pista", "One shared reverb: less CPU than one per track"),
+                    fontSize = 10.sp, color = Palette.TextFaint)
+            }
         }
         MasterStrip(state.masterDb, { meters.value.getOrElse(0) { 0f } }, actions)
     }
 }
 
-private fun kindLabel(t: TrackState) = when (t.kind) { "drums" -> "DRUMS"; "synth" -> "SYNTH"; else -> "AUDIO" }
+private fun kindLabel(t: TrackState) = when (t.kind) { "drums" -> "DRUMS"; "synth" -> "SYNTH"; "bus" -> "BUS"; else -> "AUDIO" }
 
 @Composable
-private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, actions: StudioActions) {
+private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: TrackState?, actions: StudioActions) {
     var vol by remember(t.id, t.volumeDb) { mutableFloatStateOf(t.volumeDb.clampDb()) }
     var pan by remember(t.id, t.pan) { mutableFloatStateOf(t.pan) }
+    val sendLevel = bus?.let { t.sends[it.id] } ?: 0f
+    var send by remember(t.id, bus?.id, sendLevel) { mutableFloatStateOf(sendLevel) }
     val color = Color(t.color.toInt())
     Column(
         Modifier.width(92.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
@@ -70,6 +89,14 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, actions:
         Spacer(Modifier.height(4.dp))
         Knob("Pan", pan, -1f, 1f, 0f, { pan = it; actions.setPanLive(t.id, it) }, onEnd = actions::commitMixer, size = 40.dp, color = Palette.Solo,
             format = { if (kotlin.math.abs(it) < 0.02f) "C" else if (it < 0) "L${(-it * 100).toInt()}" else "R${(it * 100).toInt()}" })
+        // Envío al bus (post-fader). Las tiras sin envío reservan el mismo alto para alinear los faders.
+        if (bus != null && !t.isBus) {
+            Knob("Send", send, 0f, 1f, 0f, { send = it; actions.setSendLive(t.id, bus.id, it) }, onEnd = actions::commitMixer, size = 40.dp,
+                color = Palette.Violet, format = { "${(it * 100).toInt()}%" })
+        } else if (bus != null) {
+            // Hueco invisible e inerte del mismo tamaño que la perilla.
+            Box(Modifier.alpha(0f).clearAndSetSemantics {}) { Knob("Send", 0f, 0f, 1f, 0f, {}, size = 40.dp) }
+        }
         Row(Modifier.weight(1f).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             VerticalFader(vol, { vol = it; actions.setVolumeLive(t.id, it) }, actions::commitMixer, Modifier.width(40.dp).fillMaxHeight(), color = color)
             LevelMeter(meter, Modifier.width(10.dp).fillMaxHeight())

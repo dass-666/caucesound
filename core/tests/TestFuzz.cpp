@@ -131,6 +131,12 @@ TEST (fuzz_command_api_never_crashes_and_leaves_a_valid_project)
         const auto r = json::parse (handleCommand (s, engine, raw), nullptr, false);
         if (r.is_discarded() || ! r.contains ("ok") || r["ok"] != false) { ++badReply; std::printf ("    texto crudo mal respondido: %s\n", raw); }
     }
+    // Una ruta relativa se rechaza: nada se escribe en el directorio actual del proceso.
+    {
+        const auto r = json::parse (cmd ({ { "cmd", "export" }, { "path", "cs_fuzz_relativo.wav" } }));
+        CHECK (r["ok"] == false && ! fs::exists ("cs_fuzz_relativo.wav"));
+        CHECK (json::parse (cmd ({ { "cmd", "openProject" }, { "folder", "p" } }))["ok"] == false);
+    }
     stop.store (true);
     audio.join();
     engine.stop();

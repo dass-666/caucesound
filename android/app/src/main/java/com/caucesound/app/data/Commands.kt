@@ -55,6 +55,7 @@ object Cmd {
     fun renameTrack(id: String, name: String) = c("renameTrack", "trackId" to id, "name" to name)
     fun setVolume(id: String, db: Float) = c("setVolume", "trackId" to id, "db" to db.toDouble())
     fun setPan(id: String, pan: Float) = c("setPan", "trackId" to id, "pan" to pan.toDouble())
+    fun setSend(trackId: String, busId: String, level: Float) = c("setSend", "trackId" to trackId, "busId" to busId, "level" to level.toDouble())
     fun setMute(id: String, on: Boolean) = c("setMute", "trackId" to id, "on" to on)
     fun setSolo(id: String, on: Boolean) = c("setSolo", "trackId" to id, "on" to on)
     fun setArmed(id: String, on: Boolean) = c("setArmed", "trackId" to id, "on" to on)

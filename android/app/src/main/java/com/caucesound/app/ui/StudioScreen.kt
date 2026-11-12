@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Gradient
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Loop
@@ -479,7 +480,7 @@ private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm
         Column(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    when { t.isDrums -> Icons.Default.GridOn; t.isSynth -> Icons.Default.MusicNote; else -> Icons.Default.Mic }, null,
+                    when { t.isDrums -> Icons.Default.GridOn; t.isSynth -> Icons.Default.MusicNote; t.isBus -> Icons.Default.CallSplit; else -> Icons.Default.Mic }, null,
                     Modifier.size(14.dp), tint = color,
                 )
                 Spacer(Modifier.width(4.dp))

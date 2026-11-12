@@ -4,8 +4,8 @@
   {
    "bpm": 120.0,
    "folder": "/tmp/cs_test_ui_fixtures/vacio",
-   "id": "prj_4702bbcc3f25",
-   "modifiedAt": 1794471415663,
+   "id": "prj_f39a92f34b99",
+   "modifiedAt": 1794475478920,
    "name": "Idea vacía",
    "template": "empty",
    "thumb": [],
@@ -14,8 +14,8 @@
   {
    "bpm": 140.0,
    "folder": "/tmp/cs_test_ui_fixtures/beat",
-   "id": "prj_80248f475108",
-   "modifiedAt": 1794471415661,
+   "id": "prj_f7ef53593436",
+   "modifiedAt": 1794475478919,
    "name": "Beat trap 140",
    "template": "trap",
    "thumb": [
@@ -53,9 +53,14 @@
      "color": 4294286859,
      "kind": "audio",
      "spans": []
+    },
+    {
+     "color": 4281652121,
+     "kind": "bus",
+     "spans": []
     }
    ],
-   "tracks": 4
+   "tracks": 5
   }
  ]
 }

@@ -56,8 +56,11 @@ data class TrackState(
     val patterns: List<PatternState> = emptyList(),
     val midiClips: List<MidiClipState> = emptyList(),
     val inserts: List<InsertState> = emptyList(),
+    /** Envíos post-fader: id del bus → nivel 0..1. */
+    val sends: Map<String, Float> = emptyMap(),
 ) {
     val isAudio: Boolean get() = kind == "audio"
+    val isBus: Boolean get() = kind == "bus"
     val isDrums: Boolean get() = kind == "drums"
     val isSynth: Boolean get() = kind == "synth"
     fun pattern(id: String): PatternState? = patterns.firstOrNull { it.id == id }
@@ -203,6 +206,8 @@ object StateParser {
                 t.optDouble("pan", 0.0).toFloat(), t.optBoolean("mute"), t.optBoolean("solo"), t.optBoolean("armed"),
                 t.optLong("color", 0xFF4FC3F7), clips, t.optString("kind", "audio"), inst?.optString("type") ?: "", params,
                 inst?.optString("preset") ?: "", patterns, midi.sortedBy { it.start }, inserts,
+                t.optJSONObject("sends")?.let { js -> js.keys().asSequence().associateWith { js.optDouble(it, 0.0).toFloat() } }
+                    ?: emptyMap(),
             )
         }
         return ProjectState(
