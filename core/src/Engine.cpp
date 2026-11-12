@@ -114,6 +114,17 @@ uint64_t hashEvents (const std::vector<SchedEvent>& ev)
     return h;
 }
 
+void Engine::resetTransport()
+{
+    countInRequest.store (-1);
+    playing.store (false);
+    loopOn.store (false);
+    liveEpoch.fetch_add (1, std::memory_order_acq_rel);
+    seekRequest.store (0);
+    positionOut.store (0, std::memory_order_release);
+    countInOut.store (0, std::memory_order_relaxed);
+}
+
 void Engine::setLoop (bool on, Frame start, Frame end)
 {
     loopStart.store (std::max<Frame> (0, start));
@@ -124,7 +135,7 @@ void Engine::setLoop (bool on, Frame start, Frame end)
 bool Engine::sendLive (int slot, uint8_t status, uint8_t data1, uint8_t data2)
 {
     while (liveLock.test_and_set (std::memory_order_acquire)) {}
-    const LiveMidi m { slot, status, data1, data2 };
+    const LiveMidi m { slot, status, data1, data2, liveEpoch.load (std::memory_order_acquire) };
     const bool ok = live.push (&m, 1);
     liveLock.clear (std::memory_order_release);
     return ok;
@@ -146,9 +157,10 @@ void Engine::loopNotesOff (const RenderGraph* g)
 void Engine::drainLive (const RenderGraph* g)
 {
     LiveMidi m;
+    const uint32_t epoch = liveEpoch.load (std::memory_order_acquire);
     while (live.pop (&m, 1) == 1)
     {
-        if (! g) continue;
+        if (! g || m.epoch != epoch) continue; // del proyecto anterior (p. ej. un pad pulsado al salir)
         for (const auto& t : g->tracks)
             if (t.slot == m.slot && t.instrument)
             {
@@ -403,14 +415,15 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         }
         else
         {
+            const float direct = t.sendsOnly ? 0.0f : 1.0f; // exportación de retornos de bus: solo alimenta envíos
             for (int i = 0; i < n; ++i)
             {
                 gl = approach (gl, targetL, smoothStep);
                 gr = approach (gr, targetR, smoothStep);
                 tl[i] *= gl;
                 tr[i] *= gr;
-                L[i] += tl[i];
-                R[i] += tr[i];
+                L[i] += tl[i] * direct;
+                R[i] += tr[i] * direct;
                 peak = std::max (peak, std::max (std::fabs (tl[i]), std::fabs (tr[i])));
             }
             addSends (t, tl, tr, n, true);
@@ -493,6 +506,13 @@ void Engine::process (const float* input, int inChannels, float* output, int out
         prevRolling = rolling;
         const bool looping = rolling && loopOn.load (std::memory_order_relaxed) && ! recording.load (std::memory_order_relaxed);
         const Frame lEnd = loopEnd.load (std::memory_order_relaxed);
+        if (looping && pos >= lEnd)
+        {
+            // Cabezal por detrás de la región (seek, bucle acortado o activado tarde): vuelve al inicio del bucle en
+            // lugar de reproducir silencio indefinidamente más allá del contenido.
+            pos = loopStart.load (std::memory_order_relaxed);
+            loopNotesOff (g);
+        }
         if (looping && pos < lEnd && pos + n > lEnd) n = (int) (lEnd - pos);
         float* L = mixL.data();
         float* R = mixR.data();
@@ -604,11 +624,12 @@ void Engine::process (const float* input, int inChannels, float* output, int out
         done += n;
     }
     countInOut.store (countInLeft, std::memory_order_relaxed);
+    processedOut.fetch_add (frames, std::memory_order_relaxed);
     positionOut.store (pos, std::memory_order_release);
     masterPeakOut.store (mPeak, std::memory_order_relaxed);
 }
 
-void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
+bool Engine::renderOffline (Frame from, float* left, float* right, Frame frames, const std::atomic<bool>* cancel)
 {
     ScopedNoDenormals noDenormals;
     adoptPendingGraph();
@@ -624,9 +645,11 @@ void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
     Frame done = 0;
     while (done < frames)
     {
+        if (cancel && cancel->load (std::memory_order_relaxed)) return false;
         const int n = (int) std::min<Frame> (maxBlock, frames - done);
         renderBlock (g, from + done, true, left + done, right + done, n);
         done += n;
     }
+    return true;
 }
 } // namespace cs

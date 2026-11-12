@@ -1,4 +1,5 @@
 #include "cs/Api.h"
+#include "cs/SoloBridge.h"
 #include "cs/Archive.h"
 
 #include "cs/Instruments.h"
@@ -71,6 +72,7 @@ json listProjects (const std::string& root)
 
 namespace
 {
+json pluginDescriptors();
 json catalog()
 {
     json presets = json::array();
@@ -90,7 +92,25 @@ json catalog()
     json tpl = json::array();
     for (const auto& t : projectTemplates()) tpl.push_back ({ { "id", t.id }, { "bpm", t.bpm }, { "kit", t.kitId }, { "tracks", t.tracks } });
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
-             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl } };
+             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl },
+             // Plugins integrados: solo se anuncian los que están compilados (la interfaz no muestra los demás).
+             { "plugins", pluginDescriptors() } };
+}
+
+// Contrato de plugins (docs/PLUGIN_CONTRACT.md): descriptor de cada plugin integrado. Solo aparecen los compilados.
+json pluginDescriptors()
+{
+    json arr = json::array();
+    if (solo::available())
+        arr.push_back ({ { "id", "solo.ai" }, { "name", "Solo AI" }, { "version", solo::pinnedVersion() }, { "category", "generator" },
+                         { "kind", "offline" }, { "realtime", false }, { "latencySamples", 0 }, { "wantsMidi", false }, { "wantsTransport", true },
+                         { "output", "midi" }, { "appliesTo", "song" }, { "cancellable", false } });
+    if (vocal::available())
+        arr.push_back ({ { "id", "vocalshift" }, { "name", "VocalShift" }, { "version", vocal::pinnedVersion() }, { "category", "effect" },
+                         { "kind", "offline" }, { "realtime", false }, { "latencyMs", 150 }, { "wantsMidi", false }, { "wantsTransport", true },
+                         { "output", "audio" }, { "appliesTo", "audioClip" }, { "cancellable", true }, { "maxSeconds", vocal::kMaxClipSeconds },
+                         { "presets", (int) vocal::presets().size() } });
+    return arr;
 }
 
 // Entero desde JSON sin conversiones fuera de rango (1e30 -> int es comportamiento indefinido en C++).
@@ -238,6 +258,124 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();
         if (cmd == "loadPreset") return result (s.loadSynthPreset (str ("trackId"), str ("preset"))).dump();
         if (cmd == "addPattern") return result (s.addPattern (str ("trackId"), str ("copyFrom"))).dump();
+        if (cmd == "varyPart")
+        {
+            const bool setE = q.contains ("energy");
+            return result (s.varyPart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 0), setE ? (float) num ("energy") : 0.0f, setE)).dump();
+        }
+        if (cmd == "soloMelody" || cmd == "soloProposals")
+        {
+            // Solo AI: la petición se prepara con la sesión bloqueada, la composición se hace SIN el cerrojo (no frena
+            // otros comandos ni el audio) y el resultado entra como pista nueva, si el proyecto sigue siendo el mismo.
+            solo::MelodyRequest req;
+            const int startBar = (int) num ("startBar", 0), bars = (int) num ("bars", 8);
+            auto pr = s.soloRequest (startBar, bars, (int) num ("keyRoot", -1), flag ("minor"), req);
+            if (! pr.ok) return result (pr).dump();
+            req.type = q.value ("type", std::string ("chorus"));
+            req.character = q.value ("character", std::string ("easy"));
+            req.freedom = num ("freedom", 35);
+            req.proposal = (int) num ("proposal", 0);
+            req.seed = (uint64_t) safeInt (q.value ("seed", json (1)));
+            req.variation = (uint64_t) safeInt (q.value ("variation", json (0)));
+            req.endingSeed = (uint64_t) safeInt (q.value ("endingSeed", json (0)));
+            req.endingBars = std::clamp ((int) num ("endingBars", 2), 1, std::max (1, bars));
+            auto describe = [] (const solo::MelodyResult& m)
+            {
+                Tick end = 0;
+                int lo = 127, hi = 0;
+                for (const auto& n : m.notes) { end = std::max (end, n.start + n.length); lo = std::min (lo, n.key); hi = std::max (hi, n.key); }
+                return json { { "name", m.name }, { "description", m.description }, { "notes", m.notes.size() }, { "inScale", m.inScale },
+                              { "strongChordTones", m.strongChordTones }, { "similarity", m.similarity }, { "lowKey", lo }, { "highKey", hi }, { "lengthTicks", end } };
+            };
+            if (cmd == "soloProposals")
+            {
+                // Las cuatro alternativas A-D de la misma familia. No toca el proyecto: son reproducibles por semilla, así
+                // que elegir una después (soloMelody con la misma semilla y su número) da exactamente esas notas.
+                const auto fam = solo::proposeFamily (req);
+                if (! fam.ok) return json { { "ok", false }, { "error", fam.error } }.dump();
+                json arr = json::array();
+                for (const auto& p : fam.proposals) arr.push_back (describe (p));
+                return json { { "ok", true }, { "proposals", arr }, { "diversity", fam.diversity }, { "keyRoot", req.keyRoot }, { "minor", req.minor } }.dump();
+            }
+            const std::string projectId = s.model().id;
+            const auto mr = solo::generateMelody (req);
+            if (! mr.ok) return json { { "ok", false }, { "error", mr.error } }.dump();
+            const auto bar = (Tick) kPpq * s.model().beatsPerBar;
+            const std::string name = "Solo AI · " + mr.name;
+            // Frase final nueva sobre una pista existente: se conserva lo anterior al corte (también lo editado a mano).
+            const Tick keepBefore = req.endingSeed != 0 && ! str ("replaceTrackId").empty() ? (Tick) (bars - req.endingBars) * bar : 0;
+            auto r = s.addSoloTrack (projectId, (Tick) startBar * bar, name, mr.notes, q.value ("preset", std::string ("bright_lead")), str ("replaceTrackId"), keepBefore);
+            json j = result (r);
+            j.update (describe (mr));
+            j["name"] = name;
+            j["millis"] = mr.millis;
+            j["keyRoot"] = req.keyRoot;
+            j["minor"] = req.minor;
+            return j.dump();
+        }
+        if (cmd == "soloTransform")
+        {
+            json j = result (s.soloTransform (str ("trackId"), str ("op")));
+            if (j.value ("ok", false)) { j["notes"] = std::atoi (j.value ("id", std::string ("0")).c_str()); j.erase ("id"); }
+            return j.dump();
+        }
+        if (cmd == "soloAnalyze")
+        {
+            json j = result (s.soloAnalyze (str ("clipId")));
+            if (j.value ("ok", false)) j["jobId"] = j.value ("id", std::string());
+            return j.dump();
+        }
+        if (cmd == "setHarmony")
+        {
+            std::vector<solo::ChordSpec> chords;
+            for (const auto& c : q.value ("chords", json::array()))
+                chords.push_back ({ (int) safeInt (c.value ("root", json (0))), (int) safeInt (c.value ("quality", json (0))) });
+            return result (s.setHarmony ((int) num ("keyRoot", -1), flag ("minor"), chords, num ("chordsBpm", 0), q.value ("source", std::string ("manual")))).dump();
+        }
+        if (cmd == "vocalPresets")
+        {
+            json arr = json::array();
+            for (const auto& p : vocal::presets())
+                arr.push_back ({ { "id", p.id }, { "name", p.name }, { "description", p.description }, { "params", json::parse (p.params.toJson()) } });
+            return json { { "ok", true }, { "presets", arr } }.dump();
+        }
+        if (cmd == "vocalProcess")
+        {
+            vocal::Params p;
+            if (! vocal::Params::fromJson (q.value ("params", json::object()).dump(), p)) return result (OpResult::fail ("parámetros no válidos")).dump();
+            json j = result (s.vocalProcess (str ("clipId"), p));
+            if (j.value ("ok", false)) j["jobId"] = j.value ("id", std::string());
+            return j.dump();
+        }
+        if (cmd == "vocalPreview")
+        {
+            vocal::Params p;
+            if (! vocal::Params::fromJson (q.value ("params", json::object()).dump(), p)) return result (OpResult::fail ("parámetros no válidos")).dump();
+            json j = result (s.vocalPreview (str ("clipId"), p, q.contains ("from") ? (Frame) safeInt (q["from"]) : 0, q.contains ("length") ? (Frame) safeInt (q["length"]) : 0));
+            if (j.value ("ok", false))
+            {
+                const std::string id = j.value ("id", std::string());
+                j["cached"] = id == "cached";
+                if (id != "cached") j["jobId"] = id;
+                j.erase ("id");
+            }
+            return j.dump();
+        }
+        if (cmd == "previewListen") return result (s.setPreviewListen (str ("clipId"), flag ("on"))).dump();
+        if (cmd == "clipVersion") return result (s.setClipVersion (str ("clipId"), flag ("original"), q.contains ("match") && q["match"].is_boolean() ? (q["match"].get<bool>() ? 1 : 0) : -1)).dump();
+        if (cmd == "discardProcess") return result (s.discardProcess (str ("clipId"))).dump();
+        if (cmd == "jobStatus")
+        {
+            JobInfo info;
+            if (! s.jobRunner().info (str ("jobId"), info)) return json { { "ok", false }, { "error", "trabajo no encontrado" } }.dump();
+            json j { { "ok", true }, { "jobId", info.id }, { "type", info.type }, { "state", info.state }, { "progress", info.progress },
+                     { "targetId", info.targetId }, { "error", info.error } };
+            if (! info.result.empty()) j["result"] = json::parse (info.result, nullptr, false);
+            return j.dump();
+        }
+        if (cmd == "jobCancel") return json { { "ok", s.jobRunner().cancel (str ("jobId")) } }.dump();
+        if (cmd == "setPartLocked") return result (s.setPartLocked (str ("trackId"), flag ("on"))).dump();
+        if (cmd == "setRoll") return result (s.setPatternRoll (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("roll"))).dump();
         if (cmd == "setStep") return result (s.setPatternStep (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("velocity"))).dump();
         if (cmd == "setPatternLength") return result (s.setPatternLength (str ("trackId"), str ("patternId"), (int) num ("steps", 16))).dump();
         if (cmd == "setSwing") return result (s.setPatternSwing (str ("trackId"), str ("patternId"), (float) num ("swing"))).dump();
@@ -289,6 +427,23 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setMonitoring") { e.setMonitoring (flag ("on"), (float) num ("gain", 1.0)); return json { { "ok", true } }.dump(); }
         if (cmd == "startRecording") return result (s.startRecording (str ("trackId"), (int) num ("channels", 1), true, (int) num ("countInBars", 0))).dump();
         if (cmd == "stopRecording") return result (s.stopRecording()).dump();
+        if (cmd == "exportDaw")
+        {
+            DawExportOptions o;
+            o.wet = q.value ("mode", std::string ("wet")) != "dry";
+            o.bitDepth = (int) num ("bits", 24);
+            o.includeMix = q.value ("mix", true);
+            o.includeProject = q.value ("project", true);
+            json j = result (s.exportDaw (str ("path"), o));
+            if (j.value ("ok", false)) { j["jobId"] = j.value ("id", std::string()); j.erase ("id"); }
+            return j.dump();
+        }
+        if (cmd == "exportMidi")
+        {
+            json j = result (s.exportMidi (str ("path")));
+            if (j.value ("ok", false)) { j["notes"] = std::atoi (j.value ("id", std::string ("0")).c_str()); j.erase ("id"); }
+            return j.dump();
+        }
         if (cmd == "export")
         {
             long clipped = 0;

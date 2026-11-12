@@ -1,0 +1,12 @@
+[submodule "third_party/solo-ai-studio"]
+	path = third_party/solo-ai-studio
+	url = https://github.com/dass-666/solo-ai-studio.git
+[submodule "third_party/vocalshift-ai-studio"]
+	path = third_party/vocalshift-ai-studio
+	url = https://github.com/dass-666/vocalshift-ai-studio.git
+[submodule "third_party/signalsmith-stretch"]
+	path = third_party/signalsmith-stretch
+	url = https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+[submodule "third_party/signalsmith-linear"]
+	path = third_party/signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear.git

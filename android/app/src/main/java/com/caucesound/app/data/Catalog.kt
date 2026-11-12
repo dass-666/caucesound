@@ -16,7 +16,10 @@ data class Catalog(
     val drumParams: List<ParamInfo>,
     val effects: List<EffectInfo>,
     val templates: List<TemplateInfo> = emptyList(),
+    /** Plugins compilados en el motor (p. ej. "solo.ai"). Lo que no está aquí no se muestra en la interfaz. */
+    val plugins: List<String> = emptyList(),
 ) {
+    fun hasPlugin(id: String) = id in plugins
     fun synthParam(id: String) = synthParams.firstOrNull { it.id == id }
     fun effect(type: String) = effects.firstOrNull { it.type == type }
 
@@ -39,7 +42,8 @@ data class Catalog(
             val tpl = o.optJSONArray("templates")?.let { a ->
                 (0 until a.length()).map { a.getJSONObject(it).let { t -> TemplateInfo(t.getString("id"), t.getDouble("bpm"), t.getString("kit"), t.getJSONArray("tracks").let { l -> (0 until l.length()).map { l.getString(it) } }) } }
             } ?: emptyList()
-            return Catalog(presets, kits, params("synthParams"), params("drumParams"), fx, tpl)
+            val plugins = o.optJSONArray("plugins")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("id") } } ?: emptyList()
+            return Catalog(presets, kits, params("synthParams"), params("drumParams"), fx, tpl, plugins)
         }
     }
 }

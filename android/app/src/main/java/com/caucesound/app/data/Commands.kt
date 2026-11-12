@@ -25,6 +25,34 @@ object Cmd {
     fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) =
         c("setStep", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "velocity" to velocity)
     fun setPatternLength(trackId: String, patternId: String, steps: Int) = c("setPatternLength", "trackId" to trackId, "patternId" to patternId, "steps" to steps)
+    fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) =
+        c("setRoll", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "roll" to roll)
+    /** Variación local con semilla (misión 0.4). part: all, drums, bass, chords, melody, pad. energy null = la actual. */
+    fun varyPart(part: String, seed: Long, energy: Float?) = c("varyPart", "part" to part, "seed" to seed, "energy" to energy?.toDouble())
+    // --- Plugins (misión 0.5) ---
+    fun vocalPresets() = c("vocalPresets")
+    fun vocalProcess(clipId: String, params: VocalParams) = c("vocalProcess", "clipId" to clipId, "params" to params.toJson())
+    fun clipVersion(clipId: String, original: Boolean, match: Boolean? = null) = c("clipVersion", "clipId" to clipId, "original" to original, "match" to match)
+    fun vocalPreview(clipId: String, params: VocalParams, from: Long, length: Long) = c("vocalPreview", "clipId" to clipId, "params" to params.toJson(), "from" to from, "length" to length)
+    fun previewListen(clipId: String, on: Boolean) = c("previewListen", "clipId" to clipId, "on" to on)
+    fun discardProcess(clipId: String) = c("discardProcess", "clipId" to clipId)
+    fun jobStatus(jobId: String) = c("jobStatus", "jobId" to jobId)
+    fun jobCancel(jobId: String) = c("jobCancel", "jobId" to jobId)
+    fun soloAnalyze(clipId: String) = c("soloAnalyze", "clipId" to clipId)
+    fun setHarmony(keyRoot: Int, minor: Boolean, chords: List<ChordGuess>, chordsBpm: Double, source: String) =
+        c("setHarmony", "keyRoot" to keyRoot, "minor" to minor, "chordsBpm" to chordsBpm, "source" to source,
+            "chords" to JSONArray(chords.map { JSONObject().put("root", it.root).put("quality", it.quality) }))
+    private fun solo(name: String, r: SoloRequest, vararg extra: Pair<String, Any?>) = c(name, "startBar" to r.startBar, "bars" to r.bars, "type" to r.type,
+        "character" to r.character, "freedom" to r.freedom, "seed" to r.seed, "keyRoot" to r.keyRoot, "minor" to r.minor, "preset" to r.preset, *extra)
+    fun soloProposals(r: SoloRequest) = solo("soloProposals", r)
+    fun soloPick(r: SoloRequest, proposal: Int, variation: Long, replaceTrackId: String?) =
+        solo("soloMelody", r, "proposal" to proposal, "variation" to variation, "replaceTrackId" to replaceTrackId)
+    /** Frase final nueva: recompone los últimos compases y conserva el resto de la pista (también lo editado a mano). */
+    fun soloEnding(r: SoloRequest, proposal: Int, variation: Long, trackId: String, endingSeed: Long) =
+        solo("soloMelody", r, "proposal" to proposal, "variation" to variation, "replaceTrackId" to trackId, "endingSeed" to endingSeed, "endingBars" to 2)
+    /** op: simpler, intense, soft, octaveUp, octaveDown. */
+    fun soloTransform(trackId: String, op: String) = c("soloTransform", "trackId" to trackId, "op" to op)
+    fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =
         c("setPatternLanes", "trackId" to trackId, "patternId" to patternId, "lanes" to JSONArray(lanes.map { JSONArray(it) }))
@@ -79,5 +107,8 @@ object Cmd {
     fun seek(frame: Long) = c("seek", "frame" to frame)
     fun setMonitoring(on: Boolean) = c("setMonitoring", "on" to on, "gain" to 1.0)
     fun startRecording(trackId: String, countInBars: Int = 0) = c("startRecording", "trackId" to trackId, "channels" to 1, "countInBars" to countInBars)
+    /** Paquete para DAW (trabajo en segundo plano): mode wet = con efectos, dry = sin efectos. */
+    fun exportDaw(path: String, wet: Boolean, bits: Int = 24) = c("exportDaw", "path" to path, "mode" to if (wet) "wet" else "dry", "bits" to bits)
+    fun exportMidi(path: String) = c("exportMidi", "path" to path)
     fun export(path: String, bits: Int) = c("export", "path" to path, "bits" to bits, "tail" to SAMPLE_RATE / 2)
 }

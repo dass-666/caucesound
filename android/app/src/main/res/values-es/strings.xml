@@ -12,6 +12,7 @@
     <string name="clip_gain">Ganancia del clip</string>
     <string name="create">Crear</string>
     <string name="default_track_name">Pista</string>
+    <string name="quick_idea_track">Voz</string>
     <string name="delete">Eliminar</string>
     <string name="delete_project_text">Se borrará «%1$s» y todo su audio de este dispositivo. No se puede deshacer.</string>
     <string name="delete_project_title">¿Eliminar proyecto?</string>
@@ -19,8 +20,6 @@
     <string name="duplicate">Duplicar</string>
     <string name="exclusive">exclusivo</string>
     <string name="export">Exportar</string>
-    <string name="export_note">Exporta la mezcla completa (con volumen, pan, mute y solo) como WAV. El metrónomo no se incluye.</string>
-    <string name="export_wav">Exportar WAV</string>
     <string name="fade_in_ms">Fundido de entrada: %1$d ms</string>
     <string name="fade_out_ms">Fundido de salida: %1$d ms</string>
     <string name="fades">Fundidos</string>
@@ -33,6 +32,7 @@
     <string name="monitoring_note">Reproduce el micrófono por la salida. Usa auriculares para evitar acoples. Todavía sin efectos.</string>
     <string name="msg_arm_track">Arma una pista (R) antes de grabar</string>
     <string name="msg_audio_failed">No se pudo iniciar la salida de audio</string>
+    <string name="msg_focus_denied">Otra app (o una llamada) está usando el audio. Prueba de nuevo cuando termine.</string>
     <string name="msg_export_clipped">Exportado, pero %1$d muestras saturaron. Baja los niveles.</string>
     <string name="msg_export_failed">Error al exportar: %1$s</string>
     <string name="msg_exported">Exportado</string>

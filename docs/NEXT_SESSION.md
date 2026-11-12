@@ -1,36 +1,57 @@
-# Para retomar el trabajo (actualizado 2026-11-12, fin de la misión «Ultimate Polish»)
+# Para retomar el trabajo (actualizado 2026-11-12, fin de la misión 0.6 «Professional Production»)
 
 ## Estado
 
-- **Rama**: `claude/project-thread-w0xy20`. Pull request #1 contra `main`, **sin fusionar** (requiere autorización de
-  Diego). Al fusionar conviene «squash merge»: así los 25 WAV residuales que estuvieron en la rama (ya borrados) no
-  entran en la historia de `main`.
-- **APK de prueba**: `caucesound-0.3.0-polish-preview.apk` en `/mnt/project-files/caucesound/`,
-  `com.caucesound.app.preview`, versionCode 3. SHA-256 en STATUS.md y en el informe de la misión. Mismo certificado que
-  la 0.2.0: se instala encima sin perder proyectos (comprobado por certificado y versionCode; **no** probado en teléfono).
-- **Clave de prueba**: `/mnt/project-files/caucesound/signing/` (`caucesound-preview.jks` + `keystore.properties`).
-  Fuera de git. No regenerar: si se pierde, la Preview instalada no podrá actualizarse.
-- **Capturas**: renders JVM en `/mnt/project-files/caucesound/capturas-0.3.0/` (no son de teléfono).
-- **Validación física**: ninguna. Todo lo «probado» es automático (ver STATUS.md).
-- **Diseño**: reglas y componentes en DESIGN_SYSTEM.md.
-- **AI Choir Studio**: Diego aclaró que **no** es Spatial Echo Studio (repo `3D`); son proyectos distintos. El repo de
-  AI Choir Studio no está localizado: preguntar a Diego antes de integrarlo.
+- **Rumbo**: CAUCESOUND es un ecosistema de tres productos sobre un mismo motor y formato: **Mobile** (existe),
+  **Cauce Link** (diseñado: CAUCE_LINK.md) y **Studio** para Windows (analizado: CAUCESOUND_STUDIO.md).
+- **Rama de trabajo**: `claude/project-thread-hxmmji`. Pull request #2 (borrador) contra `claude/project-thread-w0xy20`,
+  que a su vez es el PR #1 contra `main`. **Ninguno fusionado**: requiere autorización de Diego.
+- **APK de prueba**: `/mnt/project-files/caucesound/caucesound-0.6.0-production-preview.apk`,
+  `com.caucesound.app.preview`, versionCode 8, versionName `0.6.0-production-preview`. SHA-256 en STATUS.md.
+  Mismo certificado que todas las Preview: se instala encima de la 0.5.0 (comprobado por certificado y versionCode;
+  **no** probado en teléfono). Los APK anteriores siguen en la misma carpeta, sin tocar.
+- **Clave de prueba**: `/mnt/project-files/caucesound/signing/`. Fuera de git. **No regenerar.**
+  Compilar firmado: `CAUCE_SIGNING=/mnt/project-files/caucesound/signing/keystore.properties ./gradlew assemblePreview`.
+- **Capturas**: renders JVM en `/mnt/project-files/caucesound/capturas-0.6.0/` (no son de teléfono; salen en inglés
+  porque el entorno de pruebas usa esa configuración regional).
+- **Muestras**: `/mnt/project-files/caucesound/muestras-0.6/` (antes y después del sonido, igualados de volumen, y un
+  paquete para DAW de ejemplo; leer su `LEEME.md`).
+- **Validación física**: ninguna. Lo último que Diego probó en el Samsung fue la 0.3.0.
+  La guía para hacerlo es **SAMSUNG_ACCEPTANCE_0.6.md** (cinco experiencias).
+- **Submódulos** (4, sin cambios): `solo-ai-studio@fe8445b`, `vocalshift-ai-studio@10e679c`,
+  `signalsmith-stretch@88061fd`, `signalsmith-linear@7bb1c8f`. Clonar con `git submodule update --init`.
+- **Formato de proyecto**: sigue en la versión 2. Los proyectos de la 0.5 se abren sin migración; el campo `match` del
+  procesado de voz de la 0.5 se ignora a propósito.
 
-## Pruebas (último resultado)
+## Qué leer
+
+| Documento | Para qué |
+|---|---|
+| STATUS.md | Qué está implementado, probado, compilado y qué no |
+| SAMSUNG_ACCEPTANCE_0.6.md | Las cinco pruebas que solo puede hacer Diego |
+| CAUCE_LINK.md | Puente con el ordenador: emparejamiento, versiones, conflictos, viabilidad de un VST3 |
+| CAUCESOUND_STUDIO.md | Qué se reutiliza en Windows, audio (WASAPI/ASIO), interfaz, VST3, orden propuesto |
+| ARCHITECTURE.md §7 y §8 | Trabajos offline, clips con dos versiones, exportación para DAW |
+| PLUGIN_CONTRACT.md | Cómo entran los plugins, sus reglas y los comandos de la API |
+| RESEARCH_0.5.md | Spatial Echo, AI Choir, congelar pista, PDC en buses |
+
+## Pruebas (último resultado, 2026-11-12)
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 80/80 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | 80/80 |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | 80/80 |
-| ARM64 (QEMU) | `-DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_EXE_LINKER_FLAGS=-static`, `qemu-aarch64 ./build-arm64/cs_core_tests` | 80/80 |
-| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 38/38 |
-| Lint | `./gradlew lintDebug` | 0 errores |
-| Bench | `./build/cs_bench` | proyecto trap + pad + 5 efectos: p99 1,8-4,4 % (Xeon compartido, varía; no es un teléfono) |
-| Carga | `./build/cs_core_tests stress` (`CS_STRESS_PASSES`, `CS_STRESS_EDITS` para alargar) | 32 pistas: p99 17-26 % |
-| Perfil | `build-prof` (RelWithDebInfo) + `valgrind --tool=callgrind ./build-prof/cs_core_tests stress_large` | synth ~30 %, reverb ~20 % |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 128/128 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | **128/128** prueba por prueba sobre el código de la entrega, sin informes. 127 con el fuzz de comandos reducido a 300 iteraciones (ahí solo falló su comprobación de recuento mínimo, no hubo informe del sanitizador) y ese fuzz repetido aparte con 1500 iteraciones: correcto |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | **128/128** prueba por prueba, sin avisos, con la misma salvedad del fuzz (repetido aparte con 1500 iteraciones: correcto) |
+| ARM64 | — | **No ejecutado** (sin QEMU ni compilador cruzado). Solo compilación con el NDK |
+| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 66/66 |
+| Lint | `./gradlew lintDebug` | 0 errores, 38 avisos |
+| Paquete para DAW | `./build/cauce verify paquete.zip` y `python3 desktop/tools/verify_daw_package.py` (dentro del ZIP descomprimido; necesita `pip install mido`) | Correcto en el ejemplo |
 
-Datos de prueba de la interfaz: JSON real del motor, se regeneran con
+Con sanitizadores conviene ejecutar prueba por prueba: la suite entera tarda más de una hora y
+`fuzz_command_api…` sola pasa de 20 minutos (se puede acortar con `CS_FUZZ_ITERATIONS`).
+
+Datos de prueba de la interfaz: JSON real del motor. Se regeneran con
+`./build/cs_render --fixtures05 android/app/src/test/resources/fixtures`; los anteriores con
 `CS_FIXTURE_DIR=android/app/src/test/resources/fixtures ./build/cs_core_tests ui_fixtures`.
 
 ## Entorno de compilación (nube)
@@ -41,43 +62,40 @@ Datos de prueba de la interfaz: JSON real del motor, se regeneran con
 - Robolectric descarga `android-all`: en este entorno exporta `ROBOLECTRIC_REPO_URL` con ese espejo.
 - Sin KVM: no hay emulador. No generar capturas «de teléfono»: las únicas son renders JVM.
 
-## Problemas conocidos
+## Problemas y límites conocidos
 
-1. Nada probado en un teléfono: latencia de pads/teclado, gestos multitáctiles, CPU y temperatura sin medir.
-2. PDC hecha y probada solo con un efecto sintético (`LatencyFx` en TestEffects.cpp); falta validarla con VocalShift
-   real. Tras arrancar/seek, los primeros L frames de la pista latente son el retardo del efecto.
-3. Los proyectos de la app fase 1 no son accesibles desde la Preview (apps distintas). Ya existe exportar/importar
-   `.caucesound` en la Preview, pero la app fase 1 no lo tiene. El APK de la fase 1 no es depurable
-   y bloquea las copias de datos: el rescate es por pistas (Solo + Exportar WAV en la fase 1, importar en la Preview).
-   Ver TESTING_ON_DEVICE.md, «Rescatar proyectos de la fase 1».
-4. El mezclador de pista (volumen, pan, mute, solo) no entra en deshacer (decisión de la fase 1). Las perillas de
-   synth, batería y efectos sí, agrupadas por gesto.
-4b. Proyectos grandes: 32 pistas usan 17-26 % de un Xeon; en un teléfono probablemente no cabe. Ya hay bus de reverb
-   compartido (~45-50 % menos que una reverb por pista en 8 synths); falta congelar pista. Ver STATUS.md.
-4c. Buses: la PDC no compensa latencia de efectos dentro de un bus (ningún efecto propio la tiene hoy; importará con
-   VocalShift). La app solo muestra la perilla Send del primer bus (el motor admite 4).
-5. Diálogos con campos de texto y Ajustes siguen sin captura dentro de su ventana (Robolectric no llega a reposo);
-   el contenido del diálogo de tempo sí se prueba y se captura.
-5b. «Repetir ×2» del piano roll son dos pasos de deshacer. Favoritos y cuenta previa no viajan con el proyecto.
-6. CI de GitHub: ahora ejecuta también las pruebas Robolectric (descargan `android-all` ~ 100-200 MB la primera vez).
-   Gratis dentro de la cuota; verificar que el primer run pasa.
+1. **Nada probado en un teléfono desde la 0.3.0.** Están sin validar el hotfix de Play (0.3.1), la 0.4, la 0.5 y la
+   0.6. Es el riesgo principal del proyecto y crece con cada entrega.
+2. Sonido 3.0: hay diferencia medible (menos graves, melodía presente), no una mejora demostrada. Falta el oído.
+   Solo cambia en canciones nuevas. Sin compresión lateral bombo/bajo. El hip-hop sigue siendo el más grave (80 %).
+3. Solo AI: la tonalidad detectada es poco fiable con mezclas completas (3 de 15 reconocidas) y hay un caso
+   equivocado con confianza 0,68 (medido en `solo_ai_analysis_on_caucesound_songs…` como defecto conocido).
+4. VocalShift: solo offline; naturalidad sin juzgar; el igualado A/B usa RMS, no sonoridad percibida.
+5. Paquete para DAW: 60 a 180 MB por canción; no es un proyecto nativo de ningún DAW.
+6. `cauce` solo compilado en Linux. En Windows fallarían rutas con acentos (ver CAUCESOUND_STUDIO.md §2).
+7. Sin sampler. Sin congelar pista. Sin Spatial Echo. Sin AI Choir (paquete no localizado).
+8. Buses: los efectos con latencia están prohibidos (no hay PDC en buses).
+9. No hay pantalla de «Licencias de terceros» en la app (hace falta antes de publicar por los avisos MIT).
+10. Heredados: el mezclador de pista no entra en deshacer; «Repetir ×2» son dos pasos; favoritos y cuenta previa no
+    viajan con el proyecto; los proyectos de la app de la fase 1 no son accesibles desde la Preview.
 
 ## Próximas tareas sugeridas (en este orden)
 
-1. **Probar la 0.3.0 en el Samsung** con el protocolo de TESTING_ON_DEVICE.md (pruebas 1-29) y corregir lo que salga.
-   Prioridad: latencia de pads, cuenta previa alineada, tamaño táctil real, CPU.
-2. Congelar pista (renderizar a audio un synth terminado) para proyectos grandes; pensar antes cómo se deshace y
-   cómo se guarda (cambio de formato: habría que versionarlo).
-3. Integrar VocalShift como `cs::AudioProcessor`: requiere PDC dentro de buses o impedirlo en buses, licencia y forma
-   de dependencia decididas por Diego.
-4. Indicador de carga DSP y XRuns a la vista en el transporte (los datos medidos ya existen en Ajustes de audio).
-5. Piano roll: notas fantasma de otras pistas y duración por defecto de la nota.
-6. Automatización básica (volumen y corte del filtro) y servicio en primer plano para grabar con la pantalla apagada.
+1. **Probar la 0.6.0 en el Samsung** con SAMSUNG_ACCEPTANCE_0.6.md. Sin esto, seguir añadiendo es construir a ciegas.
+2. Corregir lo que salga. Candidatos previsibles: tiempos de exportación y de VocalShift en el teléfono, tamaño del
+   paquete, permisos de micrófono en «Idea rápida», equilibrio del nuevo sonido en altavoces reales.
+3. CI en Windows para `cauce` y las pruebas del motor (paso 1 de CAUCESOUND_STUDIO.md §8).
+4. Detección de tonalidad: probar a analizar sin la batería (separación por bandas o por transitorios) antes de
+   prometer nada con beats reales.
+5. Cauce Link paso 2 (campos `revision` y `parents`, detección de divergencia sin red), solo si Diego usa de verdad
+   el paquete para DAW.
 
-## Decisiones que necesitan autorización del propietario
+## Decisiones que necesitan al propietario
 
-- Fusionar el PR en `main`.
-- Licencia del código de CAUCESOUND y de VocalShift/Solo AI antes de integrarlos o distribuir.
+- Fusionar los PR #1 y #2.
+- Si el sonido 3.0 se queda, se ajusta o se retira (tras la experiencia 2).
+- Licencia de CAUCESOUND y de los núcleos de Solo AI, VocalShift y Spatial Echo.
+- Spatial Echo: rama de referencia en `3D` y permiso para crear allí un núcleo sin JUCE.
+- AI Choir Studio: subir el paquete al proyecto o indicar el repositorio.
+- Si Cauce Link por Wi-Fi y Studio merecen el esfuerzo, o basta con mover archivos.
 - Clave de firma de producción y publicación (Play Console: 25 USD; nada gastado).
-- «AI Choir Studio»: según la memoria del proyecto sería Spatial Echo Studio (3D, JUCE); confirmar.
-- Si se acepta borrar la app de la fase 1 del teléfono una vez rescatados sus proyectos.

@@ -38,6 +38,22 @@ struct ClipModel
     Frame length = 0;
     Frame fadeIn = 0, fadeOut = 0;
     float gainDb = 0.0f;
+    // Procesado no destructivo por un plugin offline (VocalShift, misión 0.5). Si procPlugin no está vacío, el clip
+    // tiene dos versiones: A = original (origSourceId, origOffset, origLength) y B = procesada (procSourceId desde 0,
+    // procLength, que incluye la cola de reverb). sourceId/sourceOffset/length son siempre la versión que suena.
+    // El audio original nunca se modifica ni se borra. Recortar o dividir el clip «acepta» la versión que suena.
+    std::string procPlugin;   // "vocalshift"
+    std::string procVersion;  // versión del motor con la que se generó
+    std::string procParams;   // JSON de parámetros (para reproducir o seguir ajustando)
+    std::string origSourceId, procSourceId;
+    Frame origOffset = 0, origLength = 0, procLength = 0;
+    // procLevelDb = nivel RMS de B respecto a A, medido al procesar. Es solo una medida: no cambia cómo suena ni
+    // cómo se exporta el clip. La escucha a volumen igualado es un estado temporal de la sesión, no del proyecto
+    // (Session::listenMatchClip): en la 0.5 vivía aquí y se colaba en el guardado y en la exportación.
+    float procLevelDb = 0.0f;
+    bool processed() const { return ! procPlugin.empty(); }
+    bool playingOriginal() const { return processed() && sourceId == origSourceId; }
+    void clearProcess() { procPlugin.clear(); procVersion.clear(); procParams.clear(); origSourceId.clear(); procSourceId.clear(); origOffset = origLength = procLength = 0; procLevelDb = 0.0f; }
 };
 
 struct InstrumentModel
@@ -77,6 +93,8 @@ struct ProjectModel
     Frame recordLatencyOffset = 0; // compensación aplicada a grabaciones nuevas (frames)
     int64_t createdAt = 0, modifiedAt = 0; // epoch ms
     std::string templateId;                // plantilla con la que se creó ("trap", "reggaeton"...), informativo
+    std::string harmony;                   // tonalidad/tempo/acordes confirmados por el usuario tras analizar un audio (JSON; ver SessionSolo.cpp)
+    std::string music;                     // plan musical del compositor (JSON: género, tonalidad, semillas, papeles); ver Composer.h
     bool loopEnabled = false;
     Tick loopStart = 0, loopEnd = 16 * kPpq; // 4 compases de 4/4
     std::vector<TrackModel> tracks;

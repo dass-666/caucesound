@@ -4,6 +4,125 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.6 «Professional Production» (2026-11-12, rama `claude/project-thread-hxmmji`)
+
+Categorías: **Implementado** (código en la rama), **Probado** (prueba automática en Linux x86-64), **Compilado**
+(entra en el APK arm64), **Audio real** (medido sobre audio renderizado por el motor; no es escucha humana),
+**Render JVM** (pantalla dibujada con Robolectric y revisada), **Físico** (en un teléfono: hoy, nada).
+
+| Entrega | Implementado | Probado | Compilado | Audio real | Render JVM | Físico |
+|---|---|---|---|---|---|---|
+| A/B de VocalShift: el igualado de volumen es solo de escucha y nunca llega a la exportación (defecto de la 0.5) | Sí | `vocalshift_level_match_is_listen_only…` | Sí | Exportación −16,12 dB con y sin igualado | Sí | Pendiente |
+| Prueba rápida de VocalShift (unos segundos sin tocar el proyecto) | Sí | `vocalshift_preview_*` (2) | Sí | Parecido 0,967 con el procesado completo | Sí | Pendiente |
+| Retardo de la segunda voz aplicado desde el inicio (antes tardaba hasta 3 s) | Sí | `vocalshift_keeps_attacks…`: pedir 60 ms da 60,0 ms (antes 9,8 ms) | Sí | Voz sintética | — | Pendiente |
+| Evaluación técnica de VocalShift: ataques, consonantes, silencios, extremos, determinismo | — | Misma prueba: ataques 0 ms, consonantes +2,5 dB, pausas 31,6 dB bajo la voz, reprocesado idéntico | — | Voz sintética, no humana | — | Pendiente |
+| Paquete para DAW (stems con o sin efectos, MIDI, mezcla, proyecto, manifiesto con SHA-256) | Sí | `daw_*`, `smf_*`, `sha256_*` (5) + verificación independiente con `mido` | Sí | Suma de stems = mezcla (diferencia 0 en coma flotante, 3 LSB a 24 bits) | `26`-`28` | Pendiente |
+| Programa de escritorio `cauce` | Sí | Usado en las pruebas y en las muestras | Solo Linux | — | — | — |
+| Sonido 3.0 (mezcla de plantillas, filtro antes de la reverb, compás de cierre, melodía con intención) | Sí | 3 pruebas nuevas en `TestComposer` | Sí | Graves <250 Hz: 88→71 %, 91→77 %, 94→80 %. Melodía de −25 a entre −11 y −17 dB respecto a la batería | — | Pendiente (**es un juicio de oído**) |
+| Solo AI 2.1: cinco ajustes de la melodía, rehacer solo el final, nivel de entrada según la mezcla | Sí | `solo_ai_transforms…`, `solo_ai_new_ending…` | Sí | — | `29` | Pendiente |
+| Medición del análisis de Solo AI con 15 canciones propias | — | Tempo: 13 exactos, 15 exactos o mitad/doble. Tonalidad: reconocida en 3, exacta en 1, **1 caso equivocado con confianza 0,68** | — | Material propio renderizado, no música comercial | — | Pendiente |
+| Idea rápida (un toque: proyecto, pista armada, grabación) | Sí | 1 prueba de interfaz; la grabación en sí usa el camino de siempre | Sí | — | `30` | Pendiente |
+| Sampler | **No** | — | — | — | — | — |
+| Cauce Link y CauceSound Studio | **Solo documentos** (CAUCE_LINK.md, CAUCESOUND_STUDIO.md) | — | — | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **128/128** |
+| ASan + UBSan | **128/128** prueba por prueba sobre el código de la entrega, sin informes. 127 con el fuzz de comandos reducido a 300 iteraciones (ahí solo falló su comprobación de recuento mínimo, no hubo informe del sanitizador) y ese fuzz repetido aparte con 1500 iteraciones: correcto |
+| TSan | **128/128** prueba por prueba, sin avisos, con la misma salvedad del fuzz (repetido aparte con 1500 iteraciones: correcto) |
+| ARM64 | **Solo compilación** (NDK, arm64-v8a dentro del APK). Las pruebas **no** se ejecutaron en ARM64 |
+| Android JVM y Robolectric | **66/66** |
+| Lint | 0 errores, 38 avisos (no ocultados) |
+| CI (GitHub Actions) | Trabajo `android` en verde en el commit `f940dde`; el trabajo `core` (Release + ASan) seguía en curso al cerrar. En verde completo en `d6d7565`, `85cf2e7` y `9c92250` |
+| APK `caucesound-0.6.0-production-preview.apk` | versionCode 8, `com.caucesound.app.preview`, arm64-v8a y x86_64, certificado `56b4de46…61ab2e` (el mismo que la 0.5.0, comprobado con `apksigner` en los dos APK). SHA-256 `c5da72cfd6deaefb3281c0e2e650ea97f512c54063c8f0a221ed8a860cf48f7e` |
+
+Límites conocidos de la 0.6:
+
+- **Nada probado en un teléfono desde la 0.3.0**: cuatro entregas acumuladas. Ver SAMSUNG_ACCEPTANCE_0.6.md.
+- **Sonido**: lo demostrado es una diferencia medible, no una mejora. Solo afecta a canciones nuevas. Un intento de
+  saturar el bajo para que se oiga en altavoces pequeños se retiró: no añadía armónicos, solo volumen. No hay
+  compresión lateral (sidechain) entre bombo y bajo.
+- **Tonalidad de Solo AI**: poco fiable con mezclas completas; en un caso (canción con cambio de energía) dio Si menor
+  con confianza 0,68 siendo Re menor. Queda como defecto conocido medido en la prueba, sin corregir. La app avisa.
+- **Paquete para DAW**: entre 60 y 180 MB por canción (WAV estéreo de 24 bits sin comprimir). No es un proyecto de
+  FL Studio ni de ningún otro DAW: llegan audio y notas, no instrumentos ni efectos. La automatización no se exporta
+  (no existe en la app).
+- **VocalShift**: la naturalidad sigue sin juzgar (no hay voz humana aquí). El igualado A/B usa RMS, no LUFS.
+- **Escritorio**: `cauce` solo se ha compilado en Linux. En Windows fallarían las rutas con acentos hasta adaptarlas.
+- **Sampler**: no hecho; se priorizó lo anterior. **Idea rápida**: depende de la grabación, sin validar en teléfono.
+
+# Misión 0.5 «Integración» (2026-11-12, rama `claude/project-thread-hxmmji`)
+
+Categorías: **Implementado** (código en la rama), **Probado** (prueba automática), **Compilado** (entra en el APK
+arm64), **Render JVM** (pantalla dibujada con Robolectric y revisada), **Físico** (en un teléfono: hoy, nada).
+
+| Entrega | Implementado | Probado | Compilado | Render JVM | Físico |
+|---|---|---|---|---|---|
+| Trabajos offline (`JobRunner`): cola, progreso, cancelar, cancelación al cambiar de proyecto | Sí | `jobs_*` (3) | Sí | — | Pendiente |
+| VocalShift offline no destructivo (submódulo `10e679c`), presets, A/B, descartar, deshacer | Sí | `vocalshift_*` (10): latencia a la muestra, A/B igualado (A −18,93 dB, B −18,92 dB), silencio, niveles bajos, extremos, mono y estéreo, recorte, cancelar, otro proyecto, temporales, original ausente, guardar y reabrir | Sí | `19`-`22` | Pendiente (54-59) |
+| Solo AI 2.0: análisis de beat, corrección por el usuario, 4 alternativas A-D, variación, sustituir solo su pista | Sí | `solo_ai_*` (5) | Sí | `15`, `23`, `24` | Pendiente (51-53) |
+| Plugin ausente no destruye el proyecto; latencia prohibida en buses | Sí | 2 pruebas | Sí | — | — |
+| Pantallas de VocalShift y Solo AI, accesos desde el clip y la pista | Sí | 13 pruebas nuevas en Android | Sí | Sí | Pendiente |
+| Sonido 2.0 | **Sin cambio audible** (dos intentos descartados por medida; ver RESEARCH_0.5.md §6) | 1 prueba de guarda del 808 | — | — | — |
+| Spatial Echo, AI Choir, congelar pista, PDC en buses | **No** (investigado; ver RESEARCH_0.5.md) | — | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **114/114** (94 anteriores + 20 nuevas) |
+| ASan + UBSan | **112/112** prueba por prueba sobre el commit `cb2463d`; tras el último cambio (A/B igualado) se repitieron las 33 pruebas afectadas (`vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`, `project`): 33/33. Las 2 pruebas nuevas están incluidas en esa repetición |
+| TSan | **112/112** prueba por prueba sobre el commit `cb2463d`, sin avisos; tras el último cambio se repitieron las pruebas afectadas: ver la línea siguiente |
+| TSan, repetición tras el último cambio | `vocalshift`, `fuzz_plugin`, `jobs_`, `missing_plugin`: 15/15. `project` (18 pruebas): 18/18. Total 33/33, sin avisos |
+| ARM64 | **Solo compilación** (NDK, arm64-v8a dentro del APK). Esta sesión no tenía QEMU ni compilador cruzado: las pruebas **no** se ejecutaron en ARM64 |
+| Android JVM y Robolectric | **59/59** |
+| Lint | 0 errores, 37 avisos (no ocultados) |
+| APK `caucesound-0.5.0-integration-preview.apk` | versionCode 7, `com.caucesound.app.preview`, certificado `56b4de46…61ab2e` (el de siempre, comprobado con `apksigner`). SHA-256 `b0bdd15a9c040f3548da80f44a36a700b78c87d418271c60580b4505d5b4970b` |
+
+Límites conocidos de la 0.5:
+
+- **A/B a volumen igualado**: hecho por nivel medio (RMS), que es una aproximación a la sonoridad percibida, no una
+  medida de sonoridad (LUFS). Mientras está activo, B suena compensada también en la exportación: «Aceptar» lo quita.
+  Si sales de la pantalla sin aceptar, sigue activo (se ve en la propia pantalla).
+- **No hay escucha previa** de VocalShift: hay que procesar y después comparar.
+- El análisis de beat solo se ha validado con un beat **sintético** (92 BPM, La menor: acierta con confianza 0,90 y
+  0,76). Con música real puede dar la mitad o el doble del tempo o la tonalidad relativa: por eso el usuario confirma.
+- Las variaciones no cambian la estructura de la canción, así que no existe candado de estructura.
+- Guitarra modelada de Solo AI: desactivada.
+- Un solo trabajo a la vez; clips de más de 10 minutos se rechazan.
+
+# Hotfix 0.3.1 (2026-11-12, misión 0.4, etapa A, rama `claude/project-thread-hxmmji`)
+
+Fallo observado por Diego en un Samsung con la 0.3.0: tras salir de un proyecto y abrir otro, Play deja de funcionar
+(también al volver al primero) hasta reiniciar la app. Se encontraron **dos defectos independientes** que producen
+exactamente ese síntoma, y un tercero que podía dejar el audio mudo de forma permanente:
+
+| # | Defecto | Evidencia | Corrección |
+|---|---|---|---|
+| 1 | El motor vive todo el proceso y `Session::close()` no reiniciaba el transporte: el proyecto siguiente heredaba la posición del anterior. Tras reproducir A más de sus 8 compases, B (y A al volver) arrancaban en silencio más allá de su contenido. Solo reiniciar la app devolvía la posición a 0 | **Demostrado**: `switch_projects_play_after_long_playback` falla con el código de la 0.3.0 (posición heredada 1 440 000, RMS 0,0000 en B y en A) y pasa con la corrección (RMS 0,199) | `Engine::resetTransport()` en cerrar/abrir/crear: parado, posición 0 (visible al instante), cuenta previa cancelada, bucle desactivado hasta que el proyecto aplique el suyo y MIDI en vivo pendiente descartado |
+| 2 | Cada Play creaba una petición de foco de audio con un oyente nuevo. Android identifica al dueño del foco por el oyente: la petición nueva le quitaba el foco (`AUDIOFOCUS_LOSS`) a la anterior **de la misma app**, cuyo oyente paraba el transporte. Desde el segundo Play, el transporte se paraba justo después de arrancar | **Inferencia fuerte, no reproducida en teléfono**: leído en el código de Android (AOSP `MediaFocusControl.requestAudioFocus` → `propagateFocusLossFromGain_syncAf`; `FocusRequester.frameworkHandleFocusLoss` despacha la pérdida aunque sea la misma app; `AudioManager.getIdForAudioFocusListener` usa el oyente como id). Robolectric no simula esa pila | Una sola petición y un solo oyente durante toda la app (`AudioGuard`); pedir el foco con él ya concedido no genera pérdida. Se abandona al cerrar el proyecto. `AudioGuardTest`: 100 Play seguidos usan el mismo objeto y no interrumpen |
+| 3 | `AudioIO::onErrorAfterClose` solo reabría el stream con `ErrorDisconnected`; con cualquier otro error Oboe lo cerraba, `running` seguía en `true` y `start()` no hacía nada: audio mudo hasta reiniciar | Lectura de código (no observado) | Reapertura con cualquier error; `audioEnsure()` antes de cada Play reabre el stream si no está en estado `Started`. `statusJson` añade `processedFrames`, `outState`, `lastError`, `ensureRestarts` |
+
+Además: con el bucle activo y el cabezal por detrás de la región (seek, bucle acortado), el transporte reproducía
+silencio indefinidamente; ahora vuelve al inicio del bucle (`loop_region_behind_playhead_wraps_instead_of_playing_silence`,
+falla con el código anterior).
+
+**Cuál de los dos primeros causó lo que viste**: no se puede saber sin el teléfono; ambos producen el mismo síntoma y
+ambos están corregidos. Si el fallo persiste en la 0.3.1, Ajustes → Estado del audio muestra `outState`,
+`processedFrames` (si no avanza, el callback de Oboe no se ejecuta) y `lastError`.
+
+Pruebas nuevas (motor, `core/tests/TestSwitch.cpp`):
+- `switch_projects_play_after_long_playback`: A → Play 30 s → cerrar sin Stop → B → Play → cerrar → A → Play; exige
+  posición 0 al abrir y RMS > 0,01 en B y en A.
+- `switch_120_sessions_with_audio_thread`: 120 ciclos (216 aperturas) con `process()` en otro hilo como el callback de
+  Oboe, sobre las 5 plantillas, un proyecto con delay + compresor + bus de reverb con envío, uno con bucle y uno en el
+  que se graba: cerrar con Play en marcha, Stop antes de salir, abrir/cerrar rápido el mismo proyecto 3 veces, stream
+  parado y reanudado, seek detrás del bucle, cambio de tempo guardado, nota en vivo sin Note Off al salir. En cada
+  apertura: transporte parado en 0, ninguna voz sonando, RMS > 0,01 al pulsar Play, posición que avanza; tras cerrar:
+  silencio y 0 instrumentos vivos (ningún grafo antiguo referenciado). Al final, las 11 tomas grabadas siguen en el
+  proyecto. Resultado: RMS mínimo al reproducir 0,147, 0 fallos.
+- Con la corrección del motor deshecha, la prueba de 120 ciclos falla (posición heredada en cada apertura).
+
+Pendiente de validación física (no hay teléfono aquí): pruebas 30-37 de TESTING_ON_DEVICE.md.
+
 # Pulido 0.3.0 (2026-11-12, misión «Ultimate Polish», misma rama)
 
 Auditoría, rediseño visual y refinamiento sobre la fase 1.2. Categorías usadas abajo: **Implementado** (código en la
@@ -18,6 +137,20 @@ rama), **Probado** (prueba automática que lo cubre), **Render JVM** (imagen dib
 | JVM de la app (`testDebugUnitTest`) | **38/38**: 5 de modelos, 10 del modelo musical, 23 de interfaz |
 | `lintDebug` | 0 errores |
 | APK `0.3.0-polish-preview`, versionCode 3 | Compila. SHA-256 `9ebfc8dcd590a88acb8e232351c5100c014b9938da920d194a5bfbe33181b6ed`. Certificado `56b4de46…61ab2e`, el mismo que la Preview 0.2.0 (comprobado con `apksigner`): se instala encima. Actualización real en teléfono: pendiente |
+
+
+## Misión 0.4: sonido, variaciones, Solo AI y botón «Nueva canción» (2026-11-12)
+
+| Entrega | Evidencia | Validación física |
+|---|---|---|
+| 0.4.0 Sound (commits f472ce1, 544433f): plantillas de 16 compases, 4 kits y 10 presets de síntesis propia, variaciones con semilla, candados, redobles | Motor: TestComposer, 8 pruebas (determinismo, tonalidad, energía, deshacer, candados, picos, estéreo). Render antes/después en `muestras-0.4/` (mono → estéreo −21 a −26 dB lado/centro, 0 recortes, CPU de render ×2 ≈ 2 % en x86) | Pendiente (pruebas 40-44 y 48) |
+| Botón «Nueva canción» | Se quitó el margen duplicado de la barra de navegación. Robolectric no simula esa barra, así que su prueba también pasa con el código antiguo: el arreglo se basa en la lectura del código | Pendiente (prueba 47) |
+| 0.4.1 Solo AI (commit 26262f0): submódulo fijado, comando `soloMelody`, sección en el panel ✨ | TestSolo, 3 pruebas: tonalidad, reproducibilidad, deshacer, `key_required`, catálogo. 0,3 ms por melodía en x86. Compila para arm64 con el NDK | Pendiente (pruebas 45-46) |
+| CI | AudioGuardTest fallaba en la CI (Robolectric SDK 36 exige Java 21): fijado SDK 35 | Pendiente de ver la CI en verde |
+
+Totales en este entorno: motor 94/94 (Release), Android JVM/Robolectric 46/46, lint 0 errores.
+TSan (commit del hotfix): 83/83 sin avisos.
+APK `caucesound-0.4.1-soloai-preview.apk`: versionCode 6, certificado `56b4de46…61ab2e` (el mismo de siempre).
 
 ## Errores reales encontrados y corregidos
 

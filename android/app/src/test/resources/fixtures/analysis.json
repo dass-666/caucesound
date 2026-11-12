@@ -1,0 +1,160 @@
+{
+ "error": "",
+ "jobId": "job_1",
+ "ok": true,
+ "progress": 1.0,
+ "result": {
+  "bars": 16,
+  "beats": 65,
+  "bpm": 92.00321286155392,
+  "bpmCandidates": [
+   {
+    "bpm": 92.00321286155392,
+    "score": 1.9289392501011657
+   },
+   {
+    "bpm": 184.5,
+    "score": 0.8110966113556343
+   },
+   {
+    "bpm": 61.25,
+    "score": 0.7008896013722524
+   },
+   {
+    "bpm": 138.25,
+    "score": 0.3809969816719324
+   },
+   {
+    "bpm": 123.0,
+    "score": 0.31648993906191
+   },
+   {
+    "bpm": 69.0,
+    "score": 0.30930746463312125
+   }
+  ],
+  "bpmConfidence": 0.9015552390117072,
+  "chordConfidence": 0.8630119208489987,
+  "chords": [
+   {
+    "confidence": 0.8324895596098267,
+    "quality": 1,
+    "root": 9
+   },
+   {
+    "confidence": 0.8895860224895402,
+    "quality": 0,
+    "root": 5
+   },
+   {
+    "confidence": 0.8923427226468221,
+    "quality": 0,
+    "root": 0
+   },
+   {
+    "confidence": 0.8288203325572346,
+    "quality": 0,
+    "root": 7
+   },
+   {
+    "confidence": 0.833771542239419,
+    "quality": 1,
+    "root": 9
+   },
+   {
+    "confidence": 0.889587544554341,
+    "quality": 0,
+    "root": 5
+   },
+   {
+    "confidence": 0.8792683889936197,
+    "quality": 0,
+    "root": 0
+   },
+   {
+    "confidence": 0.8154681857029276,
+    "quality": 0,
+    "root": 7
+   },
+   {
+    "confidence": 0.8437022028319836,
+    "quality": 1,
+    "root": 9
+   },
+   {
+    "confidence": 0.8900423484100998,
+    "quality": 0,
+    "root": 5
+   },
+   {
+    "confidence": 0.898498044792127,
+    "quality": 0,
+    "root": 0
+   },
+   {
+    "confidence": 0.8294618822476495,
+    "quality": 0,
+    "root": 7
+   },
+   {
+    "confidence": 0.8447019342411516,
+    "quality": 1,
+    "root": 9
+   },
+   {
+    "confidence": 0.9005786859836576,
+    "quality": 0,
+    "root": 5
+   },
+   {
+    "confidence": 0.9041541699566935,
+    "quality": 0,
+    "root": 0
+   },
+   {
+    "confidence": 0.8357171663268866,
+    "quality": 0,
+    "root": 7
+   }
+  ],
+  "clipId": "clp_a64fa21d92cf",
+  "durationSec": 42.239125,
+  "firstBeatSec": 0.0,
+  "keyCandidates": [
+   {
+    "minor": true,
+    "root": 9,
+    "score": 0.7432270044280646
+   },
+   {
+    "minor": false,
+    "root": 0,
+    "score": 0.8233788757343325
+   },
+   {
+    "minor": false,
+    "root": 5,
+    "score": 0.6536591096517929
+   },
+   {
+    "minor": false,
+    "root": 7,
+    "score": 0.5171534883966952
+   }
+  ],
+  "keyConfidence": 0.7598969002878111,
+  "keyRoot": 9,
+  "minor": true,
+  "percussiveOnly": false,
+  "seconds": 0.23532036,
+  "silent": false,
+  "summary": "92.0 BPM (confianza alta), Am (confianza alta), 16 compases, acordes: Am | F | C | G | Am | F | C | G | Am | F | C | G | Am | F | C | G",
+  "tonal": true,
+  "warnings": [
+   "Tonalidad decidida por el acorde de tónica de la progresión (Am frente a C)"
+  ]
+ },
+ "state": "done",
+ "targetId": "clp_a64fa21d92cf",
+ "type": "soloAnalyze"
+}

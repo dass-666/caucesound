@@ -138,7 +138,7 @@ double inharmonicDb (const std::vector<float>& v, size_t a, double f0)
 TEST (synth_presets_are_in_tune_balanced_and_end_cleanly)
 {
     const auto& presets = synthPresets();
-    CHECK (presets.size() == 7);
+    CHECK (presets.size() == 17);
     // Grupos: los bajos se miden aparte (a igual RMS, los graves suenan más suaves; ir más fuertes es intencionado).
     double louder[2] = { -1e9, -1e9 }, quieter[2] = { 1e9, 1e9 };
     std::printf ("    measure: preset        | afinación (cents) | RMS máx 50 ms | pico   | DC       | cola final | salto al soltar\n");
@@ -174,7 +174,7 @@ TEST (synth_presets_are_in_tune_balanced_and_end_cleanly)
         CHECK_MSG (std::fabs (dc) < 0.01 * std::max (level, 0.01), p.id + " DC");
         CHECK_MSG (db (tailEnd) < -90.0, p.id + " la cola no termina");
         CHECK_MSG (typical == 0 || jump <= 1.5f * typical, p.id + " clic al soltar");
-        const int g = p.id.find ("bass") != std::string::npos ? 1 : 0;
+        const int g = p.category == "bass" ? 1 : 0; // por categoría (cauce_808 y cauce_sub son bajos sin «bass» en el id)
         louder[g] = std::max (louder[g], db (level));
         quieter[g] = std::min (quieter[g], db (level));
     }
@@ -223,7 +223,7 @@ TEST (synth_oscillators_have_low_aliasing_at_high_notes)
 TEST (drum_kits_are_balanced_short_and_clean)
 {
     const auto& kits = drumKits();
-    CHECK (kits.size() == 4);
+    CHECK (kits.size() == 8);
     for (int k = 0; k < (int) kits.size(); ++k)
     {
         auto inst = makeInstrument ("cs.drums", "{\"kit\":" + std::to_string (k) + "}");
@@ -318,4 +318,43 @@ TEST (synth_pitch_envelope_and_velocity_filter_work_and_old_states_are_unchanged
     MEASURE ("brillo relativo (dB): con fuerza→filtro, fuerte %.1f / suave %.1f; sin él, fuerte %.1f / suave %.1f", loudOn, softOn, loudOff, softOff);
     CHECK (loudOn - softOn > 3.0);
     CHECK (std::fabs (loudOff - softOff) < 0.5);
+}
+
+// Misión 0.5 (Sonido 2.0). Se probó añadir un control «harmonics» al sintetizador (primero un segundo armónico, luego
+// rectificación antes de la saturación) para que el 808 se oiga mejor en altavoces pequeños. La medición lo descartó:
+// el 808 ya tiene su tercer armónico (165 Hz para un La de 55 Hz) a unos -10 dB gracias a «drive», y el añadido no
+// subía la energía por encima de 150 Hz (-12,5 dB sin él, -13,6 dB con él). No se incorporó. Esta prueba fija la
+// propiedad que sí existe, para que un cambio futuro del preset no la pierda sin darse cuenta.
+TEST (cauce_808_keeps_harmonics_above_its_fundamental_for_small_speakers)
+{
+    auto tone = [] (const std::vector<float>& x, size_t from, size_t n, double hz)
+    {
+        double re = 0, im = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const double w = 0.5 - 0.5 * std::cos (2 * 3.14159265358979 * (double) i / (double) n);
+            const double ph = 2 * 3.14159265358979 * hz * (double) i / kSr;
+            re += x[from + i] * w * std::cos (ph); im += x[from + i] * w * std::sin (ph);
+        }
+        return 10.0 * std::log10 ((re * re + im * im) / ((double) n * n) + 1e-20);
+    };
+    auto s = makeInstrument ("cs.synth", synthPresetState ("cauce_808"));
+    CHECK (s != nullptr);
+    const auto x = play (*s, 45, 110, 1.2, 0.3); // La1: con la octava -1 del preset suena a 55 Hz
+    const size_t from = (size_t) (0.3 * kSr), n = 32768;
+    const double f0 = 55.0, h3 = tone (x, from, n, 3 * f0) - tone (x, from, n, f0);
+    double hi = 0, all = 0, z1 = 0, z2 = 0, w1 = 0, w2 = 0;
+    const double k = std::tan (3.14159265358979 * 150.0 / kSr), q = 0.7071, norm = 1 / (1 + k / q + k * k);
+    const double b0 = norm, b1 = -2 * norm, b2 = norm, a1 = 2 * (k * k - 1) * norm, a2 = (1 - k / q + k * k) * norm;
+    for (size_t i = 0; i < from + n; ++i)
+    {
+        double y = b0 * x[i] + z1; z1 = b1 * x[i] - a1 * y + z2; z2 = b2 * x[i] - a2 * y;
+        double y2 = b0 * y + w1; w1 = b1 * y - a1 * y2 + w2; w2 = b2 * y - a2 * y2;
+        if (i >= from) { hi += y2 * y2; all += (double) x[i] * x[i]; }
+    }
+    const double above = 10.0 * std::log10 (hi / all + 1e-20);
+    MEASURE ("808 a 55 Hz: tercer armónico (165 Hz) a %.1f dB del fundamental; energía por encima de 150 Hz: %.1f dB del total", h3, above);
+    CHECK (h3 > -14.0);
+    CHECK (above > -15.0);
+    CHECK (std::fabs (1200 * std::log2 (pitchHz (x, from, 16384, 40, 80) / f0)) < 3.0); // afinado
 }

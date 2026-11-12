@@ -64,6 +64,11 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val _monitoring = MutableStateFlow(false)
     val monitoring: StateFlow<Boolean> = _monitoring.asStateFlow()
 
+    // Plugins (misión 0.5): presets de VocalShift, trabajo offline en curso, último análisis y familia de Solo AI.
+    private val _plugins = MutableStateFlow(com.caucesound.app.data.PluginUi())
+    val plugins: StateFlow<com.caucesound.app.data.PluginUi> = _plugins.asStateFlow()
+    private var jobPoll: Job? = null
+
     private var autosave: Job? = null
     private var audioOk = false
 
@@ -82,7 +87,13 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         _route.value = currentRoute()
         startAudio()
         refreshProjects()
-        viewModelScope.launch { _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) } }
+        viewModelScope.launch {
+            _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) }
+            if (_catalog.value.hasPlugin("vocalshift")) {
+                val presets = withContext(control) { runCatching { com.caucesound.app.data.PluginParser.vocalPresets(NativeEngine.command(Cmd.vocalPresets())) }.getOrDefault(emptyList()) }
+                _plugins.value = _plugins.value.copy(vocalPresets = presets)
+            }
+        }
     }
 
     private fun currentRoute(): AudioGuard.Route = runCatching { guard.outputRoute() }.getOrDefault(AudioGuard.Route.SPEAKER)
@@ -156,6 +167,26 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         }
     }
 
+    /**
+     * «Idea rápida»: un proyecto vacío con una sola pista de audio ya armada, para capturar una voz o un tarareo sin
+     * pasos previos. Es un proyecto normal: después se le pueden añadir batería, Solo AI o VocalShift. [then] se llama
+     * con el proyecto abierto (la Activity pide ahí el permiso del micrófono y empieza a grabar); si el permiso se
+     * niega, el proyecto queda listo y se graba con el botón de siempre.
+     */
+    fun createQuickIdea(name: String, trackName: String, then: () -> Unit) {
+        viewModelScope.launch {
+            val folder = File(projectsRoot, "p_" + System.currentTimeMillis())
+            val r = call(Cmd.createProject(folder.absolutePath, name.trim().ifEmpty { "Idea" }, "empty"))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            val track = call(Cmd.addTrack(trackName))
+            track.id?.let { call(Cmd.setArmed(it, true)) }
+            call(Cmd.save())
+            onProjectOpened()
+            track.id?.let { _selectedTrack.value = it }
+            if (track.ok && track.id != null) then()
+        }
+    }
+
     fun renameProject(folder: String, name: String) {
         viewModelScope.launch {
             val r = call(Cmd.renameProject(projectsRoot.absolutePath, folder, name.trim().ifEmpty { "Proyecto" }))
@@ -226,6 +257,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     }
 
     private suspend fun onProjectOpened() {
+        clearPluginUi()
         _waveforms.value = emptyMap()
         _selectedClip.value = null
         _panel.value = Panel.ARRANGE
@@ -242,8 +274,10 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
 
     override fun closeProject() {
         autosave?.cancel()
+        clearPluginUi() // el motor cancela los trabajos del proyecto al cerrarlo; aquí se deja de consultarlos
         viewModelScope.launch {
-            call(Cmd.closeProject()) // guarda si hay cambios y detiene grabación/transporte
+            call(Cmd.closeProject()) // guarda si hay cambios, detiene grabación/transporte y vuelve la posición a 0
+            guard.abandonFocus()
             _state.value = null
             refreshProjects()
         }
@@ -266,8 +300,16 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
 
     // --- Transporte ---------------------------------------------------------------------------------------------
     override fun play() {
-        guard.requestFocus()
-        edit(Cmd.play())
+        if (!guard.requestFocus()) { toast(str(R.string.msg_focus_denied)); return }
+        viewModelScope.launch {
+            // Comprueba que el stream de salida sigue vivo (p. ej. tras un error de Oboe) antes de arrancar.
+            val audio = withContext(control) { NativeEngine.audioEnsure() }
+            audioOk = audio
+            if (!audio) { toast(str(R.string.msg_audio_failed)); refreshAudioStatus(); return@launch }
+            val r = call(Cmd.play())
+            if (!r.ok && r.error != null) toast(r.error)
+            refresh()
+        }
     }
 
     override fun stop() {
@@ -320,6 +362,134 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun setPatternLength(trackId: String, patternId: String, steps: Int) = edit(Cmd.setPatternLength(trackId, patternId, steps))
     override fun setSwing(trackId: String, patternId: String, swing: Float) = edit(Cmd.setSwing(trackId, patternId, swing))
     override fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) = edit(Cmd.setPatternLanes(trackId, patternId, lanes))
+    override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) = edit(Cmd.setRoll(trackId, patternId, lane, step, roll))
+    override fun varyPart(part: String, seed: Long, energy: Float?) = edit(Cmd.varyPart(part, seed, energy))
+    override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
+
+    // --- Plugins: VocalShift y Solo AI ---------------------------------------------------------------------------
+    private fun clearPluginUi() {
+        jobPoll?.cancel()
+        _plugins.value = com.caucesound.app.data.PluginUi(vocalPresets = _plugins.value.vocalPresets)
+    }
+
+    /** Sigue un trabajo offline hasta su estado final. El progreso es el real que publica el motor. */
+    private fun followJob(jobId: String, onDone: suspend (JSONObject) -> Unit) {
+        jobPoll?.cancel()
+        jobPoll = viewModelScope.launch {
+            while (isActive) {
+                val r = call(Cmd.jobStatus(jobId))
+                if (!r.ok) { _plugins.value = _plugins.value.copy(job = null); return@launch }
+                val job = com.caucesound.app.data.PluginParser.job(r.raw)
+                _plugins.value = _plugins.value.copy(job = job)
+                when (job.state) {
+                    "done" -> { onDone(r.raw.optJSONObject("result") ?: JSONObject()); return@launch }
+                    "failed" -> { toast(job.error ?: tr("El proceso falló", "The process failed")); refresh(); return@launch }
+                    "cancelled" -> { toast(tr("Proceso cancelado: el clip queda como estaba", "Process cancelled: the clip is unchanged")); refresh(); return@launch }
+                }
+                delay(120)
+            }
+        }
+    }
+
+    override fun vocalProcess(clipId: String, params: com.caucesound.app.data.VocalParams) {
+        viewModelScope.launch {
+            val r = call(Cmd.vocalProcess(clipId, params))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "vocalshift", clipId, "queued", 0f), vocalResult = null)
+            followJob(r.raw.optString("jobId")) { res ->
+                _plugins.value = _plugins.value.copy(vocalResult = com.caucesound.app.data.PluginParser.vocalResult(res))
+                // La comparación empieza a volumen igualado (solo de escucha; se apaga al salir de la pantalla).
+                call(Cmd.clipVersion(clipId, false, true))
+                refresh()
+                toast(tr("Voz procesada. Compara original y procesada.", "Voice processed. Compare original and processed."))
+            }
+        }
+    }
+
+    override fun vocalPreview(clipId: String, params: com.caucesound.app.data.VocalParams, from: Long, length: Long) {
+        viewModelScope.launch {
+            val r = call(Cmd.vocalPreview(clipId, params, from, length))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            suspend fun listen() {
+                val on = call(Cmd.previewListen(clipId, true))
+                if (!on.ok) { toast(on.error ?: ""); refresh(); return }
+                refresh()
+                val c = _state.value?.clip(clipId)?.second ?: return
+                call(Cmd.stop()); call(Cmd.seek(c.start + from)); play()
+            }
+            if (r.raw.optBoolean("cached")) { listen(); return@launch } // nada cambió: no se repite el cálculo
+            _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "vocalPreview", clipId, "queued", 0f))
+            followJob(r.raw.optString("jobId")) { listen() }
+        }
+    }
+    override fun previewListen(clipId: String, on: Boolean) = edit(Cmd.previewListen(clipId, on))
+
+    override fun cancelJob() { _plugins.value.job?.takeIf { it.active }?.let { j -> viewModelScope.launch { call(Cmd.jobCancel(j.id)) } } }
+    override fun setClipVersion(clipId: String, original: Boolean, match: Boolean?) = edit(Cmd.clipVersion(clipId, original, match))
+    override fun discardProcess(clipId: String) = edit(Cmd.discardProcess(clipId)) { _plugins.value = _plugins.value.copy(vocalResult = null) }
+    override fun auditionClip(clipId: String) {
+        val c = _state.value?.clip(clipId)?.second ?: return
+        viewModelScope.launch { call(Cmd.stop()); call(Cmd.seek(c.start)); play() }
+    }
+
+    override fun soloAnalyze(clipId: String) {
+        viewModelScope.launch {
+            val r = call(Cmd.soloAnalyze(clipId))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            _plugins.value = _plugins.value.copy(job = com.caucesound.app.data.JobUi(r.raw.optString("jobId"), "soloAnalyze", clipId, "queued", 0f), analysis = null)
+            followJob(r.raw.optString("jobId")) { res -> _plugins.value = _plugins.value.copy(analysis = com.caucesound.app.data.BeatAnalysis.parse(res)) }
+        }
+    }
+
+    override fun confirmAnalysis(keyRoot: Int, minor: Boolean, bpm: Double?, useChords: Boolean) {
+        viewModelScope.launch {
+            val a = _plugins.value.analysis
+            val s = _state.value ?: return@launch
+            // El tempo solo cambia si el usuario lo pidió expresamente (bpm != null).
+            if (bpm != null && bpm != s.bpm) { val t = call(Cmd.setTempo(bpm, s.beatsPerBar)); if (!t.ok) { toast(t.error ?: ""); refresh(); return@launch } }
+            val chords = if (useChords && a != null && bpm != null) a.chords else emptyList()
+            val r = call(Cmd.setHarmony(keyRoot, minor, chords, bpm ?: 0.0, if (a != null) "analysis" else "manual"))
+            if (!r.ok) toast(r.error ?: "") else toast(tr("Tonalidad guardada: ", "Key saved: ") + com.caucesound.app.data.KeyNames.name(keyRoot) + if (minor) tr(" menor", " minor") else tr(" mayor", " major"))
+            refresh()
+        }
+    }
+
+    override fun dismissAnalysis() { _plugins.value = _plugins.value.copy(analysis = null) }
+
+    override fun soloProposals(request: com.caucesound.app.data.SoloRequest) {
+        viewModelScope.launch {
+            val r = call(Cmd.soloProposals(request))
+            if (!r.ok) { toast(if (r.error == "key_required") tr("Elige primero la tonalidad de la canción", "Pick the song key first") else (r.error ?: "")); return@launch }
+            val fam = com.caucesound.app.data.SoloFamily.parse(request, r.raw)
+            // La alternativa A entra en una pista nueva para poder escucharla; las demás la sustituyen al elegirlas.
+            val a = call(Cmd.soloPick(request, 0, 0, null))
+            if (!a.ok) { toast(a.error ?: ""); return@launch }
+            _plugins.value = _plugins.value.copy(family = fam.copy(selected = 0, trackId = a.id))
+            refresh()
+            a.id?.let { _selectedTrack.value = it }
+        }
+    }
+
+    private fun soloApply(index: Int, variation: Long) {
+        viewModelScope.launch {
+            val fam = _plugins.value.family ?: return@launch
+            // Si la pista se borró o se deshizo, se crea de nuevo en vez de fallar.
+            val target = fam.trackId?.takeIf { id -> _state.value?.tracks?.any { it.id == id } == true }
+            val r = call(Cmd.soloPick(fam.request, index, variation, target))
+            if (!r.ok) { toast(r.error ?: ""); refresh(); return@launch }
+            _plugins.value = _plugins.value.copy(family = fam.copy(selected = index, trackId = r.id ?: target, variation = variation))
+            refresh()
+        }
+    }
+    private fun soloTrack(): String? = _plugins.value.family?.trackId?.takeIf { id -> _state.value?.tracks?.any { it.id == id } == true }
+    override fun soloTransform(op: String) { soloTrack()?.let { id -> edit(Cmd.soloTransform(id, op)) } }
+    override fun soloNewEnding() {
+        val fam = _plugins.value.family?.takeIf { it.selected >= 0 } ?: return
+        val id = soloTrack() ?: return
+        edit(Cmd.soloEnding(fam.request, fam.selected, fam.variation, id, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)))
+    }
+    override fun soloPick(index: Int) = soloApply(index, 0)
+    override fun soloVary() { _plugins.value.family?.takeIf { it.selected >= 0 }?.let { soloApply(it.selected, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)) } }
 
     /** Parámetros de instrumento: se aplican al instante; el estado (y la interfaz) se refresca al terminar. */
     override fun setParam(trackId: String, param: String, value: Float) {
@@ -429,6 +599,85 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             } finally {
                 tmp.delete()
                 _busy.value = null
+            }
+        }
+    }
+
+    /**
+     * Paquete para DAW. El motor lo crea en segundo plano en la caché de la app (no bloquea la interfaz ni el audio) y,
+     * cuando termina, se copia al documento que eligió el usuario. Si se cancela o falla, se borra ese documento para
+     * no dejar un ZIP vacío. El proyecto no se modifica.
+     */
+    private var exportPoll: Job? = null
+    fun exportDaw(uri: Uri, wet: Boolean) {
+        if (_plugins.value.export?.active == true) return
+        exportPoll = viewModelScope.launch {
+            val app = getApplication<Application>()
+            fun setExport(e: com.caucesound.app.data.DawExportUi?) { _plugins.value = _plugins.value.copy(export = e) }
+            fun dropTarget() { runCatching { android.provider.DocumentsContract.deleteDocument(app.contentResolver, uri) } }
+            val dir = File(app.cacheDir, "daw-export")
+            withContext(Dispatchers.IO) { dir.deleteRecursively(); dir.mkdirs() }
+            val tmp = File(dir, "package.zip")
+            try {
+                // Espacio: los WAV temporales, el ZIP y la copia final conviven un momento (24 bits estéreo por pista).
+                val s = _state.value
+                if (s != null) {
+                    val need = (s.contentEnd + 10L * com.caucesound.app.data.SAMPLE_RATE) * 6L * (s.tracks.size + 1) * 3L
+                    val free = withContext(Dispatchers.IO) { app.cacheDir.usableSpace }
+                    if (free < need) {
+                        dropTarget()
+                        setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = tr(
+                            "No hay espacio suficiente: hacen falta unos ${need / 1048576} MB libres y hay ${free / 1048576} MB.",
+                            "Not enough space: about ${need / 1048576} MB are needed and ${free / 1048576} MB are free.")))
+                        return@launch
+                    }
+                }
+                val r = call(Cmd.exportDaw(tmp.absolutePath, wet))
+                if (!r.ok) { dropTarget(); setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = r.error)); return@launch }
+                val jobId = r.raw.optString("jobId")
+                setExport(com.caucesound.app.data.DawExportUi("running", jobId, 0f, wet))
+                var result: JSONObject? = null
+                while (isActive && result == null) {
+                    val st = call(Cmd.jobStatus(jobId))
+                    val job = if (st.ok) com.caucesound.app.data.PluginParser.job(st.raw) else null
+                    when (job?.state) {
+                        "done" -> result = st.raw.optJSONObject("result") ?: JSONObject()
+                        "cancelled" -> { dropTarget(); setExport(com.caucesound.app.data.DawExportUi("cancelled", wet = wet)); return@launch }
+                        null, "failed" -> { dropTarget(); setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = job?.error)); return@launch }
+                        else -> { setExport(com.caucesound.app.data.DawExportUi("running", jobId, job.progress, wet)); delay(150) }
+                    }
+                }
+                val res = result ?: return@launch
+                setExport(com.caucesound.app.data.DawExportUi("saving", jobId, 1f, wet))
+                withContext(Dispatchers.IO) { app.contentResolver.openOutputStream(uri, "w")!!.use { out -> tmp.inputStream().use { it.copyTo(out, 1 shl 16) } } }
+                setExport(com.caucesound.app.data.DawExportUi("done", jobId, 1f, wet, res.optInt("stems"), res.optInt("midiNotes"), res.optInt("files"),
+                    res.optLong("bytes"), res.optLong("clippedSamples")))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                dropTarget()
+                setExport(com.caucesound.app.data.DawExportUi("failed", wet = wet, error = e.message ?: e.javaClass.simpleName))
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { dir.deleteRecursively() }
+            }
+        }
+    }
+    fun cancelExport() { _plugins.value.export?.takeIf { it.phase == "running" }?.let { e -> viewModelScope.launch { call(Cmd.jobCancel(e.jobId)) } } }
+    fun dismissExport() { if (_plugins.value.export?.active != true) _plugins.value = _plugins.value.copy(export = null) }
+
+    fun exportMidi(uri: Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val tmp = File(app.cacheDir, "export_${System.nanoTime()}.mid")
+            try {
+                val r = call(Cmd.exportMidi(tmp.absolutePath))
+                if (!r.ok) { runCatching { android.provider.DocumentsContract.deleteDocument(app.contentResolver, uri) }; toast(r.error ?: ""); return@launch }
+                withContext(Dispatchers.IO) { app.contentResolver.openOutputStream(uri, "w")!!.use { out -> tmp.inputStream().use { it.copyTo(out) } } }
+                toast(tr("MIDI exportado (${r.raw.optInt("notes")} notas)", "MIDI exported (${r.raw.optInt("notes")} notes)"))
+            } catch (e: Exception) {
+                toast(str(R.string.msg_export_failed, e.message ?: ""))
+            } finally {
+                tmp.delete()
             }
         }
     }

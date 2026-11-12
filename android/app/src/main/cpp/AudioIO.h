@@ -23,6 +23,9 @@ public:
 
     bool start();               // abre y arranca la salida (y la entrada si está habilitada)
     void stop();
+    // Antes de Play: si el stream no está realmente en marcha (cerrado por un error, o 'running' sin stream
+    // iniciado), lo cierra y lo reabre. Si ya funciona no hace nada (no corta el audio).
+    bool ensureRunning();
     bool setInputEnabled (bool on); // requiere el permiso RECORD_AUDIO concedido
     bool isRunning() const { return running.load(); }
     std::string statusJson();   // latencias, frecuencia, API, burst, xruns, reaperturas
@@ -31,6 +34,7 @@ public:
     void onErrorAfterClose (oboe::AudioStream* stream, oboe::Result error) override;
 
 private:
+    bool startLocked();
     bool openOutputLocked();
     bool openInputLocked();
     void closeLocked();
@@ -41,7 +45,8 @@ private:
     std::atomic<oboe::AudioStream*> inRaw { nullptr };
     std::vector<float> inBuf;
     std::atomic<bool> running { false }, wantInput { false };
-    std::atomic<int> reopenCount { 0 }, inputShortReads { 0 };
+    std::atomic<int> reopenCount { 0 }, inputShortReads { 0 }, ensureRestarts { 0 };
+    std::atomic<int> lastError { 0 }; // último oboe::Result recibido en onErrorAfterClose (0 = ninguno)
     std::atomic<long> callbacks { 0 };
     bool primingInput = false;
 };

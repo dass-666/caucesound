@@ -66,6 +66,42 @@ interface StudioActions {
     fun setPatternLength(trackId: String, patternId: String, steps: Int) {}
     fun setSwing(trackId: String, patternId: String, swing: Float) {}
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) {}
+    /** Redoble de un paso: 1 golpe (normal) a 4 golpes dentro del paso. */
+    fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) {}
+
+    // Variaciones del compositor local (misión 0.4). Cada una es un solo paso de deshacer.
+    /** Nueva versión de una parte (o de todas con "all"); seed 0 = recomponer con la semilla guardada. */
+    fun varyPart(part: String, seed: Long, energy: Float? = null) {}
+    fun setPartLocked(trackId: String, locked: Boolean) {}
+
+    // --- Plugins integrados (misión 0.5). Procesos offline: nunca en el hilo de audio. ---
+    /** VocalShift: procesa el clip con estos parámetros. El resultado entra como versión procesada (no destructivo). */
+    fun vocalProcess(clipId: String, params: com.caucesound.app.data.VocalParams) {}
+    fun cancelJob() {}
+    /** Comparación A/B: elige qué versión del clip suena, sin mover nada ni reiniciar la reproducción. */
+    /** match: null no cambia; true/false activa o desactiva la comparación a volumen igualado. */
+    fun setClipVersion(clipId: String, original: Boolean, match: Boolean? = null) {}
+    /** Procesa en segundo plano una región corta (frames relativos al clip) y la reproduce en su sitio. No cambia el proyecto. */
+    fun vocalPreview(clipId: String, params: com.caucesound.app.data.VocalParams, from: Long, length: Long) {}
+    fun previewListen(clipId: String, on: Boolean) {}
+    fun discardProcess(clipId: String) {}
+    /** Reproduce desde el inicio del clip (para escuchar el resultado). */
+    fun auditionClip(clipId: String) {}
+    /** Solo AI: analiza un clip de audio (BPM, tonalidad, acordes con confianza). No cambia el proyecto. */
+    fun soloAnalyze(clipId: String) {}
+    /** Aplica lo que el usuario confirmó del análisis. bpm null = no tocar el tempo del proyecto. */
+    fun confirmAnalysis(keyRoot: Int, minor: Boolean, bpm: Double?, useChords: Boolean) {}
+    fun dismissAnalysis() {}
+    /** Solo AI: pide las cuatro alternativas A-D y pone a sonar la primera en una pista nueva. */
+    fun soloProposals(request: com.caucesound.app.data.SoloRequest) {}
+    /** Cambia la alternativa que suena (sustituye las notas de la pista de Solo AI; un paso de deshacer). */
+    fun soloPick(index: Int) {}
+    /** Variación relacionada de la alternativa elegida. */
+    fun soloVary() {}
+    /** Cambia las notas de la melodía de Solo AI: simpler, intense, soft, octaveUp, octaveDown. Con deshacer. */
+    fun soloTransform(op: String) {}
+    /** Recompone solo la frase final (los dos últimos compases) y conserva el resto. */
+    fun soloNewEnding() {}
 
     // Instrumentos
     fun setParam(trackId: String, param: String, value: Float) {}
@@ -84,4 +120,4 @@ interface StudioActions {
     fun openPanel(panel: Panel) {}
 }
 
-enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER, FX }
+enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO }

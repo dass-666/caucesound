@@ -1,4 +1,5 @@
 // Session: instrumentos, patrones de batería, clips MIDI, bucle y plantillas de género (fase 1.2).
+#include "cs/Composer.h"
 #include "cs/Instruments.h"
 #include "cs/Session.h"
 
@@ -69,6 +70,10 @@ OpResult Session::addInsert (const std::string& trackId, const std::string& type
     if (std::find (types.begin(), types.end(), type) == types.end()) return OpResult::fail ("efecto desconocido: " + type);
     ProcessorPtr fx = createProcessor (type);
     if (! fx) return OpResult::fail ("efecto no disponible");
+    // PDC: el motor compensa la latencia de las inserciones en pistas, no en buses. Hasta que eso exista con pruebas,
+    // un efecto con latencia no se admite en un bus (sonaría desalineado con el resto de la mezcla).
+    fx->prepare (proj.sampleRate, 4096);
+    if (t->kind == "bus" && fx->latencySamples() > 0) return OpResult::fail ("este efecto tiene latencia y todavía no se puede usar en un bus: ponlo en la pista");
     pushUndo();
     t = proj.findTrack (trackId);
     InsertModel ins;
@@ -215,7 +220,24 @@ OpResult Session::setPatternStep (const std::string& trackId, const std::string&
     if (lane < 0 || lane >= kDrumLanes || step < 0 || step >= p->steps) return OpResult::fail ("paso fuera del patrón");
     if (velocity < 0 || velocity > 127) return OpResult::fail ("velocidad fuera de rango");
     pushUndo();
-    proj.findTrack (trackId)->findPattern (patternId)->lanes[(size_t) lane][(size_t) step] = velocity;
+    DrumPattern* w = proj.findTrack (trackId)->findPattern (patternId);
+    w->lanes[(size_t) lane][(size_t) step] = velocity;
+    // Apagar un paso borra su redoble: si no, al volver a encenderlo reaparecería un redoble invisible.
+    if (velocity == 0 && (size_t) lane < w->rolls.size() && (size_t) step < w->rolls[(size_t) lane].size()) w->rolls[(size_t) lane][(size_t) step] = 0;
+    return finishEditLocked();
+}
+
+OpResult Session::setPatternRoll (const std::string& trackId, const std::string& patternId, int lane, int step, int roll)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    CS_PATTERN (trackId, patternId)
+    const DrumPattern* p = t->findPattern (patternId);
+    if (lane < 0 || lane >= kDrumLanes || step < 0 || step >= p->steps) return OpResult::fail ("paso fuera del patrón");
+    if (roll < 1 || roll > 4) return OpResult::fail ("redoble fuera de rango (1-4)");
+    pushUndo();
+    DrumPattern* w = proj.findTrack (trackId)->findPattern (patternId);
+    if (w->rolls.empty()) w->rolls.assign ((size_t) kDrumLanes, std::vector<int> ((size_t) w->steps, 0));
+    w->rolls[(size_t) lane][(size_t) step] = roll == 1 ? 0 : roll;
     return finishEditLocked();
 }
 
@@ -229,6 +251,11 @@ OpResult Session::setPatternLength (const std::string& trackId, const std::strin
     for (auto& lane : p->lanes)
     {
         if (steps == 32 && p->steps == 16) { lane.resize (32); std::copy (lane.begin(), lane.begin() + 16, lane.begin() + 16); } // el 2.º compás empieza como copia del 1.º
+        else lane.resize ((size_t) steps, 0);
+    }
+    for (auto& lane : p->rolls)
+    {
+        if (steps == 32 && lane.size() == 16) { lane.resize (32); std::copy (lane.begin(), lane.begin() + 16, lane.begin() + 16); }
         else lane.resize ((size_t) steps, 0);
     }
     p->steps = steps;
@@ -254,7 +281,11 @@ OpResult Session::setPatternLanes (const std::string& trackId, const std::string
     const std::string e = validatePattern (test);
     if (! e.empty()) return OpResult::fail (e);
     pushUndo();
-    proj.findTrack (trackId)->findPattern (patternId)->lanes = lanes;
+    DrumPattern* w = proj.findTrack (trackId)->findPattern (patternId);
+    w->lanes = lanes;
+    for (size_t l = 0; l < w->rolls.size() && l < lanes.size(); ++l) // pasos apagados pierden su redoble
+        for (size_t st = 0; st < w->rolls[l].size() && st < lanes[l].size(); ++st)
+            if (lanes[l][st] == 0) w->rolls[l][st] = 0;
     return finishEditLocked();
 }
 
@@ -426,146 +457,317 @@ OpResult Session::setLoop (bool on, Tick start, Tick end)
     return {};
 }
 
-// --- Plantillas --------------------------------------------------------------------------------------------------
+// --- Plantillas (misión 0.4: «Cauce Signature Sound») -----------------------------------------------------------
+// Cada plantilla es un arreglo de 17 compases (Intro, A, B, Break, Final y un compás de Cierre) creado por el compositor local
+// (Composer.cpp) con un plan guardado en el proyecto, así que cada parte se puede regenerar después con otra
+// semilla o energía (varyPart). Los proyectos creados con plantillas anteriores no cambian.
 namespace
 {
-// Ritmos de partida (patrones rítmicos genéricos de cada género, escritos aquí; no son material de terceros).
-// Cada cadena tiene 16 caracteres: '.' apagado, 'x' 100, 'X' 127, 'o' 70 (fantasma).
-std::vector<int> steps (const char* s)
-{
-    std::vector<int> v (16, 0);
-    for (int i = 0; i < 16 && s[i]; ++i) v[(size_t) i] = s[i] == 'X' ? 127 : s[i] == 'x' ? 100 : s[i] == 'o' ? 70 : 0;
-    return v;
-}
-
-struct TemplateDef
+struct PartDef { const char* name; const char* preset; const char* role; float volDb, pan, send; };
+struct GenreDef
 {
     const char* id;
     double bpm;
     int kit;
-    float swing;
-    const char* lanes[kDrumLanes];
-    std::vector<std::pair<const char*, const char*>> synths; // nombre, preset
-    int prog[4][2];                                          // acordes por compás: {raíz MIDI, 1 = menor}
+    float drumsDb, drumsSend;
+    std::vector<PartDef> parts;
+    float reverbSize, reverbDamping;
+    // Panorama y volumen por carril del kit (charles a un lado, percusiones repartidas).
+    float lanePan[kDrumLanes], laneDb[kDrumLanes];
 };
 
-// Rellena un clip de 8 compases con material básico propio (progresión de 4 acordes repetida), según el papel
-// del preset: bajos = raíz; pad/keys = acordes; pluck/lead = arpegio. Son patrones genéricos, no citas de obras.
-void fillTemplateClip (MidiClipModel& c, const std::string& preset, const int (&prog)[4][2], int beatsPerBar)
+const std::vector<GenreDef>& genreDefs()
 {
-    const Tick beat = kPpq, bar = beat * beatsPerBar;
-    c.notes.clear();
-    auto norm = [] (int k, int lo) { k %= 12; while (k < lo) k += 12; return k; };
-    for (int b = 0; b < 8; ++b)
-    {
-        const int root = prog[b % 4][0];
-        const bool minor = prog[b % 4][1] != 0;
-        const Tick t0 = b * bar;
-        const int bass = norm (root, 36);
-        const int r4 = norm (root, 60);
-        const int chord[3] = { r4, r4 + (minor ? 3 : 4), r4 + 7 };
-        if (preset == "bass_808")
-            c.notes.push_back ({ bass, 110, 0, t0, bar - beat / 2 });
-        else if (preset == "sub_bass")
-        {
-            c.notes.push_back ({ bass, 105, 0, t0, beat * 2 - kStepTicks });
-            c.notes.push_back ({ bass, 95, 0, t0 + beat * 2 + beat / 2, beat - kStepTicks });
-        }
-        else if (preset == "synth_bass")
-            for (int i = 0; i < beatsPerBar * 2; ++i) c.notes.push_back ({ bass, i % 2 == 0 ? 108 : 84, 0, t0 + i * beat / 2, beat / 2 - kStepTicks / 2 });
-        else if (preset == "pad")
-            for (int k : chord) c.notes.push_back ({ k, 80, 0, t0, bar - kStepTicks });
-        else if (preset == "soft_keys")
-            for (int h = 0; h < 2; ++h)
-                for (int k : chord) c.notes.push_back ({ k, h == 0 ? 92 : 76, 0, t0 + h * bar / 2 + (h ? beat / 2 : 0), bar / 2 - beat / 2 - kStepTicks });
-        else // pluck, lead: arpegio en corcheas, una octava arriba en la segunda mitad del compás
-            for (int i = 0; i < beatsPerBar * 2; ++i)
-            {
-                const int k = chord[(size_t) (i % 3)] + (i >= beatsPerBar ? 12 : 0);
-                c.notes.push_back ({ k, 96 - (i % 2) * 14, 0, t0 + i * beat / 2, beat / 2 - kStepTicks / 4 });
-            }
-    }
-    sortNotes (c.notes);
+    static const std::vector<GenreDef> d = {
+        // Mezcla 3.0 (misión 0.6). Medido por pistas con la exportación para DAW: en la 0.5 la batería sonaba ~25 dB por
+        // encima de la melodía y entre el 88 y el 94 % de la energía quedaba por debajo de 250 Hz (el bombo lo tapaba
+        // todo y en un altavoz pequeño no se oía la música). Ahora: bombo 3 dB más bajo dentro del kit, caja y charles
+        // más presentes, y melodías y acordes entre 8 y 10 dB más altos. (Se probó añadir saturación al bajo: medido, no
+        // aportaba armónicos por encima de 150 Hz —el 808 ya los tiene— y solo subía su nivel, así que se retiró.) Solo afecta a canciones nuevas: los valores se guardan
+        // en cada proyecto, así que los proyectos existentes suenan igual que antes.
+        { "trap", 140, 5, -3.0f, 0.05f,
+          { { "808", "cauce_808", "bass", -5.0f, 0.0f, 0.0f }, { "Melodía", "dark_bell", "melody", -1.0f, 0.12f, 0.30f }, { "Pad", "air_pad", "pad", -8.0f, 0.0f, 0.32f } },
+          0.78f, 0.45f, { 0, 0, 0.05f, 0.22f, 0.28f, -0.3f, 0.3f, -0.12f }, { -5, 0, -1, -2, -4, -5, -4, -7 } },
+        { "reggaeton", 95, 4, -3.0f, 0.06f,
+          { { "Bajo", "dembow_bass", "bass", -5.0f, 0.0f, 0.0f }, { "Keys", "urban_pluck", "chords", -3.0f, -0.18f, 0.22f },
+            { "Melodía", "dark_bell", "melody", -2.0f, 0.15f, 0.28f }, { "Pad", "air_pad", "pad", -10.0f, 0.0f, 0.3f } },
+          0.62f, 0.5f, { 0, 0, 0.05f, 0.2f, 0.25f, -0.35f, 0.32f, 0.4f }, { -5, 0, -2, -3, -5, -2, -2, -6 } },
+        { "hiphop", 88, 6, -3.0f, 0.07f,
+          { { "Bajo", "cauce_sub", "bass", -9.5f, 0.0f, 0.0f }, { "Keys", "warm_keys", "chords", -1.0f, -0.12f, 0.25f },
+            { "Melodía", "urban_pluck", "melody", 3.0f, 0.2f, 0.28f } },
+          0.55f, 0.6f, { 0, 0, -0.1f, 0.18f, 0.22f, -0.25f, 0.35f, -0.15f }, { -7, 0, -3, 0, -3, -4, -4, -8 } },
+        { "pop", 108, 7, -4.0f, 0.06f,
+          { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Keys", "bright_pluck", "chords", -5.0f, -0.2f, 0.25f },
+            { "Melodía", "bright_lead", "melody", -5.0f, 0.15f, 0.25f }, { "Pad", "air_pad", "pad", -11.0f, 0.0f, 0.3f } },
+          0.6f, 0.4f, { 0, 0, 0.0f, 0.2f, 0.25f, -0.3f, 0.35f, -0.15f }, { -3, 0, -2, -3, -5, -4, -6, -7 } },
+        { "electronic", 124, 7, -4.0f, 0.05f,
+          { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Stabs", "bright_pluck", "chords", -6.0f, -0.2f, 0.25f },
+            { "Arp", "electro_arp", "melody", -6.0f, 0.2f, 0.28f }, { "Pad", "air_pad", "pad", -10.0f, 0.0f, 0.35f } },
+          0.72f, 0.45f, { 0, 0, 0.0f, 0.2f, 0.25f, -0.3f, 0.3f, -0.15f }, { -3, 0, -2, -4, -5, -4, -6, -7 } },
+    };
+    return d;
 }
 
-const std::vector<TemplateDef>& templates()
+const GenreDef* findGenre (const std::string& id)
 {
-    static const std::vector<TemplateDef> t = {
-        { "trap", 140, 0, 0.0f,
-          { "X......x..x.....", "........X.......", "........x.......", "x.x.x.x.x.xxx.x.", "................", "...............o", "................", "................" },
-          { { "808", "bass_808" }, { "Melodía", "pluck" } }, { { 57, 1 }, { 53, 0 }, { 48, 0 }, { 55, 0 } } },
-        { "reggaeton", 95, 1, 0.0f,
-          { "X...x...X...x...", "...x..x....x..x.", "................", "x.x.x.x.x.x.x.x.", "................", "......o.......o.", "..o.......o.....", "o.o.o.o.o.o.o.o." },
-          { { "Bajo", "synth_bass" }, { "Keys", "soft_keys" } }, { { 50, 1 }, { 46, 0 }, { 53, 0 }, { 48, 0 } } },
-        { "hiphop", 90, 2, 0.3f,
-          { "X......x.xX.....", "....X.......X...", "................", "x.x.x.x.x.x.x.x.", "................", "..............o.", "................", "................" },
-          { { "Bajo", "sub_bass" }, { "Keys", "soft_keys" } }, { { 50, 1 }, { 57, 1 }, { 46, 0 }, { 45, 0 } } },
-        { "pop", 105, 3, 0.0f,
-          { "X.......X.x.....", "....X.......X...", "....x.......x...", "x.x.x.x.x.x.x.x.", "................", "................", "................", "................" },
-          { { "Bajo", "synth_bass" }, { "Pad", "pad" }, { "Keys", "soft_keys" } }, { { 48, 0 }, { 55, 0 }, { 57, 1 }, { 53, 0 } } },
-        { "electronic", 124, 3, 0.0f,
-          { "X...X...X...X...", "................", "....x.......x...", "oooooooooooooooo", "..x...x...x...x.", "................", "................", "................" },
-          { { "Bajo", "synth_bass" }, { "Lead", "lead" }, { "Pad", "pad" } }, { { 53, 1 }, { 49, 0 }, { 56, 0 }, { 51, 0 } } },
-    };
-    return t;
+    for (const auto& g : genreDefs()) if (id == g.id) return &g;
+    return nullptr;
+}
+
+uint32_t fnv32 (const std::string& s)
+{
+    uint32_t h = 2166136261u;
+    for (char c : s) { h ^= (uint8_t) c; h *= 16777619u; }
+    return h;
+}
+
+ProcessorPtr configured (const std::string& type, std::initializer_list<std::pair<const char*, float>> values)
+{
+    ProcessorPtr fx = createProcessor (type);
+    if (! fx) return nullptr;
+    for (const auto& [k, v] : values) { const int i = parameterIndex (*fx, k); if (i >= 0) fx->setParameter (i, v); }
+    return fx;
 }
 } // namespace
 
 std::vector<TemplateInfo> projectTemplates()
 {
     std::vector<TemplateInfo> out;
-    for (const auto& t : templates())
+    for (const auto& g : genreDefs())
     {
         TemplateInfo i;
-        i.id = t.id;
-        i.bpm = t.bpm;
-        i.kitId = drumKits()[(size_t) t.kit].id;
+        i.id = g.id;
+        i.bpm = g.bpm;
+        i.kitId = drumKits()[(size_t) g.kit].id;
         i.tracks.push_back ("Drums");
-        for (const auto& s : t.synths) i.tracks.push_back (s.first);
+        for (const auto& p : g.parts) i.tracks.push_back (p.name);
         i.tracks.push_back ("Voz");
+        i.tracks.push_back ("Reverb");
         out.push_back (i);
     }
     return out;
 }
 
+// Rellena (o vuelve a rellenar) el contenido de una pista con papel en el plan. Mantiene ids, posiciones y
+// duraciones de los clips: si el usuario movió o alargó un clip, la parte nueva se adapta a su duración.
+void Session::composeTrackLocked (TrackModel& t, const MusicPlan& plan, const std::string& role)
+{
+    const Tick bar = (Tick) kPpq * proj.beatsPerBar;
+    auto sectionFor = [&] (const MidiClipModel& c)
+    {
+        SongSection sec;
+        const int startBar = (int) (c.start / bar);
+        sec.name = "A";
+        for (const auto& x : plan.sections)
+            if (c.name == x.name || (c.name == "Remate" && startBar >= x.startBar && startBar < x.startBar + x.bars)) { sec = x; break; }
+        sec.startBar = startBar;
+        sec.bars = std::max<int> (1, (int) ((c.length + bar - 1) / bar));
+        return sec;
+    };
+    const uint32_t seed = plan.seeds.count (role) ? plan.seeds.at (role) : 1u;
+    if (role == "drums")
+    {
+        auto pats = composer::drumPatterns (plan, seed);
+        for (const auto& [key, id] : plan.patternIds)
+        {
+            DrumPattern* p = t.findPattern (id);
+            auto it = pats.find (key);
+            if (! p || it == pats.end()) continue;
+            const std::string keepId = p->id, keepName = p->name;
+            const int steps = p->steps;
+            *p = it->second;
+            p->id = keepId;
+            p->name = keepName;
+            if (steps == 32) // el usuario lo alargó a 2 compases: el segundo repite el primero
+                for (auto* lanes : { &p->lanes, &p->rolls })
+                    for (auto& l : *lanes) { l.resize (32); std::copy (l.begin(), l.begin() + 16, l.begin() + 16); }
+            p->steps = steps;
+        }
+        return;
+    }
+    for (auto& c : t.midiClips)
+    {
+        if (! c.patternId.empty()) continue;
+        c.notes = composer::partNotes (plan, role, sectionFor (c), seed, proj.beatsPerBar);
+        c.notes.erase (std::remove_if (c.notes.begin(), c.notes.end(), [&] (const MidiNote& n) { return n.start >= c.length; }), c.notes.end());
+        for (auto& n : c.notes) n.length = std::min<Tick> (n.length, c.length - n.start);
+    }
+}
+
 void Session::applyTemplateLocked (const std::string& templateId)
 {
-    // Proyecto vacío (o plantilla desconocida): una pista de voz, como antes.
-    const TemplateDef* def = nullptr;
-    for (const auto& t : templates()) if (templateId == t.id) def = &t;
+    const GenreDef* def = findGenre (templateId);
     proj.templateId = def ? def->id : "empty";
     const Tick bar = (Tick) kPpq * proj.beatsPerBar;
-    proj.loopStart = 0;
-    proj.loopEnd = 4 * bar;
+    proj.loopStart = 2 * bar; // bucle preparado sobre la sección A (desactivado)
+    proj.loopEnd = 6 * bar;
     if (! def)
     {
+        proj.loopStart = 0;
+        proj.loopEnd = 4 * bar;
         undoStack.clear();
         return;
     }
     proj.bpm = def->bpm;
-    addTrack ("Drums", "drums");
-    TrackModel& d = proj.tracks.back();
-    nlohmann::json st = { { "kit", def->kit } };
-    d.instrument.state = st.dump();
-    DrumPattern& p = d.patterns.front();
-    for (int l = 0; l < kDrumLanes; ++l) p.lanes[(size_t) l] = steps (def->lanes[l]);
-    p.swing = def->swing;
-    d.midiClips.front().length = 8 * bar;
-    d.volumeDb = -4.0f;
-    for (const auto& [name, preset] : def->synths)
+    MusicPlan plan = composer::defaultPlan (def->id);
+
+    // Bus de reverb compartido (se crea antes para poder enviar a él).
+    addTrack ("Reverb", "bus");
+    const std::string busId = proj.tracks.back().id;
     {
-        addTrack (name, "synth");
+        TrackModel& b = proj.tracks.back();
+        ProcessorPtr rev = configured ("cs.reverb", { { "size", def->reverbSize }, { "damping", def->reverbDamping }, { "mix", 1.0f }, { "width", 1.0f } });
+        // Paso alto antes de la reverb: el bombo y el bajo no entran en ella (una reverb con graves emborrona la mezcla).
+        ProcessorPtr hp = configured ("cs.filter", { { "mode", 1.0f }, { "cutoffHz", 240.0f }, { "resonance", 0.0f } });
+        InsertModel cut; cut.id = newId ("fx"); cut.type = "cs.filter"; cut.state = hp->saveState();
+        b.inserts.push_back (cut);
+        InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.reverb"; ins.state = rev->saveState();
+        b.inserts.push_back (ins);
+        b.volumeDb = -4.0f;
+    }
+
+    // Batería: patrones por clave y un clip por tramo de cada sección.
+    addTrack ("Drums", "drums");
+    {
+        TrackModel& d = proj.tracks.back();
+        nlohmann::json st = { { "kit", def->kit } };
+        for (int l = 0; l < kDrumLanes; ++l)
+        {
+            st["pan" + std::to_string (l)] = def->lanePan[l];
+            st["vol" + std::to_string (l)] = def->laneDb[l];
+        }
+        d.instrument.state = st.dump();
+        d.patterns.clear();
+        d.midiClips.clear();
+        const auto pats = composer::drumPatterns (plan, plan.seeds["drums"]);
+        static const char* order[] = { "intro", "main", "var", "varCrash", "fill", "break", "end" };
+        for (const char* key : order)
+        {
+            auto it = pats.find (key);
+            if (it == pats.end()) continue;
+            DrumPattern p = it->second;
+            p.id = newId ("pat");
+            static const std::map<std::string, std::string> names = { { "intro", "Intro" }, { "main", "A" }, { "var", "B" }, { "varCrash", "B + crash" }, { "fill", "Remate" }, { "break", "Break" }, { "end", "Cierre" } };
+            p.name = names.at (key);
+            plan.patternIds[key] = p.id;
+            d.patterns.push_back (p);
+        }
+        for (const auto& sec : plan.sections)
+        {
+            Tick at = (Tick) sec.startBar * bar;
+            for (const auto& slot : composer::drumLayout (plan, sec))
+            {
+                MidiClipModel c;
+                c.id = newId ("mcl");
+                c.name = slot.clipName;
+                c.patternId = plan.patternIds[slot.patternKey];
+                c.start = at;
+                c.length = slot.bars * bar;
+                d.midiClips.push_back (c);
+                at += c.length;
+            }
+        }
+        d.volumeDb = def->drumsDb;
+        d.sends[busId] = def->drumsSend;
+        // Compresión suave de «pegamento» en la batería (más pegada sin aplastar los transitorios).
+        ProcessorPtr comp = configured ("cs.compressor", { { "thresholdDb", -14 }, { "ratio", 2.5f }, { "attackMs", 18 }, { "releaseMs", 120 }, { "makeupDb", 1.5f } });
+        InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.compressor"; ins.state = comp->saveState();
+        d.inserts.push_back (ins);
+        plan.roles[d.id] = "drums";
+    }
+
+    // Partes melódicas: un clip por sección (vacío si la parte calla en esa sección: sigue siendo editable).
+    for (const auto& part : def->parts)
+    {
+        addTrack (part.name, "synth");
         TrackModel& s = proj.tracks.back();
-        s.instrument.state = synthPresetState (preset);
-        s.instrument.preset = preset;
-        s.midiClips.front().length = 8 * bar;
-        fillTemplateClip (s.midiClips.front(), preset, def->prog, proj.beatsPerBar);
-        s.volumeDb = -9.0f; // margen: batería + 2-3 synths a 0 dB saturaban el máster (detectado por la prueba de plantillas)
+        s.instrument.state = synthPresetState (part.preset);
+        s.instrument.preset = part.preset;
+        s.midiClips.clear();
+        for (const auto& sec : plan.sections)
+        {
+            MidiClipModel c;
+            c.id = newId ("mcl");
+            c.name = sec.name;
+            c.start = (Tick) sec.startBar * bar;
+            c.length = (Tick) sec.bars * bar;
+            s.midiClips.push_back (c);
+        }
+        s.volumeDb = part.volDb;
+        s.pan = part.pan;
+        if (part.send > 0) s.sends[busId] = part.send;
+        if (std::string (part.role) == "melody")
+        {
+            // Eco en corchea con puntillo, ping-pong, oscuro y discreto: profundidad sin ensuciar.
+            const float dotted8 = (float) (0.75 * 60000.0 / def->bpm);
+            ProcessorPtr dly = configured ("cs.delay", { { "timeMs", dotted8 }, { "feedback", 0.28f }, { "mix", 0.16f }, { "toneHz", 4200 }, { "pingPong", 1 } });
+            InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.delay"; ins.state = dly->saveState();
+            s.inserts.push_back (ins);
+        }
+        const std::string role = part.role;
+        if (role == "pad" || role == "chords")
+        {
+            // Menos graves en acordes y colchón: dejan sitio al bajo y al bombo.
+            ProcessorPtr eq = configured ("cs.eq", { { "lowDb", role == "pad" ? -7.0f : -4.0f } });
+            InsertModel ins; ins.id = newId ("fx"); ins.type = "cs.eq"; ins.state = eq->saveState();
+            s.inserts.push_back (ins);
+        }
+        plan.roles[s.id] = part.role;
+        composeTrackLocked (s, plan, part.role);
     }
     addTrack ("Voz", "audio");
     proj.tracks.back().armed = true;
+    proj.tracks.back().sends[busId] = 0.15f;
+    // El bus va al final de la lista (orden visual: instrumentos, voz, retorno).
+    std::rotate (proj.tracks.begin(), proj.tracks.begin() + 1, proj.tracks.end());
+    proj.masterDb = -1.0f;
+    proj.music = plan.toJson();
     undoStack.clear(); // crear el proyecto no se deshace
     redoStack.clear();
     instrumentInstances.clear();
+}
+
+// --- Variaciones ----------------------------------------------------------------------------------------------
+OpResult Session::varyPart (const std::string& part, uint32_t seed, float energy, bool setEnergy)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    MusicPlan plan;
+    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan))
+        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
+    static const std::vector<std::string> parts = { "drums", "bass", "chords", "melody", "pad" };
+    if (part != "all" && std::find (parts.begin(), parts.end(), part) == parts.end()) return OpResult::fail ("parte desconocida: " + part);
+    if (setEnergy && ! std::isfinite (energy)) return OpResult::fail ("energía no válida");
+    pushUndo();
+    if (setEnergy) plan.energy = std::clamp (energy, -1.0f, 1.0f);
+    int changed = 0;
+    for (auto& t : proj.tracks)
+    {
+        auto it = plan.roles.find (t.id);
+        if (it == plan.roles.end()) continue;
+        const std::string& role = it->second;
+        if (part != "all" && role != part) continue;
+        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+        if (seed != 0) plan.seeds[role] = part == "all" ? seed ^ fnv32 (role) : seed;
+        composeTrackLocked (t, plan, role);
+        ++changed;
+    }
+    if (changed == 0) { undoStack.pop_back(); return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)"); }
+    proj.music = plan.toJson();
+    return finishEditLocked();
+}
+
+OpResult Session::setPartLocked (const std::string& trackId, bool locked)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    MusicPlan plan;
+    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan)) return OpResult::fail ("este proyecto no tiene plan musical");
+    if (! plan.roles.count (trackId)) return OpResult::fail ("la pista no tiene una parte generada");
+    auto& v = plan.locked;
+    v.erase (std::remove (v.begin(), v.end(), trackId), v.end());
+    if (locked) v.push_back (trackId);
+    proj.music = plan.toJson();
+    touchLocked();
+    return {};
 }
 } // namespace cs

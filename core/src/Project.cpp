@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -101,6 +102,8 @@ std::string toJson (const ProjectModel& p, bool pretty)
     j["createdAt"] = p.createdAt;
     j["modifiedAt"] = p.modifiedAt;
     j["template"] = p.templateId;
+    if (! p.harmony.empty()) { json h = json::parse (p.harmony, nullptr, false); if (! h.is_discarded()) j["harmony"] = h; }
+    if (! p.music.empty()) { json m = json::parse (p.music, nullptr, false); if (! m.is_discarded()) j["music"] = m; }
     j["loop"] = { { "enabled", p.loopEnabled }, { "start", p.loopStart }, { "end", p.loopEnd } };
     j["ppq"] = kPpq;
     j["sources"] = json::array();
@@ -113,9 +116,20 @@ std::string toJson (const ProjectModel& p, bool pretty)
                     { "solo", t.solo }, { "armed", t.armed }, { "color", t.color } };
         jt["clips"] = json::array();
         for (const auto& c : t.clips)
-            jt["clips"].push_back ({ { "id", c.id }, { "sourceId", c.sourceId }, { "name", c.name }, { "start", c.start },
-                                     { "sourceOffset", c.sourceOffset }, { "length", c.length }, { "fadeIn", c.fadeIn },
-                                     { "fadeOut", c.fadeOut }, { "gainDb", c.gainDb } });
+        {
+            json jc = { { "id", c.id }, { "sourceId", c.sourceId }, { "name", c.name }, { "start", c.start },
+                        { "sourceOffset", c.sourceOffset }, { "length", c.length }, { "fadeIn", c.fadeIn },
+                        { "fadeOut", c.fadeOut }, { "gainDb", c.gainDb } };
+            if (c.processed())
+            {
+                json pp = json::parse (c.procParams, nullptr, false);
+                jc["process"] = { { "plugin", c.procPlugin }, { "version", c.procVersion }, { "params", pp.is_discarded() ? json::object() : pp },
+                                  { "origSourceId", c.origSourceId }, { "origOffset", c.origOffset }, { "origLength", c.origLength },
+                                  { "procSourceId", c.procSourceId }, { "procLength", c.procLength },
+                                  { "levelDb", c.procLevelDb } };
+            }
+            jt["clips"].push_back (jc);
+        }
         jt["inserts"] = json::array();
         for (const auto& i : t.inserts)
             jt["inserts"].push_back ({ { "id", i.id }, { "type", i.type }, { "state", i.state }, { "bypass", i.bypass } });
@@ -125,7 +139,13 @@ std::string toJson (const ProjectModel& p, bool pretty)
             jt["instrument"] = { { "type", t.instrument.type }, { "state", t.instrument.state }, { "preset", t.instrument.preset } };
         jt["patterns"] = json::array();
         for (const auto& pt : t.patterns)
-            jt["patterns"].push_back ({ { "id", pt.id }, { "name", pt.name }, { "steps", pt.steps }, { "swing", pt.swing }, { "lanes", pt.lanes } });
+        {
+            json jp = { { "id", pt.id }, { "name", pt.name }, { "steps", pt.steps }, { "swing", pt.swing }, { "lanes", pt.lanes } };
+            bool anyRoll = false;
+            for (const auto& l : pt.rolls) for (int v : l) anyRoll |= v > 1;
+            if (anyRoll) jp["rolls"] = pt.rolls;
+            jt["patterns"].push_back (jp);
+        }
         jt["midiClips"] = json::array();
         for (const auto& c : t.midiClips)
         {
@@ -162,6 +182,8 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
         p.createdAt = j.value ("createdAt", (int64_t) 0);
         p.modifiedAt = j.value ("modifiedAt", (int64_t) 0);
         p.templateId = j.value ("template", std::string());
+        if (j.contains ("harmony") && j.at ("harmony").is_object()) p.harmony = j.at ("harmony").dump();
+        if (j.contains ("music") && j.at ("music").is_object()) p.music = j.at ("music").dump();
         if (j.contains ("loop") && j["loop"].is_object())
         {
             p.loopEnabled = j["loop"].value ("enabled", false);
@@ -201,6 +223,21 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                 c.fadeIn = jc.value ("fadeIn", (Frame) 0);
                 c.fadeOut = jc.value ("fadeOut", (Frame) 0);
                 c.gainDb = jc.value ("gainDb", 0.0f);
+                if (jc.contains ("process") && jc["process"].is_object())
+                {
+                    const auto& jp = jc["process"];
+                    c.procPlugin = jp.value ("plugin", std::string());
+                    c.procVersion = jp.value ("version", std::string());
+                    c.procParams = jp.contains ("params") ? jp["params"].dump() : std::string ("{}");
+                    c.origSourceId = jp.value ("origSourceId", std::string());
+                    c.procSourceId = jp.value ("procSourceId", std::string());
+                    c.origOffset = jp.value ("origOffset", (Frame) 0);
+                    c.origLength = jp.value ("origLength", (Frame) 0);
+                    c.procLength = jp.value ("procLength", (Frame) 0);
+                    const float lv = jp.value ("levelDb", 0.0f);
+                    c.procLevelDb = std::isfinite (lv) ? std::clamp (lv, -24.0f, 24.0f) : 0.0f;
+                    // "match" (0.5.0) se ignora a propósito: el igualado ya no es un dato del proyecto.
+                }
                 t.clips.push_back (c);
             }
             if (jt.contains ("inserts"))
@@ -231,6 +268,7 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
                     pt.steps = jp.at ("steps").get<int>();
                     pt.swing = jp.value ("swing", 0.0f);
                     pt.lanes = jp.at ("lanes").get<std::vector<std::vector<int>>>();
+                    if (jp.contains ("rolls")) pt.rolls = jp.at ("rolls").get<std::vector<std::vector<int>>>();
                     t.patterns.push_back (pt);
                 }
             if (jt.contains ("midiClips"))
@@ -295,6 +333,15 @@ std::string validate (const ProjectModel& p)
             if (! s) return "clip que referencia una fuente inexistente";
             if (c.start < 0 || c.length <= 0 || c.sourceOffset < 0 || c.sourceOffset + c.length > s->frames) return "clip fuera de los límites de su audio";
             if (c.fadeIn < 0 || c.fadeOut < 0 || c.fadeIn + c.fadeOut > c.length) return "fundidos no válidos";
+            if (c.processed())
+            {
+                const SourceRef* o = p.findSource (c.origSourceId);
+                const SourceRef* b = p.findSource (c.procSourceId);
+                if (! o || ! b) return "clip procesado sin su audio original o procesado";
+                if (c.origOffset < 0 || c.origLength <= 0 || c.origOffset + c.origLength > o->frames) return "original del clip procesado fuera de límites";
+                if (c.procLength <= 0 || c.procLength > b->frames) return "versión procesada fuera de límites";
+                if (c.sourceId != c.origSourceId && c.sourceId != c.procSourceId) return "clip procesado incoherente";
+            }
             if (! std::isfinite (c.gainDb) || c.gainDb > 24) return "ganancia de clip no válida";
         }
         for (const auto& i : t.inserts)

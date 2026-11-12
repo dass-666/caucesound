@@ -18,11 +18,20 @@ endif()
 
 add_subdirectory(core)
 
+# Herramienta de escritorio sin interfaz (primer paso de CauceSound Studio / Cauce Link). Ver desktop/cli/main.cpp.
+option(CS_BUILD_DESKTOP "Compilar la herramienta de escritorio cauce" ON)
+if (CS_BUILD_DESKTOP)
+    add_executable(cauce desktop/cli/main.cpp)
+    target_link_libraries(cauce PRIVATE cs_core)
+endif()
+
 if (CS_BUILD_TESTS)
     enable_testing()
-    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp core/tests/TestMusic.cpp core/tests/TestEffects.cpp core/tests/TestStress.cpp core/tests/TestArchive.cpp core/tests/TestQuality.cpp core/tests/TestFuzz.cpp core/tests/TestBus.cpp)
+    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp core/tests/TestMusic.cpp core/tests/TestEffects.cpp core/tests/TestStress.cpp core/tests/TestArchive.cpp core/tests/TestQuality.cpp core/tests/TestFuzz.cpp core/tests/TestBus.cpp core/tests/TestSwitch.cpp core/tests/TestComposer.cpp core/tests/TestSolo.cpp core/tests/TestVocal.cpp core/tests/TestExport.cpp)
     target_link_libraries(cs_core_tests PRIVATE cs_core)
     add_test(NAME cs_core_tests COMMAND cs_core_tests)
     add_executable(cs_bench core/tests/Bench.cpp)
     target_link_libraries(cs_bench PRIVATE cs_core)
+    add_executable(cs_render core/tests/Render.cpp)
+    target_link_libraries(cs_render PRIVATE cs_core)
 endif()

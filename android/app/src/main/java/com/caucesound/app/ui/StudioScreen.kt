@@ -34,6 +34,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
@@ -90,6 +92,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -156,6 +159,15 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
         if (uri != null) vm.exportWav(uri, exportBits)
     }
+    var exportWet by remember { mutableStateOf(true) }
+    val dawExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) vm.exportDaw(uri, exportWet)
+    }
+    val midiExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/midi")) { uri ->
+        if (uri != null) vm.exportMidi(uri)
+    }
+    val pluginUi by vm.plugins.collectAsState()
+    val fileBase = state.name.replace(Regex("[^\\p{L}\\p{N} _-]"), "_").trim().ifEmpty { "cancion" }
 
     StudioLayout(
         state, panel, selected, selectedTrack, waveforms, catalog, busy != null, position, playingState.value, meters, vm, snackbar,
@@ -163,8 +175,15 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         onSettings = { vm.refreshAudioStatus(); dialog = "settings" },
         onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
         onRecord = { requestMic { vm.record() } },
-        favorites = vm.favoritePresets.collectAsState().value, countIn = countIn,
+        favorites = vm.favoritePresets.collectAsState().value, countIn = countIn, plugins = vm.plugins.collectAsState().value,
     )
+
+    // Exportación para DAW: progreso real, cancelar visible y final claro. No se cierra tocando fuera mientras trabaja.
+    pluginUi.export?.let { e ->
+        CauceDialog(tr("Paquete para DAW", "DAW package"), onDismiss = { vm.dismissExport() }, confirm = null) {
+            DawExportStatus(e, onCancel = vm::cancelExport, onClose = vm::dismissExport)
+        }
+    }
 
     // --- Diálogos ---
     when (val d = dialog) {
@@ -176,9 +195,13 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         "gain" -> selected?.let { state.clip(it) }?.let { (_, c) ->
             GainDialog(c.gainDb, onDismiss = { dialog = null }) { db -> vm.setClipGain(c.id, db); dialog = null }
         } ?: run { dialog = null }
-        "export" -> ExportDialog(onDismiss = { dialog = null }) { bits ->
-            exportBits = bits; dialog = null
-            exporter.launch("${state.name.ifBlank { "mix" }}.wav")
+        "export" -> CauceDialog(tr("Exportar", "Export"), onDismiss = { dialog = null }, confirm = null, dismiss = tr("Cerrar", "Close")) {
+            ExportOptions(
+                hasMidi = state.tracks.any { t -> t.midiClips.isNotEmpty() },
+                onMix = { bits -> exportBits = bits; dialog = null; exporter.launch("$fileBase.wav") },
+                onDaw = { wet -> exportWet = wet; dialog = null; dawExporter.launch("$fileBase-cauce-daw.zip") },
+                onMidi = { dialog = null; midiExporter.launch("$fileBase.mid") },
+            )
         }
         "settings" -> SettingsDialog(vm, state, requestMic, onDismiss = { dialog = null })
         null -> {}
@@ -196,7 +219,7 @@ fun StudioLayout(
     state: ProjectState, panel: Panel, selected: String?, selectedTrack: String?, waveforms: Map<String, FloatArray>, catalog: Catalog,
     busy: Boolean, position: LongState, playing: Boolean, meters: androidx.compose.runtime.State<FloatArray>, actions: StudioActions,
     snackbar: SnackbarHostState, onDialog: (String) -> Unit, onSettings: () -> Unit, onImport: (String) -> Unit, onRecord: () -> Unit,
-    favorites: Set<String> = emptySet(), countIn: LongState? = null,
+    favorites: Set<String> = emptySet(), countIn: LongState? = null, plugins: com.caucesound.app.data.PluginUi = com.caucesound.app.data.PluginUi(),
 ) {
     var drumClipboard by remember { mutableStateOf<List<List<Int>>?>(null) }
     // Horizontal (poca altura): barra superior y transporte en una sola fila y navegación compacta, para dejar
@@ -223,6 +246,11 @@ fun StudioLayout(
                     }
                 }
                 if (compact) transport(Modifier.width(440.dp))
+                // ✨ abre Variaciones si la canción tiene plan del compositor; si no, va directo a Solo AI.
+                val creative = if (state.music != null) Panel.VARY else Panel.SOLO
+                if (state.music != null || catalog.hasPlugin("solo.ai")) ToolButton(Icons.Default.AutoAwesome, if (state.music != null) tr("Variaciones", "Variations") else "Solo AI",
+                    { actions.openPanel(if (panel == creative) Panel.ARRANGE else creative) },
+                    active = panel == Panel.VARY || panel == Panel.SOLO, tint = Palette.Text, modifier = Modifier.testTag("open_variations"))
                 ToolButton(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo), actions::undo, enabled = state.canUndo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo), actions::redo, enabled = state.canRedo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.Default.Save, stringResource(R.string.save), actions::saveNow, tint = if (state.dirty) Palette.Text else Palette.TextDim)
@@ -241,7 +269,7 @@ fun StudioLayout(
                         state, waveforms, selected, selectedTrack, position, meters, actions,
                         onImport = onImport,
                         onTrackMenu = { id -> onDialog("rename:$id") },
-                        onFades = { onDialog("fades") }, onGain = { onDialog("gain") },
+                        onFades = { onDialog("fades") }, onGain = { onDialog("gain") }, plugins = catalog.plugins,
                     )
                     Panel.DRUMS -> {
                         val t = track?.takeIf { it.isDrums } ?: state.tracks.firstOrNull { it.isDrums }
@@ -271,6 +299,12 @@ fun StudioLayout(
                         } else SynthPanel(state, t, catalog, actions, favorites)
                     }
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions)
+                    Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"))
+                    // Los plugins solo tienen pantalla si están compilados en el motor.
+                    Panel.VOCAL -> if (catalog.hasPlugin("vocalshift")) VocalShiftPanel(state, selected, plugins, waveforms, actions)
+                        else EmptyPanel(tr("VocalShift no está incluido en esta versión.", "VocalShift is not included in this build."), tr("Volver al arreglo", "Back to arrangement")) { actions.openPanel(Panel.ARRANGE) }
+                    Panel.SOLO -> if (catalog.hasPlugin("solo.ai")) SoloAiPanel(state, selected, plugins, actions)
+                        else EmptyPanel(tr("Solo AI no está incluido en esta versión.", "Solo AI is not included in this build."), tr("Volver al arreglo", "Back to arrangement")) { actions.openPanel(Panel.ARRANGE) }
                     Panel.FX -> {
                         val t = track ?: state.tracks.firstOrNull()
                         if (t == null) EmptyPanel(tr("No hay pistas.", "No tracks."), tr("Añadir pista de audio", "Add audio track")) { actions.addTrack("Audio 1", "audio") }
@@ -383,7 +417,7 @@ private fun ToggleIcon(icon: ImageVector, desc: String, on: Boolean, onClick: ()
 private fun ArrangementView(
     state: ProjectState, waveforms: Map<String, FloatArray>, selected: String?, selectedTrack: String?, position: LongState,
     meters: androidx.compose.runtime.State<FloatArray>, vm: StudioActions, onImport: (String) -> Unit, onTrackMenu: (String) -> Unit,
-    onFades: () -> Unit, onGain: () -> Unit,
+    onFades: () -> Unit, onGain: () -> Unit, plugins: List<String> = emptyList(),
 ) {
     val hScroll = rememberScrollState()
     val vScroll = rememberScrollState()
@@ -406,7 +440,7 @@ private fun ArrangementView(
             Column(Modifier.width(HEADER_W)) {
                 Spacer(Modifier.height(RULER_HEIGHT).fillMaxWidth().background(Palette.Surface))
                 state.tracks.forEachIndexed { i, t ->
-                    TrackHeader(t, t.id == selectedTrack, { meters.value.getOrElse(i + 1) { 0f } }, vm, onImport = { onImport(t.id) }, onMenu = { onTrackMenu(t.id) })
+                    TrackHeader(t, t.id == selectedTrack, { meters.value.getOrElse(i + 1) { 0f } }, vm, onImport = { onImport(t.id) }, onMenu = { onTrackMenu(t.id) }, plugins = plugins)
                 }
                 if (state.tracks.size < 32) Box {
                     CauceButton(stringResource(R.string.add_track), { addMenu = true }, Modifier.padding(8.dp), kind = ButtonKind.Ghost, icon = Icons.Default.Add)
@@ -459,6 +493,14 @@ private fun ArrangementView(
                 ToolButton(Icons.Default.Gradient, stringResource(R.string.fades), onFades, tint = Palette.Text)
                 ToolButton(Icons.Default.VolumeUp, stringResource(R.string.clip_gain), onGain, tint = Palette.Text)
                 ToolButton(Icons.Default.Delete, stringResource(R.string.delete), vm::deleteSelected, tint = Palette.Record)
+                if ("vocalshift" in plugins) {
+                    Spacer(Modifier.width(6.dp))
+                    CauceButton("VocalShift", { vm.selectTrack(audioSel.first.id); vm.openPanel(Panel.VOCAL) }, Modifier.testTag("clip_vocalshift"), icon = Icons.Default.AutoFixHigh, height = 40.dp)
+                }
+                if ("solo.ai" in plugins) {
+                    Spacer(Modifier.width(6.dp))
+                    CauceButton(tr("Analizar", "Analyze"), { vm.selectTrack(audioSel.first.id); vm.openPanel(Panel.SOLO) }, Modifier.testTag("clip_analyze"), icon = Icons.Default.AutoAwesome, height = 40.dp)
+                }
             } else if (midiSel != null && !state.recording) {
                 val (t, c) = midiSel
                 CauceButton(tr("Editar", "Edit"), { vm.selectTrack(t.id); vm.openPanel(if (t.isDrums) Panel.DRUMS else Panel.PIANO) }, icon = Icons.Default.Edit, height = 40.dp)
@@ -480,7 +522,7 @@ private fun ArrangementView(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm: StudioActions, onImport: () -> Unit, onMenu: () -> Unit) {
+private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm: StudioActions, onImport: () -> Unit, onMenu: () -> Unit, plugins: List<String> = emptyList()) {
     val color = Color(t.color.toInt())
     var menu by remember { mutableStateOf(false) }
     fun open(p: Panel) { vm.selectTrack(t.id); vm.openPanel(p) }
@@ -512,6 +554,13 @@ private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm
                         if (t.isDrums) DropdownMenuItem({ Text(tr("Rejilla de batería", "Drum grid")) }, leadingIcon = { Icon(Icons.Default.GridOn, null) }, onClick = { menu = false; open(Panel.DRUMS) })
                         if (t.isAudio) DropdownMenuItem({ Text(stringResource(R.string.import_audio)) }, leadingIcon = { Icon(Icons.Default.FileUpload, null) }, onClick = { menu = false; onImport() })
                         DropdownMenuItem({ Text(tr("Efectos", "Effects")) }, leadingIcon = { Icon(Icons.Default.GraphicEq, null) }, onClick = { menu = false; open(Panel.FX) })
+                        // Herramientas de plugins: solo las que el motor tiene compiladas y solo donde tienen sentido.
+                        if (t.isAudio && "vocalshift" in plugins) DropdownMenuItem({ Text(tr("VocalShift (procesar voz)", "VocalShift (process voice)")) },
+                            leadingIcon = { Icon(Icons.Default.AutoFixHigh, null) }, onClick = { menu = false; t.clips.firstOrNull()?.let { vm.selectClip(it.id) }; open(Panel.VOCAL) })
+                        if (t.isAudio && "solo.ai" in plugins) DropdownMenuItem({ Text(tr("Solo AI: analizar tempo y tonalidad", "Solo AI: analyze tempo and key")) },
+                            leadingIcon = { Icon(Icons.Default.AutoAwesome, null) }, onClick = { menu = false; t.clips.firstOrNull()?.let { vm.selectClip(it.id) }; open(Panel.SOLO) })
+                        if (t.isSynth && "solo.ai" in plugins) DropdownMenuItem({ Text(tr("Solo AI: generar melodía", "Solo AI: generate melody")) },
+                            leadingIcon = { Icon(Icons.Default.AutoAwesome, null) }, onClick = { menu = false; open(Panel.SOLO) })
                         DropdownMenuItem({ Text(tr("Renombrar o eliminar…", "Rename or delete…")) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onMenu() })
                     }
                 }

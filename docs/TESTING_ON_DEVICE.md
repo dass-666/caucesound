@@ -80,6 +80,65 @@ envíalos tal cual (qué hiciste, qué esperabas, qué pasó). Si algo se cuelga
 | 28 | Tamaños | Gira el teléfono en Arreglo, Mezclador y Piano roll | ¿Algún botón cortado, texto partido o control demasiado pequeño para el dedo? |
 | 29 | 808 | Synth → Bajos → «808 Bass», toca notas graves | ¿Se oye el golpe inicial y la nota queda afinada? |
 
+### Pruebas de la versión 0.3.1 (hotfix de Play)
+
+Instala `caucesound-0.3.1-hotfix-preview.apk` encima de la 0.3.0 (sin desinstalar). Si algo falla, abre Ajustes →
+Estado del audio y haz una captura: `outState`, `processedFrames` y `lastError` dicen si el stream sigue vivo.
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 30 | Secuencia del fallo | Proyecto A → Play (deja que pase el final, ~30 s) → salir sin Stop → Proyecto B → Play → salir → A → Play | ¿Suena siempre? ¿El cabezal empieza al principio en cada proyecto? |
+| 31 | Play repetido | En un proyecto: Play, Stop, Play, Stop… 10 veces | ¿Arranca siempre y sigue sonando? (en la 0.3.0 se paraba al instante desde el segundo Play) |
+| 32 | Stop antes de salir | Play → Stop → salir → otro proyecto → Play | ¿Suena? |
+| 33 | Segundo plano | Play → botón de inicio del teléfono → volver a la app → salir del proyecto → abrir otro → Play | ¿Suena? |
+| 34 | Girar | Play → gira el teléfono → salir → otro proyecto → Play | ¿Suena? ¿Se mantiene el estado? |
+| 35 | Rápido | Abre y cierra el mismo proyecto 5 veces seguidas, luego Play | ¿Suena? ¿Algún mensaje de error? |
+| 36 | Tras grabar | Graba una toma corta → Stop → salir → otro proyecto → Play → vuelve al de la toma | ¿Suena? ¿La toma sigue ahí? |
+| 37 | Otra app | Play en CAUCESOUND → reproduce algo en otra app (YouTube, Spotify) → vuelve | CAUCESOUND debe pararse al empezar la otra app; al volver, ¿Play funciona? |
+
+### Pruebas de la versión 0.4.1 (sonido, variaciones, Solo AI)
+
+Instala `caucesound-0.4.1-soloai-preview.apk` encima de la anterior (sin desinstalar). Repite antes las 30-37: la 0.4
+cambia las plantillas y el fallo de Play no debe volver.
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 40 | Estilos nuevos | Crea una canción de Reggaetón, Trap y Hip-hop y escucha los 16 compases | ¿Cada estilo tiene identidad? ¿Algo suena mal, demasiado grave o apagado? (el hip-hop es el sospechoso) |
+| 41 | Variaciones | Botón ✨ → «Otra versión completa» con Play en marcha; luego «Versión anterior» / «Versión nueva» | ¿Cambia sin cortes ni notas colgadas? ¿Se nota la diferencia? |
+| 42 | Por parte y candado | Pon candado al bajo → «Batería» y «Melodía» varias veces | ¿El bajo no cambia nunca? |
+| 43 | Intensidad | «Más tranquila» y «Más enérgica» | ¿La diferencia es clara? |
+| 44 | Redoble | Rejilla de batería → «Redoble» → toca un charles varias veces | ¿Suenan 2, 3 y 4 golpes? ¿Se ven las marcas? |
+| 45 | Solo AI con plan | ✨ → Solo AI → Generar (estribillo, 8 compases) | ¿Aparece la pista «Solo AI · …»? ¿Encaja con los acordes? ¿Tarda? |
+| 46 | Solo AI sin plan | En un proyecto de la 0.3: ✨ → elige tonalidad → Generar | ¿Pide la tonalidad antes? ¿Suena en esa tonalidad? |
+| 47 | Botón «Nueva canción» | Con 6 o más proyectos, baja hasta el final de la lista | ¿Se ve entero el último proyecto y su menú «⋮»? |
+| 48 | CPU | Play de una plantilla 0.4 durante 5 min | ¿Cortes? ¿El teléfono se calienta más que con la 0.3? |
+
+### Pruebas de la versión 0.5.0 (VocalShift, Solo AI 2.0, estabilidad)
+
+Instala `caucesound-0.5.0-integration-preview.apk` encima de la 0.4.1 (sin desinstalar). Tus proyectos deben seguir
+ahí: si no aparecen, **no desinstales** y avísame. Repite antes las 30-37 (Play tras cambiar de proyecto).
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 49 | Actualización | Instalar encima de la 0.4.1 y abrir un proyecto antiguo | ¿Siguen todos los proyectos? ¿Suenan igual? |
+| 50 | Canción de Trap | Nueva canción → Trap → ✨ variaciones, candado al bajo, otra versión | ¿Funciona como en la 0.4? (no debe haber cambiado) |
+| 51 | Analizar un beat | Proyecto vacío → importa un instrumental (MP3 o WAV de 1-4 min) → toca el clip → «Analizar» | Tiempo que tarda. BPM y tonalidad que propone y su confianza. ¿Aciertan? (compara con lo que sepas del beat) |
+| 52 | Corregir el análisis | En la pantalla de Solo AI cambia la tonalidad o el BPM y confirma | ¿Se respeta lo que pones tú? ¿El tempo del proyecto solo cambia si lo aceptas? |
+| 53 | Alternativas A-D | Solo AI → Generar → escucha A, B, C y D → elige una → «Variación» | ¿Las cuatro son distintas? ¿Encajan con el beat? ¿La elegida aparece como pista editable en el Piano roll? |
+| 54 | VocalShift | Graba 15-20 s de voz con auriculares → toca el clip → «VocalShift» → preset «Urbano Espacial — Segunda voz» → «Procesar voz» | Tiempo que tarda. ¿Se oye la segunda voz? ¿Está a tiempo con la original (sin eco ni retraso)? |
+| 55 | A/B | Con Play en marcha, pulsa «Escuchar» y alterna «A · Original» y «B · Procesada» | ¿Cambia sin cortar ni reiniciar? Con «Igualar volumen» activo, ¿suenan igual de fuertes? |
+| 56 | Naturalidad | Escucha el procesado solo, con auriculares; prueba también ±2 y ±4 semitonos | ¿Suena natural, robótico, metálico? ¿Las consonantes se emborronan? Es la valoración que yo no puedo hacer |
+| 57 | Original intacto | Acepta el procesado, luego «Descartar el procesado»; después deshacer y rehacer | ¿La toma original sigue exactamente igual? |
+| 58 | Cancelar y cambiar | Procesa una toma de 1-2 min y pulsa Cancelar a mitad. Repite y, a mitad, sal al inicio y abre otro proyecto | ¿El proyecto queda como estaba? ¿El otro proyecto no recibe nada? ¿Play funciona después? |
+| 59 | Exportar | Exporta la canción con la voz procesada y ábrela en el PC | ¿Voz y beat alineados? |
+| 60 | Carga | Proyecto con beat importado + pista de Solo AI + 2 voces procesadas, Play 5 min | ¿Cortes? ¿Temperatura? Línea de «Motor de audio» de Ajustes |
+
+### Pruebas de la versión 0.6.0
+
+Están en un documento propio, pensado para seguirlo con el teléfono en la mano: **`SAMSUNG_ACCEPTANCE_0.6.md`**
+(cinco experiencias: estabilidad, calidad musical, Solo AI, VocalShift y exportación). Sustituye a las listas
+anteriores como punto de partida; las pruebas 30-60 siguen siendo válidas si quieres más detalle.
+
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <string>
+#include <algorithm>
 #include <vector>
 
 namespace cs
@@ -39,6 +40,14 @@ struct DrumPattern
     float swing = 0.0f;    // 0..1: retrasa los pasos pares hasta medio paso (0,33 ~ tresillo)
     // lanes[carril][paso] = velocidad (0 = apagado, 1..127)
     std::vector<std::vector<int>> lanes = std::vector<std::vector<int>> ((size_t) kDrumLanes, std::vector<int> (16, 0));
+    // Redobles (rolls): rolls[carril][paso] = golpes dentro del paso (0 o 1 = uno; 2, 3 o 4 = subdivisiones de fusa,
+    // tresillo de semicorchea, etc.). Vacío = sin redobles (proyectos anteriores). Misión 0.4.
+    std::vector<std::vector<int>> rolls;
+    int rollAt (int lane, int step) const
+    {
+        if ((size_t) lane >= rolls.size() || (size_t) step >= rolls[(size_t) lane].size()) return 1;
+        return std::max (1, rolls[(size_t) lane][(size_t) step]);
+    }
 };
 
 // Clip MIDI en el arreglo. Si patternId no está vacío, el clip reproduce ese patrón de batería en bucle durante
@@ -67,6 +76,15 @@ void sortNotes (std::vector<MidiNote>& notes);
 
 // Tick (relativo al patrón) en el que suena el paso 'step', con swing aplicado.
 Tick stepTick (int step, float swing);
+
+// Nota en ticks absolutos del timeline, ya recortada a su clip y con patrones y redobles expandidos.
+struct AbsNote
+{
+    Tick start = 0, end = 0;
+    int key = 60, velocity = 100, channel = 0;
+};
+// Expande un clip (notas o patrón de batería repetido) a notas absolutas. Es lo que suena y lo que se exporta a MIDI.
+void clipNotesAbsolute (const MidiClipModel& clip, const DrumPattern* pattern, std::vector<AbsNote>& out);
 
 // Notas del clip como eventos absolutos: Note On / Note Off ordenados (a igual frame, Note Off antes que Note On,
 // para que repetir una nota no la corte). Las notas que pasan del final del clip se acortan al final del clip.

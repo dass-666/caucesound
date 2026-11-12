@@ -99,6 +99,7 @@ fun DrumsPanel(
     val pattern = track.pattern(patternId) ?: track.patterns.firstOrNull()?.also { patternId = it.id }
     var showPads by remember { mutableStateOf(false) }
     var velocityMode by remember { mutableStateOf(false) }
+    var rollMode by remember { mutableStateOf(false) }
     var page by remember(track.id, patternId) { mutableIntStateOf(0) }
     var laneSettings by remember { mutableStateOf<Int?>(null) }
     var kitMenu by remember { mutableStateOf(false) }
@@ -161,19 +162,26 @@ fun DrumsPanel(
             ToolButton(Icons.Default.DeleteSweep, tr("Vaciar patrón", "Clear pattern"), { actions.setPatternLanes(track.id, pattern.id, List(8) { List(pattern.steps) { 0 } }) })
         }
         Spacer(Modifier.height(8.dp))
+        // Modos de edición de la rejilla: pintar (por defecto), fuerza del golpe o redoble. Son excluyentes.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Segmented(listOf("16", "32"), if (pattern.steps == 32) 1 else 0, { actions.setPatternLength(track.id, pattern.id, if (it == 1) 32 else 16) })
-            PillToggle(tr("Intensidad", "Velocity"), velocityMode, { velocityMode = !velocityMode }, color = Palette.Violet, height = 36.dp)
+            PillToggle(tr("Intensidad", "Velocity"), velocityMode, { velocityMode = !velocityMode; if (velocityMode) rollMode = false }, color = Palette.Violet, height = 36.dp)
+            PillToggle(tr("Redoble", "Roll"), rollMode, { rollMode = !rollMode; if (rollMode) velocityMode = false }, color = Palette.Cyan, height = 36.dp)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Swing", color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
             Box(Modifier.weight(1f)) { SwingSlider(pattern.swing) { actions.setSwing(track.id, pattern.id, it) } }
             Text("${(pattern.swing * 100).toInt()}%", style = ValueText, color = Palette.Text, modifier = Modifier.width(32.dp))
         }
         if (velocityMode && !showPads) Text(tr("Arrastra arriba o abajo dentro de un paso para cambiar la fuerza del golpe.", "Drag up or down inside a step to set how hard it hits."),
             color = Palette.TextFaint, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+        if (rollMode && !showPads) Text(tr("Toca un paso para repetirlo dentro de su tiempo: 1, 2, 3 o 4 golpes (típico de los charles de trap).",
+            "Tap a step to repeat it within its slot: 1, 2, 3 or 4 hits (typical of trap hi-hats)."),
+            color = Palette.TextFaint, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
         Spacer(Modifier.height(4.dp))
 
         if (!showPads) {
-            StepGrid(state, track, pattern, laneNames, position, playing, velocityMode, page, onPage = { page = it }, slot = slot, actions = actions,
+            StepGrid(state, track, pattern, laneNames, position, playing, velocityMode, page, onPage = { page = it }, slot = slot, actions = actions, rollMode = rollMode,
                 onLaneSettings = { laneSettings = it })
             Spacer(Modifier.height(10.dp))
             CauceButton(tr("Añadir «${pattern.name}» al final del arreglo", "Append “${pattern.name}” to the arrangement"), {
@@ -261,6 +269,7 @@ private fun SwingSlider(value: Float, onCommit: (Float) -> Unit) {
 private fun StepGrid(
     state: ProjectState, track: TrackState, pattern: PatternState, laneNames: List<String>, position: LongState, playing: Boolean,
     velocityMode: Boolean, page: Int, onPage: (Int) -> Unit, slot: Int, actions: StudioActions, onLaneSettings: (Int) -> Unit,
+    rollMode: Boolean = false,
 ) {
     var lanes by remember(pattern) { mutableStateOf(pattern.lanes) }
     val st by rememberUpdatedState(state)
@@ -298,7 +307,7 @@ private fun StepGrid(
                 val cellPx = with(density) { (gridW / visible).toPx() }
                 val cellHPx = with(density) { CELL_H.toPx() }
                 Canvas(
-                    Modifier.width(gridW).height(CELL_H * 8).pointerInput(pattern.id, visible, first, velocityMode) {
+                    Modifier.width(gridW).height(CELL_H * 8).pointerInput(pattern, visible, first, velocityMode, rollMode) {
                         awaitEachGesture {
                             val down = awaitFirstDown()
                             fun cell(o: Offset): Pair<Int, Int>? {
@@ -310,6 +319,21 @@ private fun StepGrid(
                             fun set(l: Int, s: Int, v: Int) {
                                 if (lanes[l][s] == v) return
                                 lanes = lanes.mapIndexed { li, lane -> if (li != l) lane else lane.mapIndexed { si, x -> if (si == s) v else x } }
+                            }
+                            if (rollMode) {
+                                // Redoble: cada toque pasa al siguiente número de golpes (1 → 2 → 3 → 4 → 1). Un paso apagado
+                                // se enciende directamente con 2 golpes.
+                                val (l, st) = c0
+                                if (current[l][st] == 0) {
+                                    actions.setStep(track.id, pattern.id, l, st, 100)
+                                    actions.setRoll(track.id, pattern.id, l, st, 2)
+                                } else actions.setRoll(track.id, pattern.id, l, st, pattern.rollAt(l, st) % 4 + 1)
+                                do {
+                                    val ev = awaitPointerEvent()
+                                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                    ch.consume()
+                                } while (ch.pressed)
+                                return@awaitEachGesture
                             }
                             if (velocityMode) {
                                 // Arrastre vertical dentro de la celda: arriba = fuerte.
@@ -355,6 +379,12 @@ private fun StepGrid(
                             val h = (cellHPx - gap) * (0.4f + 0.6f * k)
                             drawRoundRect(c.copy(alpha = 0.22f), Offset(x + gap / 2, y + gap / 2), Size(w, cellHPx - gap), corner)
                             drawRoundRect(c.copy(alpha = 0.55f + 0.45f * k), Offset(x + gap / 2, y + gap / 2 + (cellHPx - gap - h)), Size(w, h), corner)
+                            // Redoble: una marca blanca por golpe en la parte superior de la celda.
+                            val roll = pattern.rollAt(l, s)
+                            if (roll > 1) {
+                                val mw = (w - 6 * u) / roll
+                                for (r in 0 until roll) drawRoundRect(Color.White.copy(alpha = 0.9f), Offset(x + gap / 2 + 3 * u + r * mw + u, y + gap / 2 + 3 * u), Size(mw - 2 * u, 3 * u), CornerRadius(1.5f * u))
+                            }
                         }
                     }
                     // Cursor del secuenciador: se lee la posición en la fase de dibujo (no recompone la cuadrícula).

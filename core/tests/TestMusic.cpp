@@ -545,10 +545,15 @@ TEST (templates_create_real_playable_content)
             if (t.kind == "synth")
             {
                 CHECK (! t.instrument.preset.empty() && ! synthPresetState (t.instrument.preset).empty());
-                // Material musical propio en los 8 compases, notas válidas y dentro del clip.
-                CHECK (t.midiClips.size() == 1 && t.midiClips[0].notes.size() >= 8);
-                for (const auto& n : t.midiClips[0].notes)
-                    CHECK (validateNote (n).empty() && n.start >= 0 && n.start + n.length <= t.midiClips[0].length);
+                // Arreglo de 17 compases: un clip por sección (Intro, A, B, Break, Final, Cierre), notas válidas y dentro del clip.
+                CHECK (t.midiClips.size() == 6);
+                size_t notes = 0;
+                for (const auto& c : t.midiClips)
+                {
+                    notes += c.notes.size();
+                    for (const auto& n : c.notes) CHECK (validateNote (n).empty() && n.start >= 0 && n.start + n.length <= c.length);
+                }
+                CHECK (notes >= 16);
             }
             if (t.kind == "drums")
             {
@@ -701,8 +706,8 @@ TEST (api_music_commands_end_to_end)
     const std::string root = f.dir;
     CHECK (cmd ({ { "cmd", "createProject" }, { "folder", f.dir + "/p" }, { "name", "API" }, { "template", "reggaeton" } })["ok"] == true);
     const auto cat = cmd ({ { "cmd", "catalog" } });
-    CHECK (cat["ok"] == true && cat["synthPresets"].size() == 7 && cat["drumKits"].size() == 4 && cat["ppq"] == kPpq);
-    CHECK (cat["synthParams"].size() == 22 && cat["drumParams"].size() == 50);
+    CHECK (cat["ok"] == true && cat["synthPresets"].size() == 17 && cat["drumKits"].size() == 8 && cat["ppq"] == kPpq);
+    CHECK (cat["synthParams"].size() == 25 && cat["drumParams"].size() == 50);
     const auto add = cmd ({ { "cmd", "addTrack" }, { "name", "Lead" }, { "kind", "synth" } });
     CHECK (add["ok"] == true);
     const std::string tid = add["id"];

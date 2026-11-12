@@ -63,6 +63,11 @@ struct TransportInfo
 class Instrument : public AudioProcessor
 {
 public:
+    Instrument();
+    ~Instrument() override;
+    // Instancias vivas en el proceso (diagnóstico y pruebas: tras cerrar un proyecto y recoger la basura del motor
+    // debe volver a 0; si no, algún grafo antiguo sigue referenciado).
+    static int liveInstances();
     virtual void handleMidi (const MidiEvent* events, int count) = 0; // hilo de audio, antes de process()
     // hard = false: pasa todas las voces a release (stop, loop, seek). hard = true: silencio inmediato.
     virtual void allNotesOff (bool hard) = 0;
