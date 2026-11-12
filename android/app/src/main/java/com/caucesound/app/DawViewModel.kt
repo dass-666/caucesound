@@ -202,7 +202,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         }
     }
 
-    fun closeProject() {
+    override fun closeProject() {
         autosave?.cancel()
         viewModelScope.launch {
             call(Cmd.closeProject()) // guarda si hay cambios y detiene grabación/transporte
@@ -224,7 +224,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
 
     fun saveIfDirty() { if (_state.value?.dirty == true) viewModelScope.launch { call(Cmd.save()); refresh() } }
 
-    fun saveNow() = edit(Cmd.save()) { toast(str(R.string.msg_saved)) }
+    override fun saveNow() = edit(Cmd.save()) { toast(str(R.string.msg_saved)) }
 
     // --- Transporte ---------------------------------------------------------------------------------------------
     override fun play() {
@@ -320,9 +320,9 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun selectClip(id: String?) { _selectedClip.value = id }
     override fun moveClip(id: String, start: Long, trackId: String?) = edit(Cmd.moveClip(id, start, trackId))
     override fun trimClip(id: String, start: Long, length: Long) = edit(Cmd.trimClip(id, start, length))
-    fun splitSelectedAt(frame: Long) { _selectedClip.value?.let { id -> edit(Cmd.splitClip(id, frame)) { r -> _selectedClip.value = r.id } } }
-    fun deleteSelected() { _selectedClip.value?.let { id -> edit(Cmd.deleteClip(id)) { _selectedClip.value = null } } }
-    fun duplicateSelected() { _selectedClip.value?.let { id -> edit(Cmd.duplicateClip(id)) { r -> _selectedClip.value = r.id } } }
+    override fun splitSelectedAt(frame: Long) { _selectedClip.value?.let { id -> edit(Cmd.splitClip(id, frame)) { r -> _selectedClip.value = r.id } } }
+    override fun deleteSelected() { _selectedClip.value?.let { id -> edit(Cmd.deleteClip(id)) { _selectedClip.value = null } } }
+    override fun duplicateSelected() { _selectedClip.value?.let { id -> edit(Cmd.duplicateClip(id)) { r -> _selectedClip.value = r.id } } }
     fun setFades(id: String, fadeIn: Long, fadeOut: Long) = edit(Cmd.setFades(id, fadeIn, fadeOut))
     fun setClipGain(id: String, db: Float) = edit(Cmd.setClipGain(id, db))
 

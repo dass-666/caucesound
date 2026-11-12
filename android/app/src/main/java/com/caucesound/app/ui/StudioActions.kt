@@ -33,7 +33,14 @@ interface StudioActions {
     fun setMasterLive(db: Float) {}
     fun commitMixer() {}
 
+    // Proyecto
+    fun saveNow() {}
+    fun closeProject() {}
+
     // Clips de audio
+    fun splitSelectedAt(frame: Long) {}
+    fun duplicateSelected() {}
+    fun deleteSelected() {}
     fun moveClip(id: String, start: Long, trackId: String?) {}
     fun trimClip(id: String, start: Long, length: Long) {}
 

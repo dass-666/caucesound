@@ -89,6 +89,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -100,6 +101,7 @@ import androidx.compose.ui.unit.sp
 import com.caucesound.app.DawViewModel
 import com.caucesound.app.R
 import com.caucesound.app.audio.NativeEngine
+import com.caucesound.app.data.Catalog
 import com.caucesound.app.data.MusicTime
 import com.caucesound.app.data.PPQ
 import com.caucesound.app.data.ProjectState
@@ -127,7 +129,6 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
     var dialog by remember { mutableStateOf<String?>(null) }
     var importTrack by remember { mutableStateOf<String?>(null) }
     var exportBits by remember { mutableStateOf(24) }
-    var drumClipboard by remember { mutableStateOf<List<List<Int>>?>(null) }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     // Bucle de interfaz a la frecuencia de pantalla. Solo se leen atómicos del motor; los valores se consumen en la fase
@@ -150,78 +151,14 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
         if (uri != null) vm.exportWav(uri, exportBits)
     }
-    val playing = playingState.value
 
-    Scaffold(containerColor = Palette.Background, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { StudioNav(panel, vm::openPanel) }) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad)) {
-            // --- Barra superior ---
-            Row(Modifier.fillMaxWidth().background(Palette.Surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { vm.closeProject() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
-                Column(Modifier.weight(1f)) {
-                    Text(state.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                    Text(if (state.dirty) stringResource(R.string.unsaved) else stringResource(R.string.saved), color = Palette.TextDim, fontSize = 11.sp)
-                }
-                IconButton(onClick = vm::undo, enabled = state.canUndo && !state.recording) { Icon(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo)) }
-                IconButton(onClick = vm::redo, enabled = state.canRedo && !state.recording) { Icon(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo)) }
-                IconButton(onClick = vm::saveNow) { Icon(Icons.Default.Save, stringResource(R.string.save)) }
-                IconButton(onClick = { dialog = "export" }, enabled = state.contentEnd > 0 && !state.recording) { Icon(Icons.Default.FileDownload, stringResource(R.string.export)) }
-                IconButton(onClick = { vm.refreshAudioStatus(); dialog = "settings" }) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
-            }
-            // --- Transporte ---
-            Transport(
-                state, playing, position, onRewind = { vm.seek(0) }, onPlay = vm::play, onStop = vm::stop,
-                onRecord = { requestMic { vm.record() } }, onTempo = { dialog = "tempo" }, onMetronome = { vm.setMetronome(!state.metronome) },
-                onLoop = { vm.setLoop(!state.loopEnabled, state.loopStart, state.loopEnd) }, onLoopEdit = { dialog = "loop" },
-            )
-            busy?.let { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-
-            // --- Panel activo ---
-            val track = state.tracks.firstOrNull { it.id == selectedTrack }
-            AnimatedContent(panel, Modifier.weight(1f).fillMaxWidth(), transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(100)) }, label = "panel") { p ->
-                when (p) {
-                    Panel.ARRANGE -> ArrangementView(
-                        state, waveforms, selected, selectedTrack, position, meters, vm,
-                        onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
-                        onTrackMenu = { id -> dialog = "rename:$id" },
-                        onFades = { dialog = "fades" }, onGain = { dialog = "gain" },
-                    )
-                    Panel.DRUMS -> {
-                        val t = track?.takeIf { it.isDrums } ?: state.tracks.firstOrNull { it.isDrums }
-                        if (t == null) EmptyPanel(tr("No hay pistas de batería.", "No drum tracks."), tr("Añadir Cauce Drums", "Add Cauce Drums")) {
-                            vm.addTrack(tr("Batería", "Drums"), "drums")
-                        } else DrumsPanel(state, t, catalog, position, playing, vm, drumClipboard) { drumClipboard = it }
-                    }
-                    Panel.PIANO -> {
-                        val t = track?.takeIf { it.isSynth } ?: state.tracks.firstOrNull { it.isSynth }
-                        val clip = t?.let { tt -> selected?.let { id -> tt.midiClips.firstOrNull { it.id == id } } ?: tt.midiClips.firstOrNull() }
-                        when {
-                            t == null -> EmptyPanel(tr("No hay pistas de sintetizador.", "No synth tracks."), tr("Añadir Cauce Synth", "Add Cauce Synth")) {
-                                vm.addTrack("Synth", "synth")
-                            }
-                            clip == null -> EmptyPanel(tr("La pista «${t.name}» no tiene clips MIDI.", "Track “${t.name}” has no MIDI clips."), tr("Crear clip de 4 compases", "Create 4-bar clip")) {
-                                val bar = PPQ.toLong() * state.beatsPerBar
-                                val start = MusicTime.floorTicks(state.framesToTicks(position.longValue), bar)
-                                vm.addMidiClip(t.id, start, bar * 4, null)
-                            }
-                            else -> PianoRollPanel(state, t, clip, position, playing, vm)
-                        }
-                    }
-                    Panel.SYNTH -> {
-                        val t = track?.takeIf { it.isSynth } ?: state.tracks.firstOrNull { it.isSynth }
-                        if (t == null) EmptyPanel(tr("No hay pistas de sintetizador.", "No synth tracks."), tr("Añadir Cauce Synth", "Add Cauce Synth")) {
-                            vm.addTrack("Synth", "synth")
-                        } else SynthPanel(state, t, catalog, vm)
-                    }
-                    Panel.MIXER -> MixerPanel(state, meters, selectedTrack, vm)
-                    Panel.FX -> {
-                        val t = track ?: state.tracks.firstOrNull()
-                        if (t == null) EmptyPanel(tr("No hay pistas.", "No tracks."), tr("Añadir pista de audio", "Add audio track")) { vm.addTrack("Audio 1", "audio") }
-                        else EffectsPanel(state, t, catalog, vm)
-                    }
-                }
-            }
-        }
-    }
+    StudioLayout(
+        state, panel, selected, selectedTrack, waveforms, catalog, busy != null, position, playingState.value, meters, vm, snackbar,
+        onDialog = { dialog = it },
+        onSettings = { vm.refreshAudioStatus(); dialog = "settings" },
+        onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
+        onRecord = { requestMic { vm.record() } },
+    )
 
     // --- Diálogos ---
     when (val d = dialog) {
@@ -247,8 +184,95 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
     }
 }
 
+/** Disposición del estudio sin dependencias del motor (se puede renderizar en pruebas JVM). */
 @Composable
-private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit) {
+fun StudioLayout(
+    state: ProjectState, panel: Panel, selected: String?, selectedTrack: String?, waveforms: Map<String, FloatArray>, catalog: Catalog,
+    busy: Boolean, position: LongState, playing: Boolean, meters: androidx.compose.runtime.State<FloatArray>, actions: StudioActions,
+    snackbar: SnackbarHostState, onDialog: (String) -> Unit, onSettings: () -> Unit, onImport: (String) -> Unit, onRecord: () -> Unit,
+) {
+    var drumClipboard by remember { mutableStateOf<List<List<Int>>?>(null) }
+    // Horizontal (poca altura): barra superior y transporte en una sola fila y navegación compacta, para dejar
+    // el máximo espacio vertical a las pistas.
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
+    val transport: @Composable (Modifier) -> Unit = { m ->
+        Transport(
+            state, playing, position, onRewind = { actions.seek(0) }, onPlay = actions::play, onStop = actions::stop,
+            onRecord = onRecord, onTempo = { onDialog("tempo") }, onMetronome = { actions.setMetronome(!state.metronome) },
+            onLoop = { actions.setLoop(!state.loopEnabled, state.loopStart, state.loopEnd) }, onLoopEdit = { onDialog("loop") }, modifier = m,
+        )
+    }
+    Scaffold(containerColor = Palette.Background, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { StudioNav(panel, actions::openPanel, compact) }) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            // --- Barra superior (+ transporte en horizontal) ---
+            Row(Modifier.fillMaxWidth().background(Palette.Surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { actions.closeProject() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+                Column(Modifier.weight(1f)) {
+                    Text(state.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                    Text(if (state.dirty) stringResource(R.string.unsaved) else stringResource(R.string.saved), color = Palette.TextDim, fontSize = 11.sp)
+                }
+                if (compact) transport(Modifier.width(440.dp))
+                IconButton(onClick = actions::undo, enabled = state.canUndo && !state.recording) { Icon(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo)) }
+                IconButton(onClick = actions::redo, enabled = state.canRedo && !state.recording) { Icon(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo)) }
+                IconButton(onClick = actions::saveNow) { Icon(Icons.Default.Save, stringResource(R.string.save)) }
+                IconButton(onClick = { onDialog("export") }, enabled = state.contentEnd > 0 && !state.recording) { Icon(Icons.Default.FileDownload, stringResource(R.string.export)) }
+                IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
+            }
+            // --- Transporte ---
+            if (!compact) transport(Modifier.fillMaxWidth().background(Palette.Background))
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+
+            // --- Panel activo ---
+            val track = state.tracks.firstOrNull { it.id == selectedTrack }
+            AnimatedContent(panel, Modifier.weight(1f).fillMaxWidth(), transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(100)) }, label = "panel") { p ->
+                when (p) {
+                    Panel.ARRANGE -> ArrangementView(
+                        state, waveforms, selected, selectedTrack, position, meters, actions,
+                        onImport = onImport,
+                        onTrackMenu = { id -> onDialog("rename:$id") },
+                        onFades = { onDialog("fades") }, onGain = { onDialog("gain") },
+                    )
+                    Panel.DRUMS -> {
+                        val t = track?.takeIf { it.isDrums } ?: state.tracks.firstOrNull { it.isDrums }
+                        if (t == null) EmptyPanel(tr("No hay pistas de batería.", "No drum tracks."), tr("Añadir Cauce Drums", "Add Cauce Drums")) {
+                            actions.addTrack(tr("Batería", "Drums"), "drums")
+                        } else DrumsPanel(state, t, catalog, position, playing, actions, drumClipboard) { drumClipboard = it }
+                    }
+                    Panel.PIANO -> {
+                        val t = track?.takeIf { it.isSynth } ?: state.tracks.firstOrNull { it.isSynth }
+                        val clip = t?.let { tt -> selected?.let { id -> tt.midiClips.firstOrNull { it.id == id } } ?: tt.midiClips.firstOrNull() }
+                        when {
+                            t == null -> EmptyPanel(tr("No hay pistas de sintetizador.", "No synth tracks."), tr("Añadir Cauce Synth", "Add Cauce Synth")) {
+                                actions.addTrack("Synth", "synth")
+                            }
+                            clip == null -> EmptyPanel(tr("La pista «${t.name}» no tiene clips MIDI.", "Track “${t.name}” has no MIDI clips."), tr("Crear clip de 4 compases", "Create 4-bar clip")) {
+                                val bar = PPQ.toLong() * state.beatsPerBar
+                                val start = MusicTime.floorTicks(state.framesToTicks(position.longValue), bar)
+                                actions.addMidiClip(t.id, start, bar * 4, null)
+                            }
+                            else -> PianoRollPanel(state, t, clip, position, playing, actions)
+                        }
+                    }
+                    Panel.SYNTH -> {
+                        val t = track?.takeIf { it.isSynth } ?: state.tracks.firstOrNull { it.isSynth }
+                        if (t == null) EmptyPanel(tr("No hay pistas de sintetizador.", "No synth tracks."), tr("Añadir Cauce Synth", "Add Cauce Synth")) {
+                            actions.addTrack("Synth", "synth")
+                        } else SynthPanel(state, t, catalog, actions)
+                    }
+                    Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions)
+                    Panel.FX -> {
+                        val t = track ?: state.tracks.firstOrNull()
+                        if (t == null) EmptyPanel(tr("No hay pistas.", "No tracks."), tr("Añadir pista de audio", "Add audio track")) { actions.addTrack("Audio 1", "audio") }
+                        else EffectsPanel(state, t, catalog, actions)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit, compact: Boolean = false) {
     val items = listOf(
         Triple(Panel.ARRANGE, Icons.Default.ViewTimeline, tr("Arreglo", "Arrange")),
         Triple(Panel.DRUMS, Icons.Default.GridOn, tr("Batería", "Drums")),
@@ -256,6 +280,16 @@ private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit) {
         Triple(Panel.SYNTH, Icons.Default.Tune, "Synth"),
         Triple(Panel.MIXER, Icons.Default.GraphicEq, tr("Mezcla", "Mixer")),
     )
+    if (compact) {
+        // Fila de 52 dp con icono + etiqueta corta en línea (objetivos táctiles de 48 dp).
+        Row(Modifier.fillMaxWidth().height(52.dp).background(Palette.Surface).navigationBarsPadding(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            items.forEach { (p, icon, label) ->
+                val on = p == panel || (p == Panel.MIXER && panel == Panel.FX)
+                PillToggle(label, on, { onSelect(p) }, color = Palette.Cyan, height = 44.dp, icon = icon)
+            }
+        }
+        return
+    }
     NavigationBar(containerColor = Palette.Surface, tonalElevation = 0.dp) {
         items.forEach { (p, icon, label) ->
             NavigationBarItem(
@@ -283,8 +317,9 @@ private fun EmptyPanel(text: String, button: String, onClick: () -> Unit) {
 @Composable
 private fun PositionReadout(state: ProjectState, position: LongState) {
     val pos = position.longValue
-    Column(Modifier.padding(horizontal = 6.dp)) {
-        Text(MusicTime.barsBeats(pos, state.bpm, state.beatsPerBar), fontFamily = FontFamily.Monospace, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+    Column(Modifier.padding(horizontal = 4.dp)) {
+        if (state.recording) Text("● REC", color = Palette.Record, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text(MusicTime.barsBeats(pos, state.bpm, state.beatsPerBar), fontFamily = FontFamily.Monospace, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         Text(MusicTime.clock(pos), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Palette.TextDim)
     }
 }
@@ -294,31 +329,36 @@ private fun PositionReadout(state: ProjectState, position: LongState) {
 private fun Transport(
     s: ProjectState, playing: Boolean, position: LongState, onRewind: () -> Unit, onPlay: () -> Unit, onStop: () -> Unit,
     onRecord: () -> Unit, onTempo: () -> Unit, onMetronome: () -> Unit, onLoop: () -> Unit, onLoopEdit: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
+    // Cabe en 360 dp de ancho (teléfonos compactos) sin desplazamiento: lo esencial siempre visible.
     Row(
-        Modifier.fillMaxWidth().background(Palette.Background).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        RoundButton(Icons.Default.SkipPrevious, stringResource(R.string.rewind), onRewind, size = 44.dp)
-        if (playing || s.recording) RoundButton(Icons.Default.Stop, stringResource(R.string.stop), onStop, size = 52.dp, background = Palette.SurfaceTop)
-        else RoundButton(Icons.Default.PlayArrow, stringResource(R.string.play), onPlay, size = 52.dp, background = Palette.Violet, tint = Color.White, glow = true)
+        RoundButton(Icons.Default.SkipPrevious, stringResource(R.string.rewind), onRewind, size = 40.dp)
+        if (playing || s.recording) RoundButton(Icons.Default.Stop, stringResource(R.string.stop), onStop, size = 50.dp, background = Palette.SurfaceTop)
+        else RoundButton(Icons.Default.PlayArrow, stringResource(R.string.play), onPlay, size = 50.dp, background = Palette.Violet, tint = Color.White, glow = true)
         RoundButton(
-            Icons.Default.FiberManualRecord, stringResource(R.string.record), onRecord, size = 52.dp, enabled = !s.recording,
+            Icons.Default.FiberManualRecord, stringResource(R.string.record), onRecord, size = 50.dp, enabled = !s.recording,
             background = if (s.recording) Palette.Record else Palette.SurfaceTop, tint = if (s.recording) Color.White else Palette.Record,
         )
-        PositionReadout(s, position)
-        if (s.recording) Text("● REC", color = Palette.Record, fontWeight = FontWeight.Bold)
-        Text(
-            "%.1f BPM · %d/4".format(s.bpm, s.beatsPerBar), fontFamily = FontFamily.Monospace, fontSize = 13.sp,
-            modifier = Modifier.border(1.dp, Palette.Grid, RoundedCornerShape(18.dp)).clickable(enabled = !s.recording, onClick = onTempo)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-        )
-        ToggleIcon(Icons.Default.Timer, stringResource(R.string.metronome), s.metronome, onMetronome)
+        Box(Modifier.weight(1f)) { PositionReadout(s, position) }
+        Column(
+            Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, Palette.Grid, RoundedCornerShape(12.dp))
+                .clickable(enabled = !s.recording, onClick = onTempo).padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(if (s.bpm % 1.0 == 0.0) "${s.bpm.toInt()}" else "%.1f".format(s.bpm), fontFamily = FontFamily.Monospace, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("BPM ${s.beatsPerBar}/4", fontSize = 10.sp, color = Palette.TextDim)
+        }
+        Box(Modifier.size(44.dp).clickable(onClick = onMetronome), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Timer, stringResource(R.string.metronome), tint = if (s.metronome) Palette.Accent else Palette.TextDim)
+        }
         // Bucle: toque = activar/desactivar; pulsación larga = editar rango.
-        Box(
-            Modifier.size(48.dp).combinedClickable(onClick = onLoop, onLongClick = onLoopEdit),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Loop, tr("Bucle", "Loop"), tint = if (s.loopEnabled) Palette.Cyan else Palette.TextDim) }
+        Box(Modifier.size(44.dp).combinedClickable(onClick = onLoop, onLongClick = onLoopEdit), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Loop, tr("Bucle", "Loop"), tint = if (s.loopEnabled) Palette.Cyan else Palette.TextDim)
+        }
     }
 }
 
@@ -331,7 +371,7 @@ private fun ToggleIcon(icon: ImageVector, desc: String, on: Boolean, onClick: ()
 @Composable
 private fun ArrangementView(
     state: ProjectState, waveforms: Map<String, FloatArray>, selected: String?, selectedTrack: String?, position: LongState,
-    meters: androidx.compose.runtime.State<FloatArray>, vm: DawViewModel, onImport: (String) -> Unit, onTrackMenu: (String) -> Unit,
+    meters: androidx.compose.runtime.State<FloatArray>, vm: StudioActions, onImport: (String) -> Unit, onTrackMenu: (String) -> Unit,
     onFades: () -> Unit, onGain: () -> Unit,
 ) {
     val hScroll = rememberScrollState()
@@ -420,7 +460,7 @@ private fun ArrangementView(
                 IconButton(onClick = { vm.deleteMidiClip(c.id) }) { Icon(Icons.Default.Delete, stringResource(R.string.delete), tint = Palette.Record) }
                 Text(c.name, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1)
             } else {
-                Text(tr("Toca un clip para editarlo · doble toque abre el editor", "Tap a clip to edit · double tap opens the editor"),
+                Text(tr("Toca un clip · doble toque: editor", "Tap a clip · double tap: editor"),
                     color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
             }
         }
@@ -429,7 +469,7 @@ private fun ArrangementView(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm: DawViewModel, onImport: () -> Unit, onMenu: () -> Unit) {
+private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm: StudioActions, onImport: () -> Unit, onMenu: () -> Unit) {
     val color = Color(t.color.toInt())
     Row(
         Modifier.width(HEADER_W).height(TRACK_HEIGHT).background(if (selected) Palette.SurfaceHigh else Palette.Surface).border(0.5.dp, Palette.Grid)

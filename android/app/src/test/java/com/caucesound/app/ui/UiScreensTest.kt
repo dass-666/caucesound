@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import com.caucesound.app.data.Catalog
+import com.caucesound.app.data.PPQ
 import com.caucesound.app.data.NoteState
 import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.StateParser
@@ -52,6 +54,7 @@ class UiScreensTest {
         override fun setMute(id: String, on: Boolean) { calls += "mute:$id:$on" }
         override fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) { live += Triple(key, velocity, on) }
         override fun setInsertBypass(insertId: String, bypass: Boolean) { calls += "bypass:$insertId:$bypass" }
+        override fun play() { calls += "play" }
         override fun addPattern(trackId: String, copyFrom: String?) { calls += "addPattern:$copyFrom" }
     }
 
@@ -77,7 +80,7 @@ class UiScreensTest {
     @Test fun drums_panel_paints_steps() {
         val rec = Recorder()
         val drums = state.tracks.first { it.isDrums }
-        compose.setContent { Themed { DrumsPanel(state, drums, catalog, mutableLongStateOf(0L), false, rec, null) {} } }
+        compose.setContent { Themed { DrumsPanel(state, drums, catalog, remember { mutableLongStateOf(0L) }, false, rec, null) {} } }
         shot("02_drums")
         assertTrue(drums.patterns.isNotEmpty() && drums.patterns[0].lanes.size == 8)
     }
@@ -88,7 +91,7 @@ class UiScreensTest {
         val synth = state.tracks.last { it.isSynth }
         val clip = synth.midiClips.first()
         assertTrue(clip.notes.size >= 8 && clip.notes.all { it.start + it.length <= clip.length })
-        compose.setContent { Themed { PianoRollPanel(state, synth, clip, mutableLongStateOf(0L), false, rec) } }
+        compose.setContent { Themed { PianoRollPanel(state, synth, clip, remember { mutableLongStateOf(0L) }, false, rec) } }
         shot("03_piano_roll")
     }
 
@@ -103,7 +106,7 @@ class UiScreensTest {
 
     @Test fun mixer_panel_toggles_mute() {
         val rec = Recorder()
-        val meters = mutableStateOf(FloatArray(state.tracks.size + 1) { 0.3f + 0.1f * it })
+        val meters = mutableStateOf(FloatArray(state.tracks.size + 1) { 0.3f + 0.1f * it }) // fuera de la composición
         compose.setContent { Themed { MixerPanel(state, meters, state.tracks[0].id, rec) } }
         shot("05_mixer")
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("M"))[0].performClick()
@@ -120,6 +123,37 @@ class UiScreensTest {
         shot("07_effects")
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Bypass").or(androidx.compose.ui.test.hasContentDescription("On")))[0].performClick()
         assertTrue(rec.calls.any { it.startsWith("bypass:") })
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun Studio(panel: Panel, rec: StudioActions, selected: String? = null) {
+        val meters = remember { mutableStateOf(FloatArray(state.tracks.size + 1) { 0.2f }) }
+        Themed {
+            StudioLayout(
+                state, panel, selected, state.tracks[0].id, emptyMap(), catalog, false, remember { mutableLongStateOf(state.ticksToFrames(PPQ * 6L)) }, false,
+                meters, rec, androidx.compose.material3.SnackbarHostState(), {}, {}, {}, {},
+            )
+        }
+    }
+
+    @Test fun studio_arrangement_portrait() {
+        val rec = Recorder()
+        compose.setContent { Studio(Panel.ARRANGE, rec) }
+        shot("08_studio_arrange")
+        compose.onNodeWithContentDescription("Play").performClick()
+        assertTrue(rec.calls.contains("play"))
+    }
+
+    @Config(qualifiers = "w891dp-h411dp-land-xxhdpi")
+    @Test fun studio_arrangement_landscape() {
+        val clip = state.tracks.first { it.isSynth }.midiClips.first().id
+        compose.setContent { Studio(Panel.ARRANGE, Recorder(), clip) }
+        shot("09_studio_arrange_land")
+    }
+
+    @Test fun studio_drums_panel_in_context() {
+        compose.setContent { Studio(Panel.DRUMS, Recorder()) }
+        shot("10_studio_drums")
     }
 
     @Test fun arrangement_timeline_draws_midi_and_audio_lanes() {
