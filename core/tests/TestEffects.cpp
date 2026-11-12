@@ -172,6 +172,7 @@ TEST (fx_output_is_identical_for_any_block_size)
         const auto ref = run (*a, sig, 1024);
         const auto r1 = run (*b, sig, 1);
         const auto rr = run (*c, sig, 0, 77);
+        CHECK_MSG (rms (ref) > 0.01f, std::string (type) + " salida en silencio: la comparación no probaría nada");
         float diff = 0;
         for (size_t i = 0; i < ref.size(); ++i) diff = std::max ({ diff, std::fabs (ref[i] - r1[i]), std::fabs (ref[i] - rr[i]) });
         CHECK_MSG (diff == 0.0f, std::string (type) + " diferencia " + std::to_string (diff));
@@ -367,4 +368,58 @@ TEST (pdc_export_matches_live_with_latent_insert)
     int count = 0;
     for (size_t i = 0; i < l.size(); ++i) if (std::fabs (l[i]) > 0.1f) { at = i; ++count; }
     CHECK (count == 1 && at == 10000 && std::fabs (l[10000] - 1.0f) < 1e-6f);
+
+    // La misma sesión reproducida en vivo (otro motor, bloques de 256) da exactamente la misma señal.
+    Engine live;
+    live.prepare (kSr, 1024);
+    live.publish (impulseGraph (a, 7200, 10000));
+    live.seek (0);
+    live.play();
+    std::vector<float> buf (256 * 2);
+    float diff = 0;
+    for (size_t done = 0; done < l.size(); done += 256)
+    {
+        const int n = (int) std::min<size_t> (256, l.size() - done);
+        live.process (nullptr, 0, buf.data(), 2, n);
+        for (size_t i = 0; i < (size_t) n; ++i)
+            diff = std::max ({ diff, std::fabs (buf[i * 2] - l[done + i]), std::fabs (buf[i * 2 + 1] - r[done + i]) });
+    }
+    MEASURE ("PDC: exportación vs reproducción en vivo, diferencia máxima %g", diff);
+    CHECK (diff == 0.0f);
+}
+
+// Seek con PDC: lejos del contenido, la alineación es exacta; justo antes (menos de L frames), la pista latente
+// pierde ese tramo (limitación documentada: no hay precarga). La prueba fija ambos comportamientos.
+TEST (pdc_after_seek_is_aligned_and_documents_the_preroll_gap)
+{
+    auto a = std::make_shared<AudioData>();
+    a->allocate (1, 4800);
+    a->channels[0][0] = 0.5f;
+    const int L = 7200;
+    auto playFrom = [&] (Frame from)
+    {
+        Engine e;
+        e.prepare (kSr, 1024);
+        e.publish (impulseGraph (a, L, 48000));
+        e.seek (from);
+        e.play();
+        std::vector<float> out ((size_t) kSr * 2), buf (256 * 2);
+        for (size_t done = 0; done < out.size() / 2; done += 256)
+        {
+            const int n = (int) std::min<size_t> (256, out.size() / 2 - done);
+            e.process (nullptr, 0, buf.data(), 2, n);
+            std::copy (buf.begin(), buf.begin() + n * 2, out.begin() + (long) done * 2);
+        }
+        return out;
+    };
+    const auto far = playFrom (30000); // 18000 frames antes del impulso (> L)
+    const auto pf = peaks (far, 0.1f);
+    CHECK (pf.size() == 1 && pf[0] == 18000 && std::fabs (far[18000 * 2] - 1.0f) < 1e-6f);
+    const auto near = playFrom (46000); // 2000 frames antes (< L): solo suena la pista sin latencia
+    const auto pn = peaks (near, 0.1f);
+    CHECK (pn.size() == 1 && pn[0] == 2000); // un solo golpe a 0,5: falta el de la pista latente
+    float m = 0;
+    for (size_t i = 0; i < near.size() / 2; ++i) m = std::max (m, std::fabs (near[i * 2]));
+    MEASURE ("PDC tras seek: alineada si el contenido está a más de %d frames; si no, solo suena la pista sin latencia (pico %.2f)", L, m);
+    CHECK (std::fabs (m - 0.5f) < 1e-6f);
 }

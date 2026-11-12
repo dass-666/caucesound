@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -660,12 +661,18 @@ TEST (editing_patterns_while_playing_is_thread_safe)
         if (t.kind == "drums") { drumsId = t.id; patId = t.patterns[0].id; }
         if (t.kind == "synth" && synthId.empty()) synthId = t.id;
     }
-    std::atomic<bool> stop { false };
+    std::atomic<bool> stop { false }, finite { true };
+    std::atomic<long> blocks { 0 };
     f.engine.play();
     std::thread audio ([&]
     {
         std::vector<float> out (256 * 2);
-        while (! stop.load()) { f.engine.process (nullptr, 0, out.data(), 2, 256); }
+        while (! stop.load())
+        {
+            f.engine.process (nullptr, 0, out.data(), 2, 256);
+            for (float x : out) if (! std::isfinite (x)) finite.store (false);
+            blocks.fetch_add (1);
+        }
     });
     std::mt19937 rng (5);
     for (int i = 0; i < 400; ++i)
@@ -676,10 +683,15 @@ TEST (editing_patterns_while_playing_is_thread_safe)
         if (i % 7 == 0) f.session.setClipNotes (firstMidiClip (f.session, synthId), { note (40 + (int) (rng() % 30), 0, 960) });
         f.engine.sendLive (0, 0x99, kDrumBaseNote, 100);
     }
+    std::this_thread::sleep_for (std::chrono::milliseconds (20));
     stop.store (true);
     audio.join();
     f.engine.stop();
-    CHECK (true);
+    // Bajo TSan, cualquier carrera falla la ejecución. En cualquier compilación: el audio siguió procesando, la salida
+    // es finita y el modelo final es coherente.
+    CHECK (finite.load());
+    CHECK (blocks.load() > 0);
+    CHECK (validate (f.session.model()).empty());
 }
 
 TEST (api_music_commands_end_to_end)
