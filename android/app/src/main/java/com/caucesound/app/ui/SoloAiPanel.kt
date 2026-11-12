@@ -220,6 +220,9 @@ private fun AnalysisCard(state: ProjectState, a: BeatAnalysis, actions: StudioAc
             PillToggle(if (useChords) tr("Sí", "Yes") else "No", useChords, { if (bpmChoice >= 0) useChords = !useChords }, color = Palette.Cyan, modifier = Modifier.testTag("solo_use_chords"))
         }
         a.warnings.forEach { Text("• $it", color = Palette.Warn, fontSize = 12.sp) }
+        Text(tr("La detección de tonalidad puede fallar, sobre todo si la batería suena fuerte. Compruébala de oído antes de confirmar.",
+            "Key detection can be wrong, especially with loud drums. Check it by ear before confirming."),
+            color = Palette.TextFaint, fontSize = 11.sp, modifier = Modifier.testTag("solo_analysis_caution"))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CauceButton(tr("Descartar", "Discard"), actions::dismissAnalysis, Modifier.weight(1f))
             CauceButton(tr("Confirmar", "Confirm"), { actions.confirmAnalysis(root, minor, a.bpmCandidates.getOrNull(bpmChoice), useChords && bpmChoice >= 0); actions.dismissAnalysis() },

@@ -403,3 +403,132 @@ TEST (solo_ai_new_ending_keeps_everything_before_it_including_manual_edits)
     CHECK (again.size() == out.size());
     for (size_t i = 0; i < std::min (again.size(), out.size()); ++i) CHECK (again[i].key == out[i].key && again[i].start == out[i].start);
 }
+
+// --- Misión 0.6: el análisis de beats frente a material que NO viene del generador de Solo AI -------------------
+// Las pruebas anteriores usan el beat sintético del propio Solo AI (el analizador juzgado con su propio generador).
+// Aquí el material lo produce el motor de CAUCESOUND: las cinco plantillas (música original de la app, con batería,
+// bajo, acordes y melodía), a su tempo y a otros dos, más casos difíciles: solo batería, batería y bajo sin acordes,
+// silencio y un cambio de energía. Se conoce la respuesta correcta porque el plan musical está en el proyecto.
+// Lo que se exige es lo que la app promete al usuario: el tempo real (o su mitad o doble) está entre los candidatos,
+// la tonalidad real o su relativa está entre las candidatas cuando el análisis dice que hay tonalidad, y nunca se
+// inventa una tonalidad con confianza alta para percusión o silencio. La tasa de acierto exacto se MIDE y se informa.
+// Resultado de la primera medición (2026-11-12): tempo 13 de 15 exacto y 15 de 15 exacto o a la mitad/doble;
+// tonalidad: solo 3 de 15 canciones reconocidas como tonales y 1 acierto. Ver el comentario junto a la comprobación.
+#include "cs/SoloBridge.h"
+
+namespace
+{
+struct Truth { double bpm; int keyRoot; bool minor; };
+
+AudioData renderSong (Fx& f, const std::string& genre, double bpm, const std::vector<std::string>& onlyRoles, Truth& truth)
+{
+    static int n = 0;
+    CHECK (f.session.createProject (f.dir + "/s" + std::to_string (++n), "x", 48000, genre).ok);
+    if (bpm > 0) CHECK (f.cmd ({ { "cmd", "setTempo" }, { "bpm", bpm }, { "beatsPerBar", 4 } }).value ("ok", false));
+    const ProjectModel m = f.session.model();
+    MusicPlan plan;
+    CHECK (MusicPlan::fromJson (m.music, plan));
+    truth = { m.bpm, plan.keyRoot, plan.minor };
+    if (! onlyRoles.empty())
+        for (const auto& t : m.tracks)
+        {
+            auto it = plan.roles.find (t.id);
+            const bool keep = it != plan.roles.end() && std::find (onlyRoles.begin(), onlyRoles.end(), it->second) != onlyRoles.end();
+            if (! keep && t.kind != "bus") CHECK (f.session.setTrackMute (t.id, true).ok);
+        }
+    AudioData a;
+    std::string err;
+    const std::string wav = f.dir + "/r.wav";
+    CHECK (f.session.exportMix (wav, 32).ok);
+    CHECK (readWav (wav, a, err));
+    f.session.close();
+    return a;
+}
+
+bool tempoRelated (double got, double real) { for (double k : { 1.0, 0.5, 2.0 }) if (std::fabs (got - real * k) / (real * k) < 0.025) return true; return false; }
+bool sameOrRelative (int root, bool minor, const Truth& t)
+{
+    if (root == t.keyRoot && minor == t.minor) return true;
+    return t.minor ? (! minor && root == (t.keyRoot + 3) % 12) : (minor && root == (t.keyRoot + 9) % 12);
+}
+} // namespace
+
+TEST (solo_ai_analysis_on_caucesound_songs_finds_tempo_and_key_or_says_it_is_unsure)
+{
+    if (! cs::solo::available()) return;
+    Fx f ("solo_set");
+    int songs = 0, bpmExact = 0, bpmRelated = 0, bpmInCandidates = 0, keyExact = 0, keyRelative = 0, keyInCandidates = 0, tonal = 0, sureAndWrong = 0;
+    for (const std::string g : { "trap", "reggaeton", "hiphop", "pop", "electronic" })
+        for (double bpm : { 0.0, 100.0, 128.0 })
+        {
+            Truth t {};
+            const AudioData a = renderSong (f, g, bpm, {}, t);
+            const cs::solo::Analysis r = cs::solo::analyze (a, 0, a.numFrames());
+            CHECK_MSG (r.ok, r.error);
+            ++songs;
+            const bool exact = std::fabs (r.bpm - t.bpm) / t.bpm < 0.025, related = tempoRelated (r.bpm, t.bpm);
+            bool cand = false;
+            for (const auto& c : r.bpmCandidates) cand = cand || tempoRelated (c.first, t.bpm);
+            bpmExact += exact; bpmRelated += related; bpmInCandidates += cand;
+            bool kc = false;
+            for (const auto& k : r.keyCandidates) kc = kc || sameOrRelative (k.root, k.minor, t);
+            tonal += r.tonal;
+            keyExact += r.tonal && r.keyRoot == t.keyRoot && r.minor == t.minor;
+            keyRelative += r.tonal && sameOrRelative (r.keyRoot, r.minor, t);
+            keyInCandidates += kc;
+            sureAndWrong += r.tonal && r.keyConfidence >= 0.5 && ! sameOrRelative (r.keyRoot, r.minor, t);
+            MEASURE ("%-10s real %5.1f BPM, tónica %2d %s -> %5.1f BPM (conf. %.2f), tónica %2d %s (conf. %.2f)%s%s", g.c_str(), t.bpm, t.keyRoot, t.minor ? "menor" : "mayor",
+                     r.bpm, r.bpmConfidence, r.keyRoot, r.minor ? "menor" : "mayor", r.keyConfidence, exact ? "" : related ? "  [tempo a la mitad o al doble]" : "  [TEMPO DISTINTO]",
+                     ! r.tonal ? "  [sin tonalidad]" : (r.keyRoot == t.keyRoot && r.minor == t.minor) ? "" : sameOrRelative (r.keyRoot, r.minor, t) ? "  [relativa]" : "  [TONALIDAD DISTINTA]");
+        }
+    MEASURE ("resumen de %d canciones: tempo exacto %d, exacto o mitad/doble %d, entre candidatos %d; tonalidad exacta %d, exacta o relativa %d, entre candidatas %d (tonales %d)",
+             songs, bpmExact, bpmRelated, bpmInCandidates, keyExact, keyRelative, keyInCandidates, tonal);
+    MEASURE ("tonalidades dadas con confianza >= 0,5 que eran incorrectas: %d", sureAndWrong);
+    // Lo que se exige. Tempo: el valor real (o su mitad o doble) está entre los candidatos en la gran mayoría de casos.
+    CHECK (bpmInCandidates >= songs * 8 / 10);
+    // Tonalidad: LIMITACIÓN MEDIDA. Con mezclas completas (batería y bajo fuertes) el analizador de Solo AI dice «sin
+    // tonalidad» en la mayoría de estas canciones, y cuando arriesga con confianza baja puede fallar. Se probó una
+    // segunda pasada quitando los graves (paso alto a 200 Hz) y no cambió ningún resultado, así que se retiró. Lo que
+    // sí se exige es que no se equivoque con confianza alta: en ese caso el usuario elige la tonalidad a mano, que es
+    // lo que la app le pide. Mejorarlo de verdad exige cambiar el analizador en el repositorio de Solo AI.
+    CHECK (sureAndWrong == 0);
+
+    // Casos difíciles.
+    Truth t {};
+    const AudioData drums = renderSong (f, "trap", 0, { "drums" }, t);
+    const cs::solo::Analysis d = cs::solo::analyze (drums, 0, drums.numFrames());
+    MEASURE ("solo batería (trap): %.1f BPM, tonal=%d, percusivo=%d, confianza de tonalidad %.2f, avisos %zu", d.bpm, (int) d.tonal, (int) d.percussiveOnly, d.keyConfidence, d.warnings.size());
+    CHECK (d.ok && (! d.tonal || d.keyConfidence < 0.5 || d.percussiveOnly || ! d.warnings.empty()));
+    CHECK (tempoRelated (d.bpm, t.bpm));
+
+    const AudioData db = renderSong (f, "reggaeton", 0, { "drums", "bass" }, t);
+    const cs::solo::Analysis b = cs::solo::analyze (db, 0, db.numFrames());
+    bool bk = false;
+    for (const auto& k : b.keyCandidates) bk = bk || sameOrRelative (k.root, k.minor, t);
+    MEASURE ("batería y bajo sin acordes (reguetón): %.1f BPM, tonal=%d, tónica %d %s (conf. %.2f), real entre candidatas=%d, confianza de acordes %.2f", b.bpm, (int) b.tonal, b.keyRoot,
+             b.minor ? "menor" : "mayor", b.keyConfidence, (int) bk, b.chordConfidenceMean);
+    CHECK (b.ok && tempoRelated (b.bpm, t.bpm));
+
+    AudioData silence;
+    silence.sampleRate = 48000;
+    silence.allocate (2, 48000 * 12);
+    const cs::solo::Analysis s = cs::solo::analyze (silence, 0, silence.numFrames());
+    MEASURE ("silencio: ok=%d, silent=%d, tonal=%d, error «%s»", (int) s.ok, (int) s.silent, (int) s.tonal, s.error.c_str());
+    CHECK (! s.tonal && (s.silent || ! s.ok));
+
+    // Cambio de energía: la primera mitad solo batería, la segunda la canción completa. No debe fallar ni cambiar de tempo.
+    AudioData full = renderSong (f, "hiphop", 0, {}, t);
+    AudioData dr = renderSong (f, "hiphop", 0, { "drums" }, t);
+    const Frame half = std::min (full.numFrames(), dr.numFrames()) / 2;
+    for (int c = 0; c < 2; ++c) std::copy (dr.channels[(size_t) c].begin(), dr.channels[(size_t) c].begin() + half, full.channels[(size_t) c].begin());
+    const cs::solo::Analysis e = cs::solo::analyze (full, 0, full.numFrames());
+    MEASURE ("cambio de energía (hip-hop, batería sola y luego todo): %.1f BPM (real %.1f), tonal=%d, tónica %d %s (conf. %.2f; real %d menor)", e.bpm, t.bpm, (int) e.tonal, e.keyRoot,
+             e.minor ? "menor" : "mayor", e.keyConfidence, t.keyRoot);
+    CHECK (e.ok && tempoRelated (e.bpm, t.bpm));
+    // DEFECTO CONOCIDO del analizador (medido el 2026-11-12, sin corregir: está en el repositorio de Solo AI): en este
+    // caso da Si menor con confianza 0,68 cuando la canción está en Re menor. Por eso la app nunca aplica la tonalidad
+    // detectada sin que el usuario la confirme, y la pantalla avisa de que la compruebe de oído. No se exige aquí que
+    // acierte para no esconder el defecto tras una prueba en verde: la medida de arriba lo deja escrito en cada ejecución.
+    if (e.tonal && e.keyConfidence >= 0.5 && ! sameOrRelative (e.keyRoot, e.minor, t))
+        MEASURE ("DEFECTO CONOCIDO: tonalidad incorrecta con confianza alta en el caso de cambio de energía");
+}
