@@ -12,7 +12,7 @@ dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **
 |---|---|
 | Pruebas del motor `cs_core_tests` (x86-64 Release) | **78/78** (28 de la fase 1 + 50 nuevas) |
 | Mismas pruebas con ASan + UBSan / con TSan | **78/78** / **78/78** |
-| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **ARM64_RESULT**: portabilidad y resultados numéricos, no rendimiento |
+| Mismas pruebas en ARM64 (`aarch64-linux-gnu-g++`, QEMU; Linux, no Android) | **78/78**: portabilidad y resultados numéricos, no rendimiento |
 | Pruebas JVM de la app (`testDebugUnitTest`) | **24/24**: 5 de modelos (fase 1), 6 del modelo musical, 13 de interfaz con Robolectric |
 | `lintDebug` | 0 errores (avisos: versiones nuevas de dependencias, plurales, icono monocromo) |
 | APK `0.2.0-fase1.2-preview` (`assemblePreview`) | Compila, firmado con clave de prueba persistente, `com.caucesound.app.preview` |
