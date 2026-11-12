@@ -40,8 +40,8 @@
 | Conjunto | Comando | Resultado |
 |---|---|---|
 | Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 128/128 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | @@ASAN@@ |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | @@TSAN@@ |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | **128/128** prueba por prueba sobre el código de la entrega, sin informes. 127 con el fuzz de comandos reducido a 300 iteraciones (ahí solo falló su comprobación de recuento mínimo, no hubo informe del sanitizador) y ese fuzz repetido aparte con 1500 iteraciones: correcto |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | **128/128** prueba por prueba, sin avisos, con la misma salvedad del fuzz (repetido aparte con 1500 iteraciones: correcto) |
 | ARM64 | — | **No ejecutado** (sin QEMU ni compilador cruzado). Solo compilación con el NDK |
 | App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 66/66 |
 | Lint | `./gradlew lintDebug` | 0 errores, 38 avisos |

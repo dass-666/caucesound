@@ -28,13 +28,13 @@ Categorías: **Implementado** (código en la rama), **Probado** (prueba automát
 | Conjunto | Resultado |
 |---|---|
 | Motor x86-64 Release | **128/128** |
-| ASan + UBSan | @@ASAN@@ |
-| TSan | @@TSAN@@ |
+| ASan + UBSan | **128/128** prueba por prueba sobre el código de la entrega, sin informes. 127 con el fuzz de comandos reducido a 300 iteraciones (ahí solo falló su comprobación de recuento mínimo, no hubo informe del sanitizador) y ese fuzz repetido aparte con 1500 iteraciones: correcto |
+| TSan | **128/128** prueba por prueba, sin avisos, con la misma salvedad del fuzz (repetido aparte con 1500 iteraciones: correcto) |
 | ARM64 | **Solo compilación** (NDK, arm64-v8a dentro del APK). Las pruebas **no** se ejecutaron en ARM64 |
 | Android JVM y Robolectric | **66/66** |
-| Lint | @@LINT@@ |
-| CI (GitHub Actions) | @@CI@@ |
-| APK `caucesound-0.6.0-production-preview.apk` | @@APK@@ |
+| Lint | 0 errores, 38 avisos (no ocultados) |
+| CI (GitHub Actions) | Trabajo `android` en verde en el commit `f940dde`; el trabajo `core` (Release + ASan) seguía en curso al cerrar. En verde completo en `d6d7565`, `85cf2e7` y `9c92250` |
+| APK `caucesound-0.6.0-production-preview.apk` | versionCode 8, `com.caucesound.app.preview`, arm64-v8a y x86_64, certificado `56b4de46…61ab2e` (el mismo que la 0.5.0, comprobado con `apksigner` en los dos APK). SHA-256 `c5da72cfd6deaefb3281c0e2e650ea97f512c54063c8f0a221ed8a860cf48f7e` |
 
 Límites conocidos de la 0.6:
 
