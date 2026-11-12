@@ -941,7 +941,9 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
         TrackParams& p = offline.trackParams (slot);
         p.gain.store (dbToGain (t.volumeDb)); p.pan.store (t.pan); p.mute.store (t.mute); p.solo.store (t.solo);
         TrackRT tr = makeTrackRT (t, slot++, true, *g);
-        if (tr.instrument && ! tr.events.empty()) instrumentTail = std::max<Frame> (instrumentTail, tr.instrument->tailSamples());
+        Frame trackTail = tr.instrument && ! tr.events.empty() ? tr.instrument->tailSamples() : 0;
+        for (const auto& fx : tr.inserts) trackTail += fx->tailSamples(); // delay y reverb en serie suman su cola
+        instrumentTail = std::max<Frame> (instrumentTail, trackTail);
         g->tracks.push_back (std::move (tr));
     }
     // Las colas de los instrumentos (release, platillos) se incluyen siempre: el archivo no corta notas.

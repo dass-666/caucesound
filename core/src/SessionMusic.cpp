@@ -45,6 +45,111 @@ OpResult Session::setInstrumentParam (const std::string& trackId, const std::str
     return {};
 }
 
+// --- Efectos de inserción ----------------------------------------------------------------------------------------
+namespace
+{
+InsertModel* findInsert (ProjectModel& m, const std::string& id, TrackModel** owner)
+{
+    for (auto& t : m.tracks)
+        for (auto& i : t.inserts)
+            if (i.id == id) { if (owner) *owner = &t; return &i; }
+    return nullptr;
+}
+} // namespace
+
+OpResult Session::addInsert (const std::string& trackId, const std::string& type)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    TrackModel* t = proj.findTrack (trackId);
+    if (! t) return OpResult::fail ("pista no encontrada");
+    if (t->inserts.size() >= 8) return OpResult::fail ("máximo 8 efectos por pista");
+    const auto types = effectTypes();
+    if (std::find (types.begin(), types.end(), type) == types.end()) return OpResult::fail ("efecto desconocido: " + type);
+    ProcessorPtr fx = createProcessor (type);
+    if (! fx) return OpResult::fail ("efecto no disponible");
+    pushUndo();
+    t = proj.findTrack (trackId);
+    InsertModel ins;
+    ins.id = newId ("fx");
+    ins.type = type;
+    ins.state = fx->saveState();
+    t->inserts.push_back (ins);
+    finishEditLocked();
+    OpResult r;
+    r.id = ins.id;
+    return r;
+}
+
+OpResult Session::removeInsert (const std::string& insertId)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    TrackModel* t = nullptr;
+    if (! findInsert (proj, insertId, &t)) return OpResult::fail ("efecto no encontrado");
+    pushUndo();
+    findInsert (proj, insertId, &t);
+    t->inserts.erase (std::remove_if (t->inserts.begin(), t->inserts.end(), [&] (const InsertModel& i) { return i.id == insertId; }), t->inserts.end());
+    insertInstances.erase (insertId);
+    finishEditLocked();
+    return {};
+}
+
+OpResult Session::setInsertParam (const std::string& insertId, const std::string& paramId, float value)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    InsertModel* ins = findInsert (proj, insertId, nullptr);
+    if (! ins) return OpResult::fail ("efecto no encontrado");
+    if (! std::isfinite (value)) return OpResult::fail ("valor no válido");
+    // Instancia viva (la que suena) o una temporal si el efecto está en bypass.
+    ProcessorPtr fx;
+    auto it = insertInstances.find (insertId);
+    if (it != insertInstances.end() && it->second) fx = it->second;
+    else { fx = createProcessor (ins->type); if (! fx) return OpResult::fail ("efecto no disponible"); fx->loadState (ins->state); }
+    const int idx = parameterIndex (*fx, paramId);
+    if (idx < 0) return OpResult::fail ("parámetro desconocido: " + paramId);
+    fx->setParameter (idx, value);
+    ins->state = fx->saveState();
+    touchLocked();
+    return {};
+}
+
+OpResult Session::setInsertBypass (const std::string& insertId, bool bypass)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    InsertModel* ins = findInsert (proj, insertId, nullptr);
+    if (! ins) return OpResult::fail ("efecto no encontrado");
+    if (ins->bypass == bypass) return {};
+    pushUndo();
+    findInsert (proj, insertId, nullptr)->bypass = bypass;
+    finishEditLocked();
+    return {};
+}
+
+OpResult Session::moveInsert (const std::string& insertId, int newIndex)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    TrackModel* t = nullptr;
+    if (! findInsert (proj, insertId, &t)) return OpResult::fail ("efecto no encontrado");
+    if (newIndex < 0 || newIndex >= (int) t->inserts.size()) return OpResult::fail ("posición no válida");
+    pushUndo();
+    findInsert (proj, insertId, &t);
+    auto it = std::find_if (t->inserts.begin(), t->inserts.end(), [&] (const InsertModel& i) { return i.id == insertId; });
+    InsertModel m = *it;
+    t->inserts.erase (it);
+    t->inserts.insert (t->inserts.begin() + newIndex, m);
+    finishEditLocked();
+    return {};
+}
+
+float Session::insertMeter (const std::string& insertId) const
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    auto it = insertInstances.find (insertId);
+    if (it == insertInstances.end() || ! it->second || it->second->typeId() != "cs.compressor") return 0.0f;
+    // El compresor publica su reducción como parámetro de solo lectura del estado; se expone vía getParameter(-1).
+    return it->second->getParameter (-1);
+}
+
 OpResult Session::loadSynthPreset (const std::string& trackId, const std::string& presetId)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);

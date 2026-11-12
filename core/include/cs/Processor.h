@@ -29,6 +29,8 @@ public:
     virtual void prepare (double sampleRate, int maxBlockSize) = 0;
     virtual void reset() = 0;
     virtual int latencySamples() const { return 0; }
+    // Cola tras el final del contenido (release, delay, reverb): la exportación la incluye.
+    virtual int tailSamples() const { return 0; }
     virtual void process (float* const* io, int numChannels, int numFrames) = 0; // en el sitio, tiempo real
 
     virtual std::vector<ParameterInfo> parameters() const { return {}; }
@@ -65,8 +67,6 @@ public:
     // hard = false: pasa todas las voces a release (stop, loop, seek). hard = true: silencio inmediato.
     virtual void allNotesOff (bool hard) = 0;
     virtual int activeVoices() const { return 0; }
-    // Cola máxima tras el último Note Off (release, decaimiento), para la exportación.
-    virtual int tailSamples() const { return 0; }
 };
 
 using ProcessorPtr = std::shared_ptr<AudioProcessor>;
@@ -74,4 +74,5 @@ using ProcessorPtr = std::shared_ptr<AudioProcessor>;
 // Registro de tipos. Fase 1: solo procesadores integrados en el binario (no hay carga dinámica).
 ProcessorPtr createProcessor (const std::string& typeId);
 std::vector<std::string> availableProcessorTypes();
+std::vector<std::string> effectTypes(); // efectos de inserción disponibles (Cauce FX)
 } // namespace cs

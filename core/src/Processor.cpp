@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 
@@ -57,7 +58,8 @@ public:
         }
     }
     std::vector<ParameterInfo> parameters() const override { return { { "gainDb", "Gain", -60.0f, 12.0f, 0.0f } }; }
-    void setParameter (int index, float v) override { if (index == 0) gainDb.store (v); }
+    // Valores no finitos se ignoran (antes se guardaban como null en el proyecto: detectado por fx_all_effects...).
+    void setParameter (int index, float v) override { if (index == 0 && std::isfinite (v)) gainDb.store (std::clamp (v, -60.0f, 12.0f)); }
     float getParameter (int index) const override { return index == 0 ? gainDb.load() : 0.0f; }
 
 private:
@@ -79,5 +81,11 @@ ProcessorPtr createProcessor (const std::string& typeId)
     return createEffect (typeId);
 }
 
-std::vector<std::string> availableProcessorTypes() { return { "cs.gain" }; }
+std::vector<std::string> availableProcessorTypes()
+{
+    auto v = effectTypes();
+    v.push_back ("cs.synth");
+    v.push_back ("cs.drums");
+    return v;
+}
 } // namespace cs

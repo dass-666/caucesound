@@ -82,7 +82,7 @@ json catalog()
         return arr;
     };
     json fx = json::array();
-    for (const auto& t : availableProcessorTypes()) fx.push_back ({ { "type", t }, { "params", params (t.c_str()) } });
+    for (const auto& t : effectTypes()) fx.push_back ({ { "type", t }, { "params", params (t.c_str()) } });
     json tpl = json::array();
     for (const auto& t : projectTemplates()) tpl.push_back ({ { "id", t.id }, { "bpm", t.bpm }, { "kit", t.kitId }, { "tracks", t.tracks } });
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
@@ -168,6 +168,12 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "closeProject") { s.close(); return json { { "ok", true } }.dump(); }
         if (cmd == "save") return result (s.save()).dump();
         if (cmd == "addTrack") return result (s.addTrack (str ("name"), q.value ("kind", std::string ("audio")))).dump();
+        if (cmd == "addInsert") return result (s.addInsert (str ("trackId"), str ("type"))).dump();
+        if (cmd == "removeInsert") return result (s.removeInsert (str ("insertId"))).dump();
+        if (cmd == "setInsertParam") return result (s.setInsertParam (str ("insertId"), str ("param"), (float) num ("value"))).dump();
+        if (cmd == "setInsertBypass") return result (s.setInsertBypass (str ("insertId"), q.value ("bypass", false))).dump();
+        if (cmd == "moveInsert") return result (s.moveInsert (str ("insertId"), (int) num ("index"))).dump();
+        if (cmd == "insertMeter") return json { { "ok", true }, { "grDb", s.insertMeter (str ("insertId")) } }.dump();
         if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();
         if (cmd == "loadPreset") return result (s.loadSynthPreset (str ("trackId"), str ("preset"))).dump();
         if (cmd == "addPattern") return result (s.addPattern (str ("trackId"), str ("copyFrom"))).dump();

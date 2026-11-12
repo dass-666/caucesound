@@ -117,6 +117,14 @@ public:
     // --- Bucle --------------------------------------------------------------------------------------------------
     OpResult setLoop (bool on, Tick start, Tick end);
 
+    // --- Efectos de inserción (Cauce FX), máx. 8 por pista, en serie tras el instrumento o el audio ------------
+    OpResult addInsert (const std::string& trackId, const std::string& type);   // r.id = id de la inserción
+    OpResult removeInsert (const std::string& insertId);
+    OpResult setInsertParam (const std::string& insertId, const std::string& paramId, float value); // sin deshacer
+    OpResult setInsertBypass (const std::string& insertId, bool bypass);
+    OpResult moveInsert (const std::string& insertId, int newIndex);
+    float insertMeter (const std::string& insertId) const; // reducción de ganancia del compresor (dB), si aplica
+
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
     OpResult setMetronome (bool on);
