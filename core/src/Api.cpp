@@ -263,7 +263,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             const bool setE = q.contains ("energy");
             return result (s.varyPart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 0), setE ? (float) num ("energy") : 0.0f, setE)).dump();
         }
-        if (cmd == "soloMelody")
+        if (cmd == "soloMelody" || cmd == "soloProposals")
         {
             // Solo AI: la petición se prepara con la sesión bloqueada, la composición se hace SIN el cerrojo (no frena
             // otros comandos ni el audio) y el resultado entra como pista nueva, si el proyecto sigue siendo el mismo.
@@ -272,22 +272,55 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             auto pr = s.soloRequest (startBar, bars, (int) num ("keyRoot", -1), flag ("minor"), req);
             if (! pr.ok) return result (pr).dump();
             req.type = q.value ("type", std::string ("chorus"));
+            req.character = q.value ("character", std::string ("easy"));
             req.freedom = num ("freedom", 35);
             req.proposal = (int) num ("proposal", 0);
             req.seed = (uint64_t) safeInt (q.value ("seed", json (1)));
+            req.variation = (uint64_t) safeInt (q.value ("variation", json (0)));
+            auto describe = [] (const solo::MelodyResult& m)
+            {
+                Tick end = 0;
+                int lo = 127, hi = 0;
+                for (const auto& n : m.notes) { end = std::max (end, n.start + n.length); lo = std::min (lo, n.key); hi = std::max (hi, n.key); }
+                return json { { "name", m.name }, { "description", m.description }, { "notes", m.notes.size() }, { "inScale", m.inScale },
+                              { "strongChordTones", m.strongChordTones }, { "similarity", m.similarity }, { "lowKey", lo }, { "highKey", hi }, { "lengthTicks", end } };
+            };
+            if (cmd == "soloProposals")
+            {
+                // Las cuatro alternativas A-D de la misma familia. No toca el proyecto: son reproducibles por semilla, así
+                // que elegir una después (soloMelody con la misma semilla y su número) da exactamente esas notas.
+                const auto fam = solo::proposeFamily (req);
+                if (! fam.ok) return json { { "ok", false }, { "error", fam.error } }.dump();
+                json arr = json::array();
+                for (const auto& p : fam.proposals) arr.push_back (describe (p));
+                return json { { "ok", true }, { "proposals", arr }, { "diversity", fam.diversity }, { "keyRoot", req.keyRoot }, { "minor", req.minor } }.dump();
+            }
             const std::string projectId = s.model().id;
             const auto mr = solo::generateMelody (req);
             if (! mr.ok) return json { { "ok", false }, { "error", mr.error } }.dump();
             const auto bar = (Tick) kPpq * s.model().beatsPerBar;
             const std::string name = "Solo AI · " + mr.name;
-            auto r = s.addSoloTrack (projectId, (Tick) startBar * bar, name, mr.notes, q.value ("preset", std::string ("bright_lead")));
+            auto r = s.addSoloTrack (projectId, (Tick) startBar * bar, name, mr.notes, q.value ("preset", std::string ("bright_lead")), str ("replaceTrackId"));
             json j = result (r);
-            j["notes"] = mr.notes.size();
+            j.update (describe (mr));
             j["name"] = name;
-            j["inScale"] = mr.inScale;
-            j["strongChordTones"] = mr.strongChordTones;
             j["millis"] = mr.millis;
+            j["keyRoot"] = req.keyRoot;
+            j["minor"] = req.minor;
             return j.dump();
+        }
+        if (cmd == "soloAnalyze")
+        {
+            json j = result (s.soloAnalyze (str ("clipId")));
+            if (j.value ("ok", false)) j["jobId"] = j.value ("id", std::string());
+            return j.dump();
+        }
+        if (cmd == "setHarmony")
+        {
+            std::vector<solo::ChordSpec> chords;
+            for (const auto& c : q.value ("chords", json::array()))
+                chords.push_back ({ (int) safeInt (c.value ("root", json (0))), (int) safeInt (c.value ("quality", json (0))) });
+            return result (s.setHarmony ((int) num ("keyRoot", -1), flag ("minor"), chords, num ("chordsBpm", 0), q.value ("source", std::string ("manual")))).dump();
         }
         if (cmd == "vocalPresets")
         {

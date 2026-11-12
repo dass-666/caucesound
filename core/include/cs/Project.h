@@ -89,6 +89,7 @@ struct ProjectModel
     Frame recordLatencyOffset = 0; // compensación aplicada a grabaciones nuevas (frames)
     int64_t createdAt = 0, modifiedAt = 0; // epoch ms
     std::string templateId;                // plantilla con la que se creó ("trap", "reggaeton"...), informativo
+    std::string harmony;                   // tonalidad/tempo/acordes confirmados por el usuario tras analizar un audio (JSON; ver SessionSolo.cpp)
     std::string music;                     // plan musical del compositor (JSON: género, tonalidad, semillas, papeles); ver Composer.h
     bool loopEnabled = false;
     Tick loopStart = 0, loopEnd = 16 * kPpq; // 4 compases de 4/4

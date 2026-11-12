@@ -101,6 +101,7 @@ std::string toJson (const ProjectModel& p, bool pretty)
     j["createdAt"] = p.createdAt;
     j["modifiedAt"] = p.modifiedAt;
     j["template"] = p.templateId;
+    if (! p.harmony.empty()) { json h = json::parse (p.harmony, nullptr, false); if (! h.is_discarded()) j["harmony"] = h; }
     if (! p.music.empty()) { json m = json::parse (p.music, nullptr, false); if (! m.is_discarded()) j["music"] = m; }
     j["loop"] = { { "enabled", p.loopEnabled }, { "start", p.loopStart }, { "end", p.loopEnd } };
     j["ppq"] = kPpq;
@@ -179,6 +180,7 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
         p.createdAt = j.value ("createdAt", (int64_t) 0);
         p.modifiedAt = j.value ("modifiedAt", (int64_t) 0);
         p.templateId = j.value ("template", std::string());
+        if (j.contains ("harmony") && j.at ("harmony").is_object()) p.harmony = j.at ("harmony").dump();
         if (j.contains ("music") && j.at ("music").is_object()) p.music = j.at ("music").dump();
         if (j.contains ("loop") && j["loop"].is_object())
         {

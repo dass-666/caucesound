@@ -133,7 +133,16 @@ public:
     // Solo AI (SessionSolo.cpp). soloRequest prepara la petición (tonalidad y acordes del plan o, sin plan, de la
     // tonalidad dada; si falta, falla con "key_required"). addSoloTrack añade el resultado como pista nueva.
     OpResult soloRequest (int startBar, int bars, int keyRoot, bool minor, solo::MelodyRequest& out) const;
-    OpResult addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset);
+    // replaceTrackId: si se da, sustituye las notas de esa pista de Solo AI (para escuchar otra alternativa) en vez
+    // de crear otra pista. Nunca sustituye una pista que no sea de Solo AI ni una bloqueada.
+    OpResult addSoloTrack (const std::string& projectId, Tick start, const std::string& name, const std::vector<MidiNote>& notes, const std::string& preset,
+                           const std::string& replaceTrackId = {});
+    // Analiza un clip de audio (trabajo offline; r.id = id del trabajo). El resultado es una ESTIMACIÓN con confianza
+    // que llega en jobStatus: no cambia el tempo ni nada del proyecto.
+    OpResult soloAnalyze (const std::string& clipId);
+    // Tonalidad (y opcionalmente acordes por compás y el tempo con el que se midieron) confirmada por el usuario.
+    // Se guarda con el proyecto y Solo AI la usa cuando la canción no tiene plan del compositor. keyRoot < 0 la borra.
+    OpResult setHarmony (int keyRoot, bool minor, const std::vector<solo::ChordSpec>& chords, double chordsBpm, const std::string& source);
 
     // --- Procesado offline no destructivo (SessionVocal.cpp, misión 0.5) ----------------------------------------
     // vocalProcess lanza un trabajo (r.id = id del trabajo) que procesa el clip con VocalShift fuera del hilo de audio
