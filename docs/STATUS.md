@@ -53,6 +53,20 @@ rama), **Probado** (prueba automática que lo cubre), **Render JVM** (imagen dib
 | `lintDebug` | 0 errores |
 | APK `0.3.0-polish-preview`, versionCode 3 | Compila. SHA-256 `9ebfc8dcd590a88acb8e232351c5100c014b9938da920d194a5bfbe33181b6ed`. Certificado `56b4de46…61ab2e`, el mismo que la Preview 0.2.0 (comprobado con `apksigner`): se instala encima. Actualización real en teléfono: pendiente |
 
+
+## Misión 0.4: sonido, variaciones, Solo AI y botón «Nueva canción» (2026-11-12)
+
+| Entrega | Evidencia | Validación física |
+|---|---|---|
+| 0.4.0 Sound (commits f472ce1, 544433f): plantillas de 16 compases, 4 kits y 10 presets de síntesis propia, variaciones con semilla, candados, redobles | Motor: TestComposer, 8 pruebas (determinismo, tonalidad, energía, deshacer, candados, picos, estéreo). Render antes/después en `muestras-0.4/` (mono → estéreo −21 a −26 dB lado/centro, 0 recortes, CPU de render ×2 ≈ 2 % en x86) | Pendiente (pruebas 40-44 y 48) |
+| Botón «Nueva canción» | Se quitó el margen duplicado de la barra de navegación. Robolectric no simula esa barra, así que su prueba también pasa con el código antiguo: el arreglo se basa en la lectura del código | Pendiente (prueba 47) |
+| 0.4.1 Solo AI (commit 26262f0): submódulo fijado, comando `soloMelody`, sección en el panel ✨ | TestSolo, 3 pruebas: tonalidad, reproducibilidad, deshacer, `key_required`, catálogo. 0,3 ms por melodía en x86. Compila para arm64 con el NDK | Pendiente (pruebas 45-46) |
+| CI | AudioGuardTest fallaba en la CI (Robolectric SDK 36 exige Java 21): fijado SDK 35 | Pendiente de ver la CI en verde |
+
+Totales en este entorno: motor 94/94 (Release), Android JVM/Robolectric 46/46, lint 0 errores.
+TSan (commit del hotfix): 83/83 sin avisos.
+APK `caucesound-0.4.1-soloai-preview.apk`: versionCode 6, certificado `56b4de46…61ab2e` (el mismo de siempre).
+
 ## Errores reales encontrados y corregidos
 
 | Error | Gravedad | Corrección | Prueba |

@@ -96,6 +96,23 @@ Estado del audio y haz una captura: `outState`, `processedFrames` y `lastError` 
 | 36 | Tras grabar | Graba una toma corta → Stop → salir → otro proyecto → Play → vuelve al de la toma | ¿Suena? ¿La toma sigue ahí? |
 | 37 | Otra app | Play en CAUCESOUND → reproduce algo en otra app (YouTube, Spotify) → vuelve | CAUCESOUND debe pararse al empezar la otra app; al volver, ¿Play funciona? |
 
+### Pruebas de la versión 0.4.1 (sonido, variaciones, Solo AI)
+
+Instala `caucesound-0.4.1-soloai-preview.apk` encima de la anterior (sin desinstalar). Repite antes las 30-37: la 0.4
+cambia las plantillas y el fallo de Play no debe volver.
+
+| # | Qué | Cómo | Qué anotar |
+|---|---|---|---|
+| 40 | Estilos nuevos | Crea una canción de Reggaetón, Trap y Hip-hop y escucha los 16 compases | ¿Cada estilo tiene identidad? ¿Algo suena mal, demasiado grave o apagado? (el hip-hop es el sospechoso) |
+| 41 | Variaciones | Botón ✨ → «Otra versión completa» con Play en marcha; luego «Versión anterior» / «Versión nueva» | ¿Cambia sin cortes ni notas colgadas? ¿Se nota la diferencia? |
+| 42 | Por parte y candado | Pon candado al bajo → «Batería» y «Melodía» varias veces | ¿El bajo no cambia nunca? |
+| 43 | Intensidad | «Más tranquila» y «Más enérgica» | ¿La diferencia es clara? |
+| 44 | Redoble | Rejilla de batería → «Redoble» → toca un charles varias veces | ¿Suenan 2, 3 y 4 golpes? ¿Se ven las marcas? |
+| 45 | Solo AI con plan | ✨ → Solo AI → Generar (estribillo, 8 compases) | ¿Aparece la pista «Solo AI · …»? ¿Encaja con los acordes? ¿Tarda? |
+| 46 | Solo AI sin plan | En un proyecto de la 0.3: ✨ → elige tonalidad → Generar | ¿Pide la tonalidad antes? ¿Suena en esa tonalidad? |
+| 47 | Botón «Nueva canción» | Con 6 o más proyectos, baja hasta el final de la lista | ¿Se ve entero el último proyecto y su menú «⋮»? |
+| 48 | CPU | Play de una plantilla 0.4 durante 5 min | ¿Cortes? ¿El teléfono se calienta más que con la 0.3? |
+
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de
