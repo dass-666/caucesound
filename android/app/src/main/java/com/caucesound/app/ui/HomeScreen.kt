@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -78,6 +79,8 @@ import java.util.Date
 interface HomeActions {
     fun open(folder: String) {}
     fun create(name: String, template: String) {}
+    /** Proyecto de una pista armada que empieza a grabar al abrirse (ver DawViewModel.createQuickIdea). */
+    fun quickIdea(name: String) {}
     fun rename(folder: String, name: String) {}
     fun duplicate(folder: String, name: String) {}
     fun delete(folder: String) {}
@@ -142,6 +145,24 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
                 item {
                     AnimatedVisibility(true, enter = fadeIn() + slideInVertically { it / 4 }) {
                         ContinueCard(last, onOpen = { actions.open(last.folder) })
+                    }
+                }
+            }
+            item {
+                // Capturar antes de que se olvide: un toque crea el proyecto, arma la pista y empieza a grabar.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clip(RoundedCornerShape(Dims.Radius))
+                        .background(Palette.Surface).clickable {
+                            actions.quickIdea(tr("Idea", "Idea") + " " + java.text.SimpleDateFormat("d MMM HH.mm", java.util.Locale.getDefault()).format(Date()))
+                        }.padding(horizontal = 16.dp, vertical = 14.dp).testTag("home_quick_idea"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Mic, null, tint = Palette.Record, modifier = Modifier.size(28.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Idea rápida", "Quick idea"), color = Palette.Text, fontWeight = FontWeight.Bold)
+                        Text(tr("Graba una voz o un tarareo ahora. Luego la conviertes en canción.", "Record a voice or a hum now. Turn it into a song later."),
+                            color = Palette.TextDim, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

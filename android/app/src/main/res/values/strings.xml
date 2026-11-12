@@ -12,6 +12,7 @@
     <string name="clip_gain">Clip gain</string>
     <string name="create">Create</string>
     <string name="default_track_name">Track</string>
+    <string name="quick_idea_track">Voice</string>
     <string name="delete">Delete</string>
     <string name="delete_project_text">“%1$s” and all its audio will be deleted from this device. This cannot be undone.</string>
     <string name="delete_project_title">Delete project?</string>

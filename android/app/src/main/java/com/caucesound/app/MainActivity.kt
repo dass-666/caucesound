@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
         override fun open(folder: String) = vm.openProject(folder)
         override fun create(name: String, template: String) =
             vm.createProject(name, template) { i -> getString(R.string.default_track_name) + " " + i }
+        override fun quickIdea(name: String) =
+            vm.createQuickIdea(name, getString(R.string.quick_idea_track)) { withMicPermission { vm.record() } }
         override fun rename(folder: String, name: String) = vm.renameProject(folder, name)
         override fun duplicate(folder: String, name: String) = vm.duplicateProject(folder, name)
         override fun delete(folder: String) = vm.deleteProject(folder)

@@ -116,6 +116,20 @@ class UiScreensTest {
         shot("01_home")
     }
 
+    // Misión 0.6 (E): «Idea rápida» es un solo toque y pide un proyecto con nombre propio (fecha y hora).
+    @Test fun quick_idea_is_one_tap_from_home() {
+        val asked = mutableListOf<String>()
+        compose.setContent { Themed { HomeScreen(emptyList(), catalog.templates, null, {}, object : HomeActions {
+            override fun quickIdea(name: String) { asked += name }
+        }) } }
+        compose.onNodeWithTag("home_quick_idea").performClick()
+        compose.waitForIdle()
+        assertEquals(1, asked.size)
+        assertTrue(asked[0], asked[0].startsWith("Idea ") && asked[0].length > 8)
+        assertTrue("el nombre debe servir como nombre de archivo: ${asked[0]}", asked[0].none { it in "/\\:*?\"<>|" })
+        shot("30_home_quick_idea")
+    }
+
     // Misión 0.4 (D): el botón «Nueva canción» no debe tapar el último proyecto (ni su menú) con la lista al final.
     @Test fun new_song_button_does_not_cover_the_last_project() {
         val projects = (1..9).map { com.caucesound.app.data.ProjectSummary("/p/$it", "Proyecto $it", 1_700_000_000_000L - it * 1000L, 4, null, 120.0, "trap") }

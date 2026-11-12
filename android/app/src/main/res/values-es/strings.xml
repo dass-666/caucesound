@@ -12,6 +12,7 @@
     <string name="clip_gain">Ganancia del clip</string>
     <string name="create">Crear</string>
     <string name="default_track_name">Pista</string>
+    <string name="quick_idea_track">Voz</string>
     <string name="delete">Eliminar</string>
     <string name="delete_project_text">Se borrará «%1$s» y todo su audio de este dispositivo. No se puede deshacer.</string>
     <string name="delete_project_title">¿Eliminar proyecto?</string>

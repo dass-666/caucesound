@@ -167,6 +167,26 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         }
     }
 
+    /**
+     * «Idea rápida»: un proyecto vacío con una sola pista de audio ya armada, para capturar una voz o un tarareo sin
+     * pasos previos. Es un proyecto normal: después se le pueden añadir batería, Solo AI o VocalShift. [then] se llama
+     * con el proyecto abierto (la Activity pide ahí el permiso del micrófono y empieza a grabar); si el permiso se
+     * niega, el proyecto queda listo y se graba con el botón de siempre.
+     */
+    fun createQuickIdea(name: String, trackName: String, then: () -> Unit) {
+        viewModelScope.launch {
+            val folder = File(projectsRoot, "p_" + System.currentTimeMillis())
+            val r = call(Cmd.createProject(folder.absolutePath, name.trim().ifEmpty { "Idea" }, "empty"))
+            if (!r.ok) { toast(r.error ?: ""); return@launch }
+            val track = call(Cmd.addTrack(trackName))
+            track.id?.let { call(Cmd.setArmed(it, true)) }
+            call(Cmd.save())
+            onProjectOpened()
+            track.id?.let { _selectedTrack.value = it }
+            if (track.ok && track.id != null) then()
+        }
+    }
+
     fun renameProject(folder: String, name: String) {
         viewModelScope.launch {
             val r = call(Cmd.renameProject(projectsRoot.absolutePath, folder, name.trim().ifEmpty { "Proyecto" }))
