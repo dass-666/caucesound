@@ -133,6 +133,12 @@ ahí: si no aparecen, **no desinstales** y avísame. Repite antes las 30-37 (Pla
 | 59 | Exportar | Exporta la canción con la voz procesada y ábrela en el PC | ¿Voz y beat alineados? |
 | 60 | Carga | Proyecto con beat importado + pista de Solo AI + 2 voces procesadas, Play 5 min | ¿Cortes? ¿Temperatura? Línea de «Motor de audio» de Ajustes |
 
+### Pruebas de la versión 0.6.0
+
+Están en un documento propio, pensado para seguirlo con el teléfono en la mano: **`SAMSUNG_ACCEPTANCE_0.6.md`**
+(cinco experiencias: estabilidad, calidad musical, Solo AI, VocalShift y exportación). Sustituye a las listas
+anteriores como punto de partida; las pruebas 30-60 siguen siendo válidas si quieres más detalle.
+
 ## Fase 1: opción rápida: instalar el APK ya compilado (sin Android Studio)
 
 1. **En el teléfono**: Ajustes → Acerca del teléfono → Información de software → toca 7 veces «Número de

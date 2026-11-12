@@ -54,6 +54,8 @@ core/                      C++17 puro, sin dependencias de plataforma (compartid
 android/                   app Android (Kotlin + Compose) y puente nativo (JNI + Oboe)
   app/src/main/cpp/        AudioIO (Oboe dúplex), JniBridge
 third_party/nlohmann/      JSON (MIT, un solo archivo)
+desktop/cli/               programa `cauce`: el mismo motor en un ordenador (abrir, renderizar, exportar, verificar)
+desktop/tools/             comprobación independiente del paquete para DAW (Python + mido)
 docs/
 ```
 
@@ -162,3 +164,26 @@ Posición y medidores se leen en la fase de dibujo para no recomponer toda la pa
 - **Android**: `DawViewModel` sigue cada trabajo consultando `jobStatus` cada 120 ms y expone el estado en
   `PluginUi`. Las pantallas (`VocalShiftPanel`, `SoloAiPanel`) solo se muestran si el catálogo anuncia el plugin.
 
+
+## 8. Exportación para DAW y ecosistema (misión 0.6)
+
+CAUCESOUND pasa a ser tres productos sobre un mismo motor y un mismo formato de proyecto: **Mobile** (esta app),
+**Cauce Link** (puente con el ordenador; ver CAUCE_LINK.md) y **Studio** (Windows; ver CAUCESOUND_STUDIO.md). Solo el
+primero existe como producto. De los otros dos hay diseño y el programa `cauce`.
+
+- **Paquete para DAW** (`Session::exportDaw`, `core/src/SessionExport.cpp`): un trabajo de `JobRunner` que renderiza
+  cada pista por separado y escribe `Nombre-cauce-daw.zip` con `stems/`, `midi/`, `mix/`, `project/`,
+  `manifest.json` (SHA-256 de cada archivo) y `README.txt`. No modifica el proyecto ni crea pasos de deshacer.
+- **Dos modos**. *Con efectos*: cada stem lleva sus inserciones, volumen y panorama; cada bus de envío (la reverb
+  compartida) sale una sola vez como stem «retorno»; la suma de todos por el máster da la mezcla (comprobado en la
+  prueba con diferencia 0). *Sin efectos*: pistas limpias a 0 dB y centradas.
+- **Alineación**: todos los WAV empiezan en el compás 1 y duran lo mismo. El silencio final común se recorta
+  (−100 dB más 0,25 s), nunca antes del final del contenido.
+- **MIDI**: archivo estándar tipo 1, 960 pulsos por negra, una pista por instrumento, batería en el canal 10, nombres
+  en ASCII (el nombre real con acentos queda en el manifiesto). `Smf.h` escribe y lee; la lectura se usa en pruebas.
+- **Cancelación**: `Engine::renderOffline` consulta la señal de cancelar; al cancelar o cerrar el proyecto no queda
+  ningún archivo parcial. En Android, si el destino es un documento del sistema ya creado, se borra.
+- **ZIP sin compresión** (`writeStoredZip`): el audio PCM apenas se comprime y así no hace falta ninguna biblioteca.
+- **Plantillas**: los valores de mezcla (volúmenes, inserciones) se guardan en el proyecto al crearlo. Cambiar una
+  plantilla solo afecta a canciones nuevas: es lo que mantiene intactas las canciones de versiones anteriores.
+- **Idea rápida**: no es un modo aparte. Es un proyecto vacío con una pista de audio armada que empieza a grabar.

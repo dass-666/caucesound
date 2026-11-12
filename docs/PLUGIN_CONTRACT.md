@@ -1,4 +1,4 @@
-# Contrato de plugins de CAUCESOUND (actualizado en la misión 0.5)
+# Contrato de plugins de CAUCESOUND (actualizado en la misión 0.6)
 
 Estado: **Solo AI y VocalShift integrados** como plugins *offline* (procesan fuera del hilo de audio y dejan un
 resultado editable). Spatial Echo y AI Choir Studio **no** están integrados (ver `RESEARCH_0.5.md`). No se ha copiado
@@ -47,7 +47,7 @@ todas las pistas secas la latencia máxima de los buses; está descrito en `RESE
 | Plugin | Versión fijada | Qué hace en la app | Qué no hace |
 |---|---|---|---|
 | **Solo AI** | `solo-ai-studio@fe8445b` | Analiza un beat importado (BPM, tonalidad, acordes, con confianza) con su `BeatAnalyzer` real; propone 4 alternativas A-D con su `MelodyExplorer`; el resultado es una pista MIDI editable. Semilla reproducible | Sonido de guitarra modelada (desactivado: una prueba numérica suya difiere en ARM). No cambia el tempo ni la afinación del proyecto por su cuenta |
-| **VocalShift** | `vocalshift-ai-studio@10e679c` (rama `feat/urban-spatial`) + Signalsmith Stretch `88061fd` y Linear `7bb1c8f` (MIT) | Procesa un clip de voz offline: tono, carácter, magia, segunda voz con nivel propio, espacio, presets (incluido «Urbano Espacial — Segunda voz»: +7 st, 65 %, 70 %, −12 dB). A/B sincronizado y a volumen igualado (por RMS; «Aceptar» devuelve el volumen real). Latencia real 7200 muestras (150,0 ms) compensada a la muestra | No funciona en vivo (150 ms al monitorizar no es utilizable). No hay escucha previa sin procesar. No usa `feat/natural-voice` ni `feat/hybrid-engine`. `NeuralVoiceConverter.h` es una interfaz vacía: no hay modelo neuronal |
+| **VocalShift** | `vocalshift-ai-studio@10e679c` (rama `feat/urban-spatial`) + Signalsmith Stretch `88061fd` y Linear `7bb1c8f` (MIT) | Procesa un clip de voz offline: tono, carácter, magia, segunda voz con nivel propio, espacio, presets (incluido «Urbano Espacial — Segunda voz»: +7 st, 65 %, 70 %, −12 dB). A/B sincronizado y a volumen igualado (por RMS; «Aceptar» devuelve el volumen real). Latencia real 7200 muestras (150,0 ms) compensada a la muestra | No funciona en vivo (150 ms al monitorizar no es utilizable). No usa `feat/natural-voice` ni `feat/hybrid-engine`. `NeuralVoiceConverter.h` es una interfaz vacía: no hay modelo neuronal |
 | **Spatial Echo** (repo `3D`) | No integrado | Nada | Ver `RESEARCH_0.5.md` §1: su DSP depende de JUCE y el repositorio no tiene rama de referencia |
 | **AI Choir Studio** | No localizado | Nada | `/mnt/project-files/ai-choir-studio/` no existe. Hace falta el paquete o el repositorio |
 
@@ -60,6 +60,17 @@ todas las pistas secas la latencia máxima de los buses; está descrito en `RESE
 - Solo AI: `soloAnalyze {clipId}` (trabajo; **no** cambia el proyecto), `setHarmony {…}` (lo que el usuario confirma),
   `soloProposals {…}` (4 alternativas sin tocar el proyecto), `soloMelody {…, replaceTrackId}` (crea o sustituye la
   pista de Solo AI; nunca una pista bloqueada ni una que no sea suya).
+
+Añadidos en la 0.6:
+
+- VocalShift: `vocalPreview {clipId, params, fromFrame}` (trabajo: procesa unos segundos sin tocar el proyecto) y
+  `previewListen {clipId, on}` (escucha la prueba en su sitio dentro de la toma). El igualado de volumen del A/B es
+  solo de escucha: nunca llega a la exportación ni al proyecto guardado (corrige el defecto de la 0.5).
+  El retardo de la segunda voz se aplica desde la primera muestra (en la 0.5 tardaba hasta 3 s en alcanzarse).
+- Solo AI: `soloTransform {trackId, op}` con `simpler`, `intense`, `soft`, `octaveUp`, `octaveDown` (solo en su propia
+  pista, nunca en una bloqueada, un paso de deshacer); `soloMelody` acepta `endingSeed` y `endingBars` para rehacer
+  solo el final conservando lo anterior, incluidas las notas editadas a mano.
+- Exportación: `exportDaw {path, wet, bits}` (trabajo), `exportMidi {path}`.
 
 ### Guardado
 

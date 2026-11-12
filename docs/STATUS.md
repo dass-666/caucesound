@@ -4,6 +4,53 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.6 «Professional Production» (2026-11-12, rama `claude/project-thread-hxmmji`)
+
+Categorías: **Implementado** (código en la rama), **Probado** (prueba automática en Linux x86-64), **Compilado**
+(entra en el APK arm64), **Audio real** (medido sobre audio renderizado por el motor; no es escucha humana),
+**Render JVM** (pantalla dibujada con Robolectric y revisada), **Físico** (en un teléfono: hoy, nada).
+
+| Entrega | Implementado | Probado | Compilado | Audio real | Render JVM | Físico |
+|---|---|---|---|---|---|---|
+| A/B de VocalShift: el igualado de volumen es solo de escucha y nunca llega a la exportación (defecto de la 0.5) | Sí | `vocalshift_level_match_is_listen_only…` | Sí | Exportación −16,12 dB con y sin igualado | Sí | Pendiente |
+| Prueba rápida de VocalShift (unos segundos sin tocar el proyecto) | Sí | `vocalshift_preview_*` (2) | Sí | Parecido 0,967 con el procesado completo | Sí | Pendiente |
+| Retardo de la segunda voz aplicado desde el inicio (antes tardaba hasta 3 s) | Sí | `vocalshift_keeps_attacks…`: pedir 60 ms da 60,0 ms (antes 9,8 ms) | Sí | Voz sintética | — | Pendiente |
+| Evaluación técnica de VocalShift: ataques, consonantes, silencios, extremos, determinismo | — | Misma prueba: ataques 0 ms, consonantes +2,5 dB, pausas 31,6 dB bajo la voz, reprocesado idéntico | — | Voz sintética, no humana | — | Pendiente |
+| Paquete para DAW (stems con o sin efectos, MIDI, mezcla, proyecto, manifiesto con SHA-256) | Sí | `daw_*`, `smf_*`, `sha256_*` (5) + verificación independiente con `mido` | Sí | Suma de stems = mezcla (diferencia 0 en coma flotante, 3 LSB a 24 bits) | `26`-`28` | Pendiente |
+| Programa de escritorio `cauce` | Sí | Usado en las pruebas y en las muestras | Solo Linux | — | — | — |
+| Sonido 3.0 (mezcla de plantillas, filtro antes de la reverb, compás de cierre, melodía con intención) | Sí | 3 pruebas nuevas en `TestComposer` | Sí | Graves <250 Hz: 88→71 %, 91→77 %, 94→80 %. Melodía de −25 a entre −11 y −17 dB respecto a la batería | — | Pendiente (**es un juicio de oído**) |
+| Solo AI 2.1: cinco ajustes de la melodía, rehacer solo el final, nivel de entrada según la mezcla | Sí | `solo_ai_transforms…`, `solo_ai_new_ending…` | Sí | — | `29` | Pendiente |
+| Medición del análisis de Solo AI con 15 canciones propias | — | Tempo: 13 exactos, 15 exactos o mitad/doble. Tonalidad: reconocida en 3, exacta en 1, **1 caso equivocado con confianza 0,68** | — | Material propio renderizado, no música comercial | — | Pendiente |
+| Idea rápida (un toque: proyecto, pista armada, grabación) | Sí | 1 prueba de interfaz; la grabación en sí usa el camino de siempre | Sí | — | `30` | Pendiente |
+| Sampler | **No** | — | — | — | — | — |
+| Cauce Link y CauceSound Studio | **Solo documentos** (CAUCE_LINK.md, CAUCESOUND_STUDIO.md) | — | — | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **128/128** |
+| ASan + UBSan | @@ASAN@@ |
+| TSan | @@TSAN@@ |
+| ARM64 | **Solo compilación** (NDK, arm64-v8a dentro del APK). Las pruebas **no** se ejecutaron en ARM64 |
+| Android JVM y Robolectric | **66/66** |
+| Lint | @@LINT@@ |
+| CI (GitHub Actions) | @@CI@@ |
+| APK `caucesound-0.6.0-production-preview.apk` | @@APK@@ |
+
+Límites conocidos de la 0.6:
+
+- **Nada probado en un teléfono desde la 0.3.0**: cuatro entregas acumuladas. Ver SAMSUNG_ACCEPTANCE_0.6.md.
+- **Sonido**: lo demostrado es una diferencia medible, no una mejora. Solo afecta a canciones nuevas. Un intento de
+  saturar el bajo para que se oiga en altavoces pequeños se retiró: no añadía armónicos, solo volumen. No hay
+  compresión lateral (sidechain) entre bombo y bajo.
+- **Tonalidad de Solo AI**: poco fiable con mezclas completas; en un caso (canción con cambio de energía) dio Si menor
+  con confianza 0,68 siendo Re menor. Queda como defecto conocido medido en la prueba, sin corregir. La app avisa.
+- **Paquete para DAW**: entre 60 y 180 MB por canción (WAV estéreo de 24 bits sin comprimir). No es un proyecto de
+  FL Studio ni de ningún otro DAW: llegan audio y notas, no instrumentos ni efectos. La automatización no se exporta
+  (no existe en la app).
+- **VocalShift**: la naturalidad sigue sin juzgar (no hay voz humana aquí). El igualado A/B usa RMS, no LUFS.
+- **Escritorio**: `cauce` solo se ha compilado en Linux. En Windows fallarían las rutas con acentos hasta adaptarlas.
+- **Sampler**: no hecho; se priorizó lo anterior. **Idea rápida**: depende de la grabación, sin validar en teléfono.
+
 # Misión 0.5 «Integración» (2026-11-12, rama `claude/project-thread-hxmmji`)
 
 Categorías: **Implementado** (código en la rama), **Probado** (prueba automática), **Compilado** (entra en el APK
