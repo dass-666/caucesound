@@ -69,6 +69,13 @@ json analyze (const AudioData& a, double bpm)
         }
     }
     double bt = 0; for (double v : band) bt += std::max (0.0, v);
+    // «Altavoz pequeño»: nivel de lo que queda por encima de 150 Hz (paso alto de 4.º orden) respecto al total. Es una
+    // aproximación de lo que reproduce el altavoz de un teléfono; no sustituye a escucharlo en uno.
+    double small = 0, full = 0;
+    {
+        Bq a1 = Bq::make (true, sr, 150), a2 = a1;
+        for (size_t i = 0; i < n; ++i) { const double x = 0.5 * (L[i] + R[i]); const double y = a2.run (a1.run (x)); small += y * y; full += x * x; }
+    }
     // Dinámica: RMS en ventanas de 400 ms (p10..p95)
     std::vector<double> st;
     const size_t win = (size_t) (0.4 * sr);
@@ -117,7 +124,7 @@ json analyze (const AudioData& a, double bpm)
              { "shortTermP10Db", std::round (pct (0.1) * 10) / 10 }, { "shortTermP95Db", std::round (pct (0.95) * 10) / 10 },
              { "dynamicSpreadDb", std::round ((pct (0.95) - pct (0.1)) * 10) / 10 },
              { "sideToMidDb", std::max (-60.0, std::round ((10 * std::log10 ((side + 1e-30) / (mid + 1e-30))) * 10) / 10) },
-             { "bandsPct", bands }, { "onsetsPerSecond", std::round (10 * onsets / std::max (secs, 1e-9)) / 10 },
+             { "bandsPct", bands }, { "above150HzVsTotalDb", std::round (10 * (10 * std::log10 ((small + 1e-30) / (full + 1e-30)))) / 10 }, { "onsetsPerSecond", std::round (10 * onsets / std::max (secs, 1e-9)) / 10 },
              { "blockSimilarityToFirst", blocks } };
 }
 } // namespace
@@ -147,6 +154,25 @@ int main (int argc, char** argv)
         std::filesystem::remove_all (dir);
         if (! s.createProject (dir, "Fixture", 48000, argv[2]).ok) return 1;
         std::ofstream (argv[3]) << json::parse (s.stateJson()).dump (1);
+        return 0;
+    }
+    if (argc >= 3 && std::string (argv[1]) == "--solo")
+    {
+        // Ejemplo de Solo AI: plantilla de trap + la propuesta B (emocional) de 8 compases sobre la sección A.
+        Engine e; e.prepare (48000, 1024);
+        Session s (e);
+        const std::string dir = std::filesystem::absolute (argv[2]).string() + "_proj";
+        std::filesystem::remove_all (dir);
+        if (! s.createProject (dir, "Solo", 48000, "trap").ok) return 1;
+        const json r = json::parse (handleCommand (s, e, R"({"cmd":"soloMelody","startBar":2,"bars":8,"seed":2026,"proposal":1,"type":"chorus","character":"emotional"})"));
+        std::printf ("%s\n", r.dump().c_str());
+        if (! r.value ("ok", false)) return 1;
+        long clipped = 0;
+        if (! s.exportMix (argv[2], 24, 0, &clipped).ok) return 1;
+        AudioData a; std::string err; readWav (argv[2], a, err);
+        std::printf ("%s\n", analyze (a, s.model().bpm).dump (2).c_str());
+        s.close();
+        std::filesystem::remove_all (dir);
         return 0;
     }
     if (argc < 2) { std::fprintf (stderr, "uso: cs_render <carpeta> [plantilla...] | --analyze wav bpm | --state plantilla salida.json\n"); return 1; }
