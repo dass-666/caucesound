@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -25,6 +24,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -57,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -108,20 +110,27 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
         return "$base $n"
     }
     fun createNow(tpl: String) { actions.create(autoName(tpl), tpl) }
+    // El botón «Nueva canción» se encoge a solo icono al bajar por la lista, para no tapar el menú de los proyectos.
+    val listState = rememberLazyListState()
+    val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
 
     Scaffold(
         containerColor = Palette.Background,
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
+            // Sin navigationBarsPadding: el Scaffold ya aplica el margen de la barra de navegación (edge-to-edge). Antes se
+            // sumaba dos veces y el botón subía hasta tapar el último proyecto aunque la lista estuviera al final.
             ExtendedFloatingActionButton(
                 onClick = { chooser = true }, containerColor = Palette.Violet, contentColor = Color.White,
                 icon = { Icon(Icons.Default.Add, null) }, text = { Text(tr("Nueva canción", "New song"), fontWeight = FontWeight.Bold) },
+                expanded = fabExpanded,
                 shape = RoundedCornerShape(Dims.Radius),
-                modifier = Modifier.navigationBarsPadding(),
+                modifier = Modifier.testTag("fab_new_song"),
             )
         },
     ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(bottom = 96.dp)) {
+        // Hueco final = alto del botón (56) + su margen (16) + 24 de aire: el último proyecto siempre queda visible por encima.
+        LazyColumn(Modifier.fillMaxSize().padding(pad).testTag("home_list"), state = listState, contentPadding = PaddingValues(bottom = 96.dp + 24.dp)) {
             item {
                 Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 16.dp)) {
                     CauceLogo(height = 28.dp)
