@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
@@ -49,7 +50,7 @@ import com.caucesound.app.data.TrackState
 import kotlin.math.max
 import kotlin.math.min
 
-val TRACK_HEIGHT: Dp = 84.dp
+val TRACK_HEIGHT: Dp = 80.dp
 val RULER_HEIGHT: Dp = 30.dp
 
 /** Conversión píxel <-> frame del timeline. Pura y probada en test/ (TimelineGeometryTest). */
@@ -225,6 +226,11 @@ fun Timeline(
                 if (ti % 2 == 1) drawRect(Color.White.copy(alpha = 0.015f), Offset(visL, top), Size(visR - visL, trackH))
                 drawLine(Palette.Grid, Offset(visL, top + trackH), Offset(visR, top + trackH), 1f)
                 val color = Color(t.color.toInt())
+                if (t.isBus) {
+                    // Un bus no tiene clips: su carril lo dice, para que no parezca una pista vacía que falta rellenar.
+                    drawRect(color.copy(alpha = 0.05f), Offset(visL, top), Size(visR - visL, trackH))
+                    drawText(text, busLaneLabel, Offset(visL + 12.dp.toPx(), top + trackH / 2 - 7.sp.toPx()), TextStyle(color = Palette.TextFaint, fontSize = 11.sp), maxLines = 1)
+                }
                 for (c in t.clips) {
                     val pv = preview?.takeIf { it.clipId == c.id }
                     if (pv != null && pv.trackIndex != ti) continue
@@ -246,28 +252,34 @@ fun Timeline(
         // Cursor de reproducción en su propia capa: se redibuja a 60 fps sin repintar las formas de onda.
         Canvas(Modifier.width(widthDp).height(heightDp)) {
             val x = geo.x(position())
-            drawLine(Palette.Playhead, Offset(x, 0f), Offset(x, size.height), 2f)
-            drawPath(Path().apply { moveTo(x - 9f, 0f); lineTo(x + 9f, 0f); lineTo(x, 14f); close() }, Palette.Playhead)
+            val u = 1.dp.toPx()
+            drawLine(Palette.Playhead, Offset(x, 0f), Offset(x, size.height), 1.5f * u)
+            drawPath(Path().apply { moveTo(x - 5 * u, 0f); lineTo(x + 5 * u, 0f); lineTo(x + 5 * u, 5 * u); lineTo(x, 11 * u); lineTo(x - 5 * u, 5 * u); close() }, Palette.Playhead)
         }
     }
 }
 
+private val busLaneLabel get() = tr("BUS · retorno de efectos (recibe los envíos del mezclador)", "BUS · effect return (receives the mixer sends)")
+
 private fun DrawScope.drawGrid(s: ProjectState, g: TimelineGeometry, rulerH: Float, visL: Float, visR: Float, text: TextMeasurer) {
+    val u = 1.dp.toPx()
     drawRect(Palette.Surface, Offset(visL, 0f), Size(visR - visL, rulerH))
+    drawLine(Palette.Stroke, Offset(visL, rulerH), Offset(visR, rulerH), 1f)
     // Bucle
     val lx0 = g.x(s.ticksToFrames(s.loopStart))
     val lx1 = g.x(s.ticksToFrames(s.loopEnd))
     if (lx1 > lx0) {
         if (s.loopEnabled) {
-            drawRect(Palette.Cyan.copy(alpha = 0.28f), Offset(lx0, 0f), Size(lx1 - lx0, rulerH))
-            drawRect(Palette.Cyan.copy(alpha = 0.05f), Offset(lx0, rulerH), Size(lx1 - lx0, size.height - rulerH))
-            drawLine(Palette.Cyan, Offset(lx0, 0f), Offset(lx0, size.height), 1.5f)
-            drawLine(Palette.Cyan, Offset(lx1, 0f), Offset(lx1, size.height), 1.5f)
-        } else drawRect(Palette.TextFaint.copy(alpha = 0.25f), Offset(lx0, rulerH - 5f), Size(lx1 - lx0, 5f))
+            drawRect(Palette.Cyan.copy(alpha = 0.26f), Offset(lx0, 0f), Size(lx1 - lx0, rulerH))
+            drawRect(Palette.Cyan.copy(alpha = 0.04f), Offset(lx0, rulerH), Size(lx1 - lx0, size.height - rulerH))
+            drawLine(Palette.Cyan, Offset(lx0, 0f), Offset(lx0, size.height), u)
+            drawLine(Palette.Cyan, Offset(lx1, 0f), Offset(lx1, size.height), u)
+        } else drawRect(Palette.TextFaint.copy(alpha = 0.3f), Offset(lx0, rulerH - 2 * u), Size(lx1 - lx0, 2 * u))
     }
     val fpb = MusicTime.framesPerBeat(s.bpm)
     val pxPerBeat = (fpb * g.pxPerFrame).toFloat()
-    val barEvery = when { pxPerBeat * s.beatsPerBar > 60 -> 1; pxPerBeat * s.beatsPerBar > 25 -> 2; pxPerBeat * s.beatsPerBar > 10 -> 4; else -> 8 }
+    val pxPerBar = pxPerBeat * s.beatsPerBar
+    val barEvery = when { pxPerBar > 20 * u -> 1; pxPerBar > 9 * u -> 2; pxPerBar > 4 * u -> 4; else -> 8 }
     val firstBeat = max(0L, (visL / pxPerBeat).toLong() - 1)
     val lastBeat = (visR / pxPerBeat).toLong() + 1
     for (b in firstBeat..lastBeat) {
@@ -277,29 +289,50 @@ private fun DrawScope.drawGrid(s: ProjectState, g: TimelineGeometry, rulerH: Flo
         if (isBar) {
             val labeled = bar % barEvery == 0L
             drawLine(if (labeled) Palette.GridStrong else Palette.Grid, Offset(x, if (labeled) 0f else rulerH * 0.5f), Offset(x, size.height), 1f)
-            if (labeled) drawText(text, "${bar + 1}", Offset(x + 5f, 6f), TextStyle(color = Palette.TextDim, fontSize = 11.sp))
-        } else if (pxPerBeat > 12) {
-            drawLine(Palette.Grid.copy(alpha = 0.5f), Offset(x, rulerH * 0.7f), Offset(x, size.height), 1f)
+            if (labeled) drawText(text, "${bar + 1}", Offset(x + 4 * u, 5 * u), TextStyle(color = Palette.TextDim, fontSize = 11.sp, fontWeight = FontWeight.Medium))
+        } else if (pxPerBeat > 5 * u) {
+            drawLine(Palette.Grid.copy(alpha = 0.55f), Offset(x, rulerH * 0.7f), Offset(x, size.height), 1f)
         }
     }
 }
+
+/** Marco común de un clip: cuerpo translúcido, cabecera con el nombre y, si está seleccionado, borde y asas. */
+private fun DrawScope.clipFrame(x0: Float, x1: Float, y0: Float, h: Float, color: Color, bodyAlpha: Float): Float {
+    val u = 1.dp.toPx()
+    val headerH = 15 * u
+    val r = CornerRadius(5 * u)
+    drawRoundRect(color.copy(alpha = bodyAlpha), Offset(x0, y0), Size(x1 - x0, h), r)
+    clipRect(x0, y0, x1, y0 + headerH) { drawRoundRect(color.copy(alpha = 0.78f), Offset(x0, y0), Size(x1 - x0, headerH + 6 * u), r) }
+    return headerH
+}
+
+private fun DrawScope.clipSelection(x0: Float, x1: Float, y0: Float, h: Float) {
+    val u = 1.dp.toPx()
+    drawRoundRect(Color.White, Offset(x0, y0), Size(x1 - x0, h), CornerRadius(5 * u), style = Stroke(1.5f * u))
+    if (x1 - x0 > 24 * u) {
+        drawRoundRect(Color.White, Offset(x0 + 2 * u, y0 + h / 2 - 9 * u), Size(3 * u, 18 * u), CornerRadius(1.5f * u))
+        drawRoundRect(Color.White, Offset(x1 - 5 * u, y0 + h / 2 - 9 * u), Size(3 * u, 18 * u), CornerRadius(1.5f * u))
+    }
+}
+
+private val ClipLabel = TextStyle(color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
 
 private fun DrawScope.drawMidiClip(
     s: ProjectState, t: TrackState, c: MidiClipState, pv: DragPreview?, color: Color, top: Float, trackH: Float, g: TimelineGeometry,
     selected: Boolean, visL: Float, visR: Float, text: TextMeasurer,
 ) {
+    val u = 1.dp.toPx()
     val start = pv?.start ?: s.ticksToFrames(c.start)
     val length = pv?.length ?: (s.ticksToFrames(c.end) - s.ticksToFrames(c.start))
     val x0 = g.x(start)
     val x1 = g.x(start + length)
     if (x1 < visL || x0 > visR) return
-    val y0 = top + 4f
-    val h = trackH - 8f
-    drawRoundRect(color.copy(alpha = 0.22f), Offset(x0, y0), Size(x1 - x0, h), CornerRadius(10f))
-    drawRoundRect(color.copy(alpha = 0.6f), Offset(x0, y0), Size(x1 - x0, 18f * 1.2f), CornerRadius(10f))
+    val y0 = top + 2 * u
+    val h = trackH - 4 * u
+    val headerH = clipFrame(x0, x1, y0, h, color, if (pv != null) 0.34f else 0.2f)
     clipRect(max(x0, visL), y0, min(x1, visR), y0 + h) {
-        val bodyTop = y0 + 24f
-        val bodyH = h - 28f
+        val bodyTop = y0 + headerH + 3 * u
+        val bodyH = h - headerH - 6 * u
         val pxPerTick = (g.x(s.ticksToFrames(c.start) + 1_000_000) - g.x(s.ticksToFrames(c.start))) / s.framesToTicks(1_000_000).coerceAtLeast(1)
         // El contenido se dibuja desde el inicio del clip (al recortar por la izquierda se ve el efecto al soltar).
         if (c.isPattern) {
@@ -314,10 +347,10 @@ private fun DrawScope.drawMidiClip(
                         val tk = rep + st * STEP_TICKS.toLong()
                         if (tk >= c.length) continue
                         val x = x0 + tk * pxPerTick
-                        if (x < visL - 10 || x > visR + 10) continue
-                        drawRect(LANE_COLORS[l].copy(alpha = 0.9f), Offset(x, bodyTop + l * rowH), Size(max(2f, STEP_TICKS * pxPerTick * 0.7f), max(2f, rowH - 1f)))
+                        if (x < visL - 4 * u || x > visR + 4 * u) continue
+                        drawRect(LANE_COLORS[l].copy(alpha = 0.95f), Offset(x, bodyTop + l * rowH), Size(max(u, STEP_TICKS * pxPerTick * 0.7f), max(u, rowH - 0.5f * u)))
                     }
-                    if (rep > 0) drawLine(Color.White.copy(alpha = 0.25f), Offset(x0 + rep * pxPerTick, bodyTop), Offset(x0 + rep * pxPerTick, bodyTop + bodyH), 1f)
+                    if (rep > 0) drawLine(Color.White.copy(alpha = 0.3f), Offset(x0 + rep * pxPerTick, bodyTop), Offset(x0 + rep * pxPerTick, bodyTop + bodyH), 1f)
                     rep += patTicks
                 }
             }
@@ -329,25 +362,22 @@ private fun DrawScope.drawMidiClip(
             for (n in c.notes) {
                 if (n.start >= c.length) continue
                 val x = x0 + n.start * pxPerTick
-                val w = max(2f, min(n.length, c.length - n.start) * pxPerTick)
+                val w = max(u, min(n.length, c.length - n.start) * pxPerTick - 0.5f * u)
                 val y = bodyTop + (hi - n.key) * rowH + (range - (hi - lo + 1)) * rowH / 2
-                drawRoundRect(Color.White.copy(alpha = 0.85f), Offset(x, y), Size(w, max(2f, rowH - 1f)), CornerRadius(2f))
+                drawRoundRect(Color.White.copy(alpha = 0.9f), Offset(x, y), Size(w, max(1.5f * u, rowH - 0.5f * u)), CornerRadius(u))
             }
         }
-        val label = if (c.isPattern) "▦ ${t.pattern(c.patternId)?.name ?: c.name}" else "♪ ${c.name}"
-        drawText(text, label, Offset(max(x0, visL) + 8f, y0 + 2f), TextStyle(color = Color.White, fontSize = 11.sp), maxLines = 1)
+        val label = if (c.isPattern) (t.pattern(c.patternId)?.name ?: c.name) else c.name
+        drawText(text, label, Offset(max(x0, visL) + 5 * u, y0 + 1 * u), ClipLabel, maxLines = 1)
     }
-    if (selected) {
-        drawRoundRect(Color.White, Offset(x0, y0), Size(x1 - x0, h), CornerRadius(10f), style = Stroke(3f))
-        drawRoundRect(Color.White, Offset(x0 + 2f, y0 + h / 2 - 18f), Size(6f, 36f), CornerRadius(3f))
-        drawRoundRect(Color.White, Offset(x1 - 8f, y0 + h / 2 - 18f), Size(6f, 36f), CornerRadius(3f))
-    }
+    if (selected) clipSelection(x0, x1, y0, h)
 }
 
 private fun DrawScope.drawClip(
     c: ClipState, pv: DragPreview?, color: Color, top: Float, trackH: Float, g: TimelineGeometry,
     wave: FloatArray?, selected: Boolean, visL: Float, visR: Float, text: TextMeasurer,
 ) {
+    val u = 1.dp.toPx()
     val start = pv?.start ?: c.start
     val length = pv?.length ?: c.length
     // Al recortar por la izquierda, el contenido no se desplaza: el offset de la fuente cambia con el inicio.
@@ -355,16 +385,17 @@ private fun DrawScope.drawClip(
     val x0 = g.x(start)
     val x1 = g.x(start + length)
     if (x1 < visL || x0 > visR) return
-    val y0 = top + 4f
-    val h = trackH - 8f
-    drawRoundRect(color.copy(alpha = if (c.missing) 0.12f else 0.24f), Offset(x0, y0), Size(x1 - x0, h), CornerRadius(10f))
+    val y0 = top + 2 * u
+    val h = trackH - 4 * u
+    val headerH = clipFrame(x0, x1, y0, h, if (c.missing) Palette.Record else color, if (c.missing) 0.1f else if (pv != null) 0.34f else 0.2f)
     clipRect(max(x0, visL), y0, min(x1, visR), y0 + h) {
         if (wave != null && !c.missing) {
-            val mid = y0 + h / 2 + 6f
-            val amp = (h / 2 - 8f) * 0.95f
-            val step = 2f
+            val mid = y0 + headerH + (h - headerH) / 2
+            val amp = ((h - headerH) / 2 - 2 * u) * 0.95f
+            val step = max(1f, u * 0.75f)
             var x = max(x0, visL)
             val buckets = wave.size / 2
+            val waveColor = Color(color.red + (1 - color.red) * 0.25f, color.green + (1 - color.green) * 0.25f, color.blue + (1 - color.blue) * 0.25f)
             while (x < min(x1, visR)) {
                 val f0 = srcOffset + ((x - x0) / g.pxPerFrame).toLong()
                 val f1 = srcOffset + ((x + step - x0) / g.pxPerFrame).toLong()
@@ -373,7 +404,7 @@ private fun DrawScope.drawClip(
                 var mn = 0f
                 var mx = 0f
                 while (b0 <= b1) { mn = min(mn, wave[b0 * 2]); mx = max(mx, wave[b0 * 2 + 1]); b0++ }
-                drawLine(color, Offset(x, mid - mx * amp), Offset(x, mid - mn * amp + 0.5f), step)
+                drawLine(waveColor, Offset(x, mid - mx * amp), Offset(x, mid - mn * amp + 0.5f), step)
                 x += step
             }
         }
@@ -382,19 +413,15 @@ private fun DrawScope.drawClip(
         if (c.fadeIn > 0) {
             val fx = g.x(start + c.fadeIn)
             drawPath(Path().apply { moveTo(x0, y0); lineTo(fx, y0); lineTo(x0, y0 + h); close() }, shade)
-            drawLine(Color.White.copy(alpha = 0.7f), Offset(x0, y0 + h), Offset(fx, y0), 2f)
+            drawLine(Color.White.copy(alpha = 0.7f), Offset(x0, y0 + h), Offset(fx, y0), u)
         }
         if (c.fadeOut > 0) {
             val fx = g.x(start + length - c.fadeOut)
             drawPath(Path().apply { moveTo(x1, y0); lineTo(fx, y0); lineTo(x1, y0 + h); close() }, shade)
-            drawLine(Color.White.copy(alpha = 0.7f), Offset(fx, y0), Offset(x1, y0 + h), 2f)
+            drawLine(Color.White.copy(alpha = 0.7f), Offset(fx, y0), Offset(x1, y0 + h), u)
         }
         val label = if (c.missing) "⚠ ${c.name}" else c.name
-        drawText(text, label, Offset(max(x0, visL) + 8f, y0 + 4f), TextStyle(color = if (c.missing) Palette.Record else Palette.Text, fontSize = 11.sp), maxLines = 1)
+        drawText(text, label, Offset(max(x0, visL) + 5 * u, y0 + 1 * u), ClipLabel, maxLines = 1)
     }
-    if (selected) {
-        drawRoundRect(Color.White, Offset(x0, y0), Size(x1 - x0, h), CornerRadius(10f), style = Stroke(3f))
-        drawRoundRect(Color.White, Offset(x0 + 2f, y0 + h / 2 - 18f), Size(6f, 36f), CornerRadius(3f))
-        drawRoundRect(Color.White, Offset(x1 - 8f, y0 + h / 2 - 18f), Size(6f, 36f), CornerRadius(3f))
-    }
+    if (selected) clipSelection(x0, x1, y0, h)
 }

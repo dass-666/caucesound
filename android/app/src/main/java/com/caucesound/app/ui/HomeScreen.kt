@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -94,12 +95,19 @@ private val TEMPLATE_COLORS = mapOf(
 @Composable
 fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, message: String?, onMessageShown: () -> Unit, actions: HomeActions) {
     val snackbar = remember { SnackbarHostState() }
-    var creating by remember { mutableStateOf<String?>(null) }      // id de plantilla
     var chooser by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<ProjectSummary?>(null) }
     var deleting by remember { mutableStateOf<ProjectSummary?>(null) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); onMessageShown() } }
     val allTemplates = templates.map { it.id } + "empty"
+    // Crear es un solo toque: el nombre se genera («Trap 3») y se puede cambiar después desde el menú del proyecto.
+    fun autoName(tpl: String): String {
+        val base = if (tpl == "empty") tr("Proyecto", "Project") else Genre.name(tpl)
+        var n = projects.count { it.name.startsWith(base) } + 1
+        while (projects.any { it.name == "$base $n" }) n++
+        return "$base $n"
+    }
+    fun createNow(tpl: String) { actions.create(autoName(tpl), tpl) }
 
     Scaffold(
         containerColor = Palette.Background,
@@ -107,7 +115,8 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { chooser = true }, containerColor = Palette.Violet, contentColor = Color.White,
-                icon = { Icon(Icons.Default.Add, null) }, text = { Text(tr("Nuevo proyecto", "New project"), fontWeight = FontWeight.Bold) },
+                icon = { Icon(Icons.Default.Add, null) }, text = { Text(tr("Nueva canción", "New song"), fontWeight = FontWeight.Bold) },
+                shape = RoundedCornerShape(Dims.Radius),
                 modifier = Modifier.navigationBarsPadding(),
             )
         },
@@ -115,9 +124,9 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
         LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(bottom = 96.dp)) {
             item {
                 Column(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 16.dp)) {
-                    CauceLogo(height = 30.dp)
-                    Spacer(Modifier.height(4.dp))
-                    Text(tr("Estudio de producción musical", "Music production studio"), color = Palette.TextDim, style = MaterialTheme.typography.bodySmall)
+                    CauceLogo(height = 28.dp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(tr("Tu estudio. Elige un estilo y empieza a producir.", "Your studio. Pick a style and start producing."), color = Palette.TextDim, style = MaterialTheme.typography.bodySmall)
                 }
             }
             projects.firstOrNull { it.error == null }?.let { last ->
@@ -127,25 +136,24 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
                     }
                 }
             }
-            item { SectionTitle(tr("Empieza con una plantilla", "Start from a template")) }
+            item { SectionTitle(tr("Nueva canción", "New song")) }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(allTemplates) { id ->
-                        TemplateCard(id, templates.firstOrNull { it.id == id }) { creating = id }
+                        TemplateCard(id, templates.firstOrNull { it.id == id }) { createNow(id) }
                     }
                 }
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { SectionTitle(tr("Proyectos recientes", "Recent projects")) }
-                    TextButton(onClick = { actions.importArchive() }, modifier = Modifier.heightIn(min = Dims.Touch)) {
-                        Icon(Icons.Default.FileOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(tr("Importar", "Import"))
-                    }
+                    CauceButton(tr("Importar", "Import"), { actions.importArchive() }, kind = ButtonKind.Ghost, icon = Icons.Default.FileOpen, modifier = Modifier.padding(top = 12.dp))
                 }
             }
             if (projects.isEmpty()) item {
-                Text(tr("Todavía no hay proyectos. Elige una plantilla para empezar.", "No projects yet. Pick a template to begin."),
-                    color = Palette.TextDim, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                EmptyState(Icons.Default.LibraryMusic, tr("Todavía no hay canciones", "No songs yet"),
+                    tr("Toca un estilo de arriba: se crea el proyecto con batería, bajo y melodía listos para editar.",
+                        "Tap a style above: the project is created with drums, bass and melody ready to edit."), Modifier.fillMaxWidth())
             }
             items(projects, key = { it.folder }) { p ->
                 ProjectRow(p, onOpen = { actions.open(p.folder) }, onRename = { renaming = p },
@@ -158,14 +166,15 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
     if (chooser) {
         AlertDialog(
             onDismissRequest = { chooser = false },
-            title = { Text(tr("Nuevo proyecto", "New project")) },
+            containerColor = Palette.SurfaceHigh,
+            title = { Text(tr("Nueva canción", "New song")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     allTemplates.forEach { id ->
                         val info = templates.firstOrNull { it.id == id }
                         Row(
-                            Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp)).background(Palette.SurfaceHigh)
-                                .clickable { chooser = false; creating = id }.padding(horizontal = 12.dp),
+                            Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp)).background(Palette.SurfaceTop)
+                                .clickable { chooser = false; createNow(id) }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(Brush.linearGradient(TEMPLATE_COLORS[id] ?: TEMPLATE_COLORS["empty"]!!)))
@@ -177,24 +186,6 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
                 }
             },
             confirmButton = { TextButton(onClick = { chooser = false }) { Text(tr("Cancelar", "Cancel")) } },
-        )
-    }
-    creating?.let { tpl ->
-        var name by remember(tpl) { mutableStateOf(Genre.name(tpl).takeIf { tpl != "empty" }?.let { "$it ${projects.size + 1}" } ?: tr("Proyecto", "Project") + " ${projects.size + 1}") }
-        AlertDialog(
-            onDismissRequest = { creating = null },
-            title = { Text(Genre.name(tpl)) },
-            text = {
-                Column {
-                    OutlinedTextField(name, { name = it.take(60) }, label = { Text(tr("Nombre", "Name")) }, singleLine = true)
-                    templates.firstOrNull { it.id == tpl }?.let { info ->
-                        Spacer(Modifier.height(8.dp))
-                        Text(tr("Incluye: ", "Includes: ") + info.tracks.joinToString(" · ") + " · ${info.bpm.toInt()} BPM", color = Palette.TextDim, fontSize = 12.sp)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { actions.create(name, tpl); creating = null }) { Text(tr("Crear", "Create"), fontWeight = FontWeight.Bold) } },
-            dismissButton = { TextButton(onClick = { creating = null }) { Text(tr("Cancelar", "Cancel")) } },
         )
     }
     renaming?.let { p ->
@@ -227,40 +218,50 @@ private fun dateOf(ms: Long) = if (ms > 0) DateFormat.getDateTimeInstance(DateFo
 
 @Composable
 private fun ContinueCard(p: ProjectSummary, onOpen: () -> Unit) {
-    Column(
+    Row(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF231A3D), Color(0xFF111827))))
-            .border(1.dp, Palette.Violet.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF241B40), Color(0xFF12141C))))
+            .border(1.dp, Palette.Violet.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
             .clickable(onClick = onOpen).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(tr("CONTINUAR", "CONTINUE"), style = MaterialTheme.typography.labelSmall, color = Palette.Cyan)
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(p.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${dateOf(p.modifiedAt)} · ${"%.0f".format(p.bpm)} BPM · ${p.tracks} " + tr("pistas", "tracks"), color = Palette.TextDim, fontSize = 12.sp)
-            }
-            RoundButton(Icons.Default.PlayArrow, tr("Abrir", "Open"), onOpen, size = 52.dp, background = Palette.Violet, tint = Color.White)
+        Column(Modifier.weight(1f)) {
+            Text(tr("CONTINUAR", "CONTINUE"), style = MaterialTheme.typography.labelSmall, color = Palette.VioletSoft)
+            Spacer(Modifier.height(4.dp))
+            Text(p.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${"%.0f".format(p.bpm)} BPM · ${p.tracks} " + tr("pistas", "tracks") + " · ${dateOf(p.modifiedAt)}", color = Palette.TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(12.dp))
+            Thumbnail(p, Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black.copy(alpha = 0.25f)))
         }
-        Spacer(Modifier.height(12.dp))
-        Thumbnail(p, Modifier.fillMaxWidth().height(56.dp))
+        Spacer(Modifier.width(16.dp))
+        RoundButton(Icons.Default.PlayArrow, tr("Abrir", "Open"), onOpen, size = 56.dp, background = Palette.Violet, tint = Color.White)
     }
 }
 
+/** Tarjeta de plantilla: fondo oscuro con el color del género como luz, para que no compita con el contenido. */
 @Composable
 private fun TemplateCard(id: String, info: TemplateInfo?, onClick: () -> Unit) {
     val colors = TEMPLATE_COLORS[id] ?: TEMPLATE_COLORS["empty"]!!
+    val shape = RoundedCornerShape(18.dp)
     Column(
-        Modifier.width(148.dp).height(132.dp).clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(colors))
-            .clickable(onClick = onClick).padding(14.dp),
+        Modifier.width(140.dp).height(128.dp).clip(shape).background(Palette.Surface)
+            .background(Brush.linearGradient(listOf(colors[0].copy(alpha = 0.55f), colors[0].copy(alpha = 0.08f))))
+            .border(1.dp, colors[0].copy(alpha = 0.45f), shape)
+            .clickable(onClick = onClick, onClickLabel = tr("Crear canción", "Create song")).padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(if (info != null) "${info.bpm.toInt()} BPM" else tr("Libre", "Blank"), color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (info != null) "${info.bpm.toInt()} BPM" else tr("Libre", "Blank"), Modifier.weight(1f), color = Color.White.copy(alpha = 0.85f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+            Box(Modifier.size(24.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Add, null, Modifier.size(16.dp), tint = Color.White)
+            }
+        }
         Column {
-            Text(Genre.name(id), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1)
+            Text(Genre.name(id), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
             Text(
                 info?.tracks?.joinToString(" · ") ?: tr("4 pistas de audio", "4 audio tracks"),
-                color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -296,19 +297,27 @@ private fun ProjectRow(p: ProjectSummary, onOpen: () -> Unit, onRename: () -> Un
     }
 }
 
-/** Miniatura de la sesión: una franja por pista con los tramos que tienen clips (datos reales del proyecto). */
+/**
+ * Miniatura de la sesión: una franja por pista con los tramos que tienen clips (datos reales del proyecto). Un
+ * proyecto sin clips muestra un pentagrama tenue en lugar de un hueco negro.
+ */
 @Composable
 fun Thumbnail(p: ProjectSummary, modifier: Modifier) {
     Canvas(modifier.padding(4.dp)) {
+        val u = 1.dp.toPx()
+        if (p.thumb.none { it.spans.isNotEmpty() }) {
+            for (i in 1..3) drawLine(Palette.GridStrong.copy(alpha = 0.6f), Offset(2 * u, size.height * i / 4), Offset(size.width - 2 * u, size.height * i / 4), u)
+            return@Canvas
+        }
         val rows = p.thumb.size.coerceAtLeast(1)
         val rowH = size.height / rows
         p.thumb.forEachIndexed { i, t ->
             val c = Color(t.color.toInt())
-            drawRoundRect(c.copy(alpha = 0.12f), Offset(0f, i * rowH + 1f), Size(size.width, rowH - 2f), CornerRadius(3f))
+            drawRoundRect(c.copy(alpha = 0.12f), Offset(0f, i * rowH + u / 2), Size(size.width, rowH - u), CornerRadius(u))
             for ((a, b) in t.spans) {
                 val x0 = a.coerceIn(0f, 1f) * size.width
                 val x1 = b.coerceIn(0f, 1f) * size.width
-                if (x1 > x0) drawRoundRect(c.copy(alpha = 0.85f), Offset(x0, i * rowH + 1f), Size(x1 - x0, rowH - 2f), CornerRadius(3f))
+                if (x1 > x0) drawRoundRect(c.copy(alpha = 0.9f), Offset(x0, i * rowH + u / 2), Size(x1 - x0, rowH - u), CornerRadius(u))
             }
         }
     }

@@ -63,7 +63,7 @@ fun MixerPanel(state: ProjectState, meters: State<FloatArray>, selectedTrack: St
     }
 }
 
-private fun kindLabel(t: TrackState) = when (t.kind) { "drums" -> "DRUMS"; "synth" -> "SYNTH"; "bus" -> "BUS"; else -> "AUDIO" }
+internal fun kindLabel(t: TrackState) = when (t.kind) { "drums" -> "DRUMS"; "synth" -> "SYNTH"; "bus" -> "BUS"; else -> "AUDIO" }
 
 @Composable
 private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: TrackState?, actions: StudioActions) {

@@ -94,6 +94,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -206,18 +208,22 @@ fun StudioLayout(
     Scaffold(containerColor = Palette.Background, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { StudioNav(panel, actions::openPanel, compact) }) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             // --- Barra superior (+ transporte en horizontal) ---
-            Row(Modifier.fillMaxWidth().background(Palette.Surface).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { actions.closeProject() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
-                Column(Modifier.weight(1f)) {
-                    Text(state.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                    Text(if (state.dirty) stringResource(R.string.unsaved) else stringResource(R.string.saved), color = Palette.TextDim, fontSize = 11.sp)
+            Row(Modifier.fillMaxWidth().background(Palette.Surface).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                ToolButton(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), { actions.closeProject() }, tint = Palette.Text)
+                Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Text(state.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (state.dirty) Palette.Warn else Palette.Ok))
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (state.dirty) stringResource(R.string.unsaved) else stringResource(R.string.saved), color = Palette.TextDim, fontSize = 11.sp, maxLines = 1)
+                    }
                 }
                 if (compact) transport(Modifier.width(440.dp))
-                IconButton(onClick = actions::undo, enabled = state.canUndo && !state.recording) { Icon(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo)) }
-                IconButton(onClick = actions::redo, enabled = state.canRedo && !state.recording) { Icon(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo)) }
-                IconButton(onClick = actions::saveNow) { Icon(Icons.Default.Save, stringResource(R.string.save)) }
-                IconButton(onClick = { onDialog("export") }, enabled = state.contentEnd > 0 && !state.recording) { Icon(Icons.Default.FileDownload, stringResource(R.string.export)) }
-                IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
+                ToolButton(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo), actions::undo, enabled = state.canUndo && !state.recording, tint = Palette.Text)
+                ToolButton(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo), actions::redo, enabled = state.canRedo && !state.recording, tint = Palette.Text)
+                ToolButton(Icons.Default.Save, stringResource(R.string.save), actions::saveNow, tint = if (state.dirty) Palette.Text else Palette.TextDim)
+                ToolButton(Icons.Default.FileDownload, stringResource(R.string.export), { onDialog("export") }, enabled = state.contentEnd > 0 && !state.recording, tint = Palette.Text)
+                ToolButton(Icons.Default.Settings, stringResource(R.string.settings), onSettings)
             }
             // --- Transporte ---
             if (!compact) transport(Modifier.fillMaxWidth().background(Palette.Background))
@@ -272,6 +278,7 @@ fun StudioLayout(
     }
 }
 
+/** Navegación inferior propia: misma apariencia en vertical y horizontal; la pestaña activa se marca en violeta. */
 @Composable
 private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit, compact: Boolean = false) {
     val items = listOf(
@@ -281,37 +288,30 @@ private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit, compact: Boolean 
         Triple(Panel.SYNTH, Icons.Default.Tune, "Synth"),
         Triple(Panel.MIXER, Icons.Default.GraphicEq, tr("Mezcla", "Mixer")),
     )
-    if (compact) {
-        // Fila de 52 dp con icono + etiqueta corta en línea (objetivos táctiles de 48 dp).
-        Row(Modifier.fillMaxWidth().height(52.dp).background(Palette.Surface).navigationBarsPadding(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth().background(Palette.Surface)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Stroke))
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(if (compact) 48.dp else 60.dp), verticalAlignment = Alignment.CenterVertically) {
             items.forEach { (p, icon, label) ->
                 val on = p == panel || (p == Panel.MIXER && panel == Panel.FX)
-                PillToggle(label, on, { onSelect(p) }, color = Palette.Cyan, height = 44.dp, icon = icon)
+                val tint = if (on) Palette.VioletSoft else Palette.TextDim
+                val content: @Composable () -> Unit = {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50)).background(if (on) Palette.Violet.copy(alpha = 0.2f) else Color.Transparent).padding(horizontal = if (compact) 10.dp else 16.dp, vertical = 4.dp),
+                    ) { Icon(icon, null, Modifier.size(22.dp), tint = tint) }
+                    Text(label, fontSize = 11.sp, maxLines = 1, color = if (on) Palette.Text else Palette.TextDim, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                        modifier = if (compact) Modifier.padding(start = 6.dp) else Modifier.padding(top = 2.dp))
+                }
+                val m = Modifier.weight(1f).fillMaxHeight().clickable(role = androidx.compose.ui.semantics.Role.Tab) { onSelect(p) }
+                if (compact) Row(m, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) { content() }
+                else Column(m, verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { content() }
             }
-        }
-        return
-    }
-    NavigationBar(containerColor = Palette.Surface, tonalElevation = 0.dp) {
-        items.forEach { (p, icon, label) ->
-            NavigationBarItem(
-                selected = p == panel || (p == Panel.MIXER && panel == Panel.FX), onClick = { onSelect(p) }, icon = { Icon(icon, null) },
-                label = { Text(label, fontSize = 11.sp, maxLines = 1) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color.Black, indicatorColor = Palette.Cyan, selectedTextColor = Palette.Text,
-                    unselectedIconColor = Palette.TextDim, unselectedTextColor = Palette.TextDim,
-                ),
-            )
         }
     }
 }
 
 @Composable
 private fun EmptyPanel(text: String, button: String, onClick: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text, color = Palette.TextDim)
-        Spacer(Modifier.height(12.dp))
-        PillToggle(button, true, onClick, color = Palette.Violet, height = 48.dp, icon = Icons.Default.Add)
-    }
+    EmptyState(Icons.Default.Add, text, null, Modifier.fillMaxSize(), action = button, onAction = onClick)
 }
 
 /** Lectura de posición aislada: es lo único que se recompone a cada fotograma. */
@@ -337,7 +337,7 @@ private fun Transport(
         modifier.padding(horizontal = 6.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        RoundButton(Icons.Default.SkipPrevious, stringResource(R.string.rewind), onRewind, size = 40.dp)
+        RoundButton(Icons.Default.SkipPrevious, stringResource(R.string.rewind), onRewind, size = 40.dp, background = Palette.SurfaceHigh)
         if (playing || s.recording) RoundButton(Icons.Default.Stop, stringResource(R.string.stop), onStop, size = 50.dp, background = Palette.SurfaceTop)
         else RoundButton(Icons.Default.PlayArrow, stringResource(R.string.play), onPlay, size = 50.dp, background = Palette.Violet, tint = Color.White, glow = true)
         RoundButton(
@@ -346,20 +346,19 @@ private fun Transport(
         )
         Box(Modifier.weight(1f)) { PositionReadout(s, position) }
         Column(
-            Modifier.clip(RoundedCornerShape(12.dp)).border(1.dp, Palette.Grid, RoundedCornerShape(12.dp))
-                .clickable(enabled = !s.recording, onClick = onTempo).padding(horizontal = 8.dp, vertical = 4.dp),
+            Modifier.clip(RoundedCornerShape(Dims.RadiusMedium)).background(Palette.SurfaceHigh)
+                .clickable(enabled = !s.recording, onClick = onTempo).semantics { contentDescription = "Tempo" }.padding(horizontal = 10.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(if (s.bpm % 1.0 == 0.0) "${s.bpm.toInt()}" else "%.1f".format(s.bpm), fontFamily = FontFamily.Monospace, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text("BPM ${s.beatsPerBar}/4", fontSize = 10.sp, color = Palette.TextDim)
+            Text(if (s.bpm % 1.0 == 0.0) "${s.bpm.toInt()}" else "%.1f".format(s.bpm), fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("BPM · ${s.beatsPerBar}/4", fontSize = 10.sp, color = Palette.TextDim, maxLines = 1)
         }
-        Box(Modifier.size(44.dp).clickable(onClick = onMetronome), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Timer, stringResource(R.string.metronome), tint = if (s.metronome) Palette.Accent else Palette.TextDim)
-        }
+        ToolButton(Icons.Default.Timer, stringResource(R.string.metronome), onMetronome, active = s.metronome, activeColor = Palette.Cyan)
         // Bucle: toque = activar/desactivar; pulsación larga = editar rango.
-        Box(Modifier.size(44.dp).combinedClickable(onClick = onLoop, onLongClick = onLoopEdit), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Loop, tr("Bucle", "Loop"), tint = if (s.loopEnabled) Palette.Cyan else Palette.TextDim)
-        }
+        Box(
+            Modifier.size(Dims.TouchMin).clip(RoundedCornerShape(Dims.RadiusMedium)).background(if (s.loopEnabled) Palette.Cyan.copy(alpha = 0.18f) else Color.Transparent)
+                .combinedClickable(onClick = onLoop, onLongClick = onLoopEdit), contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Default.Loop, tr("Bucle", "Loop"), Modifier.size(22.dp), tint = if (s.loopEnabled) Palette.Cyan else Palette.TextDim) }
     }
 }
 
@@ -399,9 +398,7 @@ private fun ArrangementView(
                     TrackHeader(t, t.id == selectedTrack, { meters.value.getOrElse(i + 1) { 0f } }, vm, onImport = { onImport(t.id) }, onMenu = { onTrackMenu(t.id) })
                 }
                 if (state.tracks.size < 32) Box {
-                    TextButton(onClick = { addMenu = true }, modifier = Modifier.padding(4.dp).height(48.dp)) {
-                        Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.add_track))
-                    }
+                    CauceButton(stringResource(R.string.add_track), { addMenu = true }, Modifier.padding(8.dp), kind = ButtonKind.Ghost, icon = Icons.Default.Add)
                     DropdownMenu(addMenu, { addMenu = false }) {
                         val n = state.tracks.size + 1
                         DropdownMenuItem({ Text(tr("Audio (grabar / importar)", "Audio (record / import)")) }, leadingIcon = { Icon(Icons.Default.Mic, null) },
@@ -437,29 +434,27 @@ private fun ArrangementView(
             Modifier.fillMaxWidth().background(Palette.Surface).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = { zoom(1 / 1.5f, 0f) }) { Icon(Icons.Default.ZoomOut, stringResource(R.string.zoom_out)) }
-            IconButton(onClick = { zoom(1.5f, 0f) }) { Icon(Icons.Default.ZoomIn, stringResource(R.string.zoom_in)) }
-            ToggleIcon(Icons.Default.GridOn, stringResource(R.string.snap), snap) { snap = !snap }
+            ToolButton(Icons.Default.ZoomOut, stringResource(R.string.zoom_out), { zoom(1 / 1.5f, 0f) })
+            ToolButton(Icons.Default.ZoomIn, stringResource(R.string.zoom_in), { zoom(1.5f, 0f) })
+            ToolButton(Icons.Default.GridOn, stringResource(R.string.snap), { snap = !snap }, active = snap)
+            Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(24.dp).background(Palette.Stroke))
             val audioSel = selected?.let { state.clip(it) }
             val midiSel = selected?.let { state.midiClip(it) }
             if (audioSel != null && !state.recording) {
                 val c = audioSel.second
                 val pos = position.longValue
-                IconButton(onClick = { vm.splitSelectedAt(position.longValue) }, enabled = pos > c.start && pos < c.end) {
-                    Icon(Icons.Default.ContentCut, stringResource(R.string.split))
-                }
-                IconButton(onClick = vm::duplicateSelected) { Icon(Icons.Default.ContentCopy, stringResource(R.string.duplicate)) }
-                IconButton(onClick = onFades) { Icon(Icons.Default.Gradient, stringResource(R.string.fades)) }
-                IconButton(onClick = onGain) { Icon(Icons.Default.VolumeUp, stringResource(R.string.clip_gain)) }
-                IconButton(onClick = vm::deleteSelected) { Icon(Icons.Default.Delete, stringResource(R.string.delete), tint = Palette.Record) }
+                ToolButton(Icons.Default.ContentCut, stringResource(R.string.split), { vm.splitSelectedAt(position.longValue) }, enabled = pos > c.start && pos < c.end, tint = Palette.Text)
+                ToolButton(Icons.Default.ContentCopy, stringResource(R.string.duplicate), vm::duplicateSelected, tint = Palette.Text)
+                ToolButton(Icons.Default.Gradient, stringResource(R.string.fades), onFades, tint = Palette.Text)
+                ToolButton(Icons.Default.VolumeUp, stringResource(R.string.clip_gain), onGain, tint = Palette.Text)
+                ToolButton(Icons.Default.Delete, stringResource(R.string.delete), vm::deleteSelected, tint = Palette.Record)
             } else if (midiSel != null && !state.recording) {
                 val (t, c) = midiSel
-                IconButton(onClick = { vm.selectTrack(t.id); vm.openPanel(if (t.isDrums) Panel.DRUMS else Panel.PIANO) }) {
-                    Icon(Icons.Default.Edit, tr("Editar clip", "Edit clip"))
-                }
-                IconButton(onClick = { vm.duplicateMidiClip(c.id) }) { Icon(Icons.Default.ContentCopy, stringResource(R.string.duplicate)) }
-                IconButton(onClick = { vm.deleteMidiClip(c.id) }) { Icon(Icons.Default.Delete, stringResource(R.string.delete), tint = Palette.Record) }
-                Text(c.name, color = Palette.TextDim, fontSize = 12.sp, maxLines = 1)
+                CauceButton(tr("Editar", "Edit"), { vm.selectTrack(t.id); vm.openPanel(if (t.isDrums) Panel.DRUMS else Panel.PIANO) }, icon = Icons.Default.Edit, height = 40.dp)
+                Spacer(Modifier.width(6.dp))
+                // Duplicar coloca la copia justo después: es la forma rápida de repetir compases.
+                CauceButton(stringResource(R.string.duplicate), { vm.duplicateMidiClip(c.id) }, icon = Icons.Default.ContentCopy, height = 40.dp)
+                ToolButton(Icons.Default.Delete, stringResource(R.string.delete), { vm.deleteMidiClip(c.id) }, tint = Palette.Record)
             } else {
                 Text(tr("Toca un clip · doble toque: editor", "Tap a clip · double tap: editor"),
                     color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
@@ -468,34 +463,62 @@ private fun ArrangementView(
     }
 }
 
+/**
+ * Cabecera de pista. Un toque en el botón de la derecha abre directamente lo que más se usa en ese tipo de pista
+ * (batería → rejilla, synth → piano roll, bus → efectos, audio → importar); la pulsación larga abre el menú completo.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackHeader(t: TrackState, selected: Boolean, meter: () -> Float, vm: StudioActions, onImport: () -> Unit, onMenu: () -> Unit) {
     val color = Color(t.color.toInt())
+    var menu by remember { mutableStateOf(false) }
+    fun open(p: Panel) { vm.selectTrack(t.id); vm.openPanel(p) }
     Row(
-        Modifier.width(HEADER_W).height(TRACK_HEIGHT).background(if (selected) Palette.SurfaceHigh else Palette.Surface).border(0.5.dp, Palette.Grid)
-            .combinedClickable(onClick = { vm.selectTrack(t.id) }, onLongClick = onMenu),
+        Modifier.width(HEADER_W).height(TRACK_HEIGHT).background(if (selected) Palette.SurfaceHigh else Palette.Surface)
+            .combinedClickable(onClick = { vm.selectTrack(t.id) }, onLongClick = { menu = true }),
     ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(color))
-        Column(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        Box(Modifier.width(if (selected) 4.dp else 3.dp).fillMaxHeight().background(if (selected) color else color.copy(alpha = 0.7f)))
+        Column(Modifier.weight(1f).padding(start = 8.dp, end = 2.dp, top = 4.dp, bottom = 6.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    when { t.isDrums -> Icons.Default.GridOn; t.isSynth -> Icons.Default.MusicNote; t.isBus -> Icons.Default.CallSplit; else -> Icons.Default.Mic }, null,
-                    Modifier.size(14.dp), tint = color,
-                )
-                Spacer(Modifier.width(4.dp))
+                Icon(kindIcon(t), null, Modifier.size(14.dp), tint = color)
+                Spacer(Modifier.width(5.dp))
                 Text(t.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                if (t.isAudio) Icon(Icons.Default.FileUpload, stringResource(R.string.import_audio), Modifier.size(28.dp).clickable(onClick = onImport).padding(4.dp), tint = Palette.TextDim)
-                else Icon(Icons.Default.Settings, tr("Pista", "Track"), Modifier.size(28.dp).clickable(onClick = onMenu).padding(4.dp), tint = Palette.TextFaint)
+                Box {
+                    val (icon, desc) = when {
+                        t.isAudio -> Icons.Default.FileUpload to stringResource(R.string.import_audio)
+                        t.isDrums -> Icons.Default.GridOn to tr("Editar batería", "Edit drums")
+                        t.isSynth -> Icons.Default.Piano to tr("Editar notas", "Edit notes")
+                        else -> Icons.Default.GraphicEq to tr("Efectos del bus", "Bus effects")
+                    }
+                    Icon(icon, desc, Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(
+                        onClick = { when { t.isAudio -> onImport(); t.isDrums -> open(Panel.DRUMS); t.isSynth -> open(Panel.PIANO); else -> open(Panel.FX) } },
+                        onLongClick = { menu = true }).padding(6.dp), tint = Palette.TextDim)
+                    DropdownMenu(menu, { menu = false }) {
+                        if (t.isSynth) {
+                            DropdownMenuItem({ Text("Piano roll") }, leadingIcon = { Icon(Icons.Default.Piano, null) }, onClick = { menu = false; open(Panel.PIANO) })
+                            DropdownMenuItem({ Text(tr("Sonido (Synth)", "Sound (Synth)")) }, leadingIcon = { Icon(Icons.Default.Tune, null) }, onClick = { menu = false; open(Panel.SYNTH) })
+                        }
+                        if (t.isDrums) DropdownMenuItem({ Text(tr("Rejilla de batería", "Drum grid")) }, leadingIcon = { Icon(Icons.Default.GridOn, null) }, onClick = { menu = false; open(Panel.DRUMS) })
+                        if (t.isAudio) DropdownMenuItem({ Text(stringResource(R.string.import_audio)) }, leadingIcon = { Icon(Icons.Default.FileUpload, null) }, onClick = { menu = false; onImport() })
+                        DropdownMenuItem({ Text(tr("Efectos", "Effects")) }, leadingIcon = { Icon(Icons.Default.GraphicEq, null) }, onClick = { menu = false; open(Panel.FX) })
+                        DropdownMenuItem({ Text(tr("Renombrar o eliminar…", "Rename or delete…")) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; onMenu() })
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                PillToggle("M", t.mute, { vm.setMute(t.id, !t.mute) }, color = Palette.Mute, minWidth = 30.dp, height = 30.dp)
-                PillToggle("S", t.solo, { vm.setSolo(t.id, !t.solo) }, color = Palette.Solo, minWidth = 30.dp, height = 30.dp)
-                if (t.isAudio) PillToggle("R", t.armed, { vm.setArmed(t.id, !t.armed) }, color = Palette.Record, minWidth = 30.dp, height = 30.dp)
+                PillToggle("M", t.mute, { vm.setMute(t.id, !t.mute) }, color = Palette.Mute, minWidth = 32.dp, height = 30.dp)
+                PillToggle("S", t.solo, { vm.setSolo(t.id, !t.solo) }, color = Palette.Solo, minWidth = 32.dp, height = 30.dp)
+                if (t.isAudio) PillToggle("R", t.armed, { vm.setArmed(t.id, !t.armed) }, color = Palette.Record, minWidth = 32.dp, height = 30.dp)
+                else Text(kindLabel(t), fontSize = 9.sp, color = Palette.TextFaint, letterSpacing = 1.sp, modifier = Modifier.padding(start = 4.dp))
             }
-            LevelMeter(meter, Modifier.fillMaxWidth().height(5.dp), vertical = false)
+            LevelMeter(meter, Modifier.fillMaxWidth().padding(end = 6.dp).height(4.dp), vertical = false)
         }
+        Box(Modifier.width(1.dp).fillMaxHeight().background(Palette.Stroke))
     }
+}
+
+internal fun kindIcon(t: TrackState): ImageVector = when {
+    t.isDrums -> Icons.Default.GridOn; t.isSynth -> Icons.Default.MusicNote; t.isBus -> Icons.Default.CallSplit; else -> Icons.Default.Mic
 }
 
 @Composable
