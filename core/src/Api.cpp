@@ -1,6 +1,9 @@
 #include "cs/Api.h"
 
+#include "cs/Instruments.h"
 #include "cs/Project.h"
+
+#include <filesystem>
 
 #include <nlohmann/json.hpp>
 
@@ -36,6 +39,20 @@ json listProjects (const std::string& root)
             item["modifiedAt"] = p.modifiedAt;
             item["tracks"] = p.tracks.size();
             item["bpm"] = p.bpm;
+            item["template"] = p.templateId;
+            // Miniatura: por pista, color y tramos ocupados (fracción 0..1 de la duración del proyecto).
+            const double total = (double) std::max<Frame> (p.contentEnd(), 1);
+            json thumb = json::array();
+            for (size_t ti = 0; ti < p.tracks.size() && ti < 8; ++ti)
+            {
+                const auto& t = p.tracks[ti];
+                json spans = json::array();
+                for (const auto& c : t.clips) if (spans.size() < 16) spans.push_back ({ c.start / total, (c.start + c.length) / total });
+                for (const auto& c : t.midiClips)
+                    if (spans.size() < 16) spans.push_back ({ p.ticksToFrames (c.start) / total, p.ticksToFrames (c.start + c.length) / total });
+                thumb.push_back ({ { "color", t.color }, { "kind", t.kind }, { "spans", spans } });
+            }
+            item["thumb"] = thumb;
         }
         else
         {
@@ -45,6 +62,53 @@ json listProjects (const std::string& root)
         arr.push_back (item);
     }
     return arr;
+}
+} // namespace
+
+namespace
+{
+json catalog()
+{
+    json presets = json::array();
+    for (const auto& p : synthPresets()) presets.push_back ({ { "id", p.id }, { "name", p.name } });
+    json kits = json::array();
+    for (const auto& k : drumKits()) kits.push_back ({ { "id", k.id }, { "name", k.name }, { "lanes", k.laneNames } });
+    auto params = [] (const char* type)
+    {
+        json arr = json::array();
+        if (auto p = createProcessor (type))
+            for (const auto& i : p->parameters())
+                arr.push_back ({ { "id", i.id }, { "name", i.name }, { "min", i.minValue }, { "max", i.maxValue }, { "default", i.defaultValue } });
+        return arr;
+    };
+    json fx = json::array();
+    for (const auto& t : availableProcessorTypes()) fx.push_back ({ { "type", t }, { "params", params (t.c_str()) } });
+    json tpl = json::array();
+    for (const char* t : { "trap", "reggaeton", "hiphop", "pop", "electronic", "empty" }) tpl.push_back (t);
+    return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
+             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl } };
+}
+
+std::vector<MidiNote> parseNotes (const json& arr)
+{
+    std::vector<MidiNote> notes;
+    if (! arr.is_array()) return notes;
+    for (const auto& jn : arr)
+    {
+        MidiNote n;
+        if (jn.is_array()) { n.key = jn.at (0); n.velocity = jn.at (1); n.channel = jn.at (2); n.start = jn.at (3); n.length = jn.at (4); }
+        else { n.key = jn.at ("key"); n.velocity = jn.value ("velocity", 100); n.channel = jn.value ("channel", 0); n.start = jn.at ("start"); n.length = jn.at ("length"); }
+        notes.push_back (n);
+    }
+    return notes;
+}
+
+bool insideRoot (const std::string& root, const std::string& folder)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const auto r = fs::weakly_canonical (root, ec).string(), f = fs::weakly_canonical (folder, ec).string();
+    return ! r.empty() && f.size() > r.size() + 1 && f.compare (0, r.size(), r) == 0 && f[r.size()] == '/';
 }
 } // namespace
 
@@ -63,7 +127,35 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
 
         if (cmd == "state") return s.stateJson();
         if (cmd == "listProjects") return json { { "ok", true }, { "projects", listProjects (str ("root")) } }.dump();
-        if (cmd == "createProject") return result (s.createProject (str ("folder"), str ("name"))).dump();
+        if (cmd == "createProject") return result (s.createProject (str ("folder"), str ("name"), 48000, str ("template"))).dump();
+        if (cmd == "catalog") return catalog().dump();
+        if (cmd == "renameProject" || cmd == "duplicateProject")
+        {
+            // Opera sobre proyectos cerrados (desde la pantalla de inicio). root delimita lo que se puede tocar.
+            const std::string root = str ("root"), folder = str ("folder");
+            if (! insideRoot (root, folder)) return result (OpResult::fail ("carpeta fuera de los proyectos")).dump();
+            if (s.isOpen() && s.folder() == folder) s.close();
+            std::string text, err;
+            if (! readFile (folder + "/project.json", text)) return result (OpResult::fail ("no se encontró project.json")).dump();
+            json pj = json::parse (text, nullptr, false);
+            if (pj.is_discarded()) return result (OpResult::fail ("proyecto dañado")).dump();
+            if (cmd == "renameProject")
+            {
+                pj["name"] = str ("name");
+                if (! atomicWriteFile (folder + "/project.json", pj.dump (2), err, true)) return result (OpResult::fail (err)).dump();
+                return json { { "ok", true } }.dump();
+            }
+            const std::string dest = str ("dest");
+            if (! insideRoot (root, dest) || fileExists (dest)) return result (OpResult::fail ("destino no válido")).dump();
+            std::error_code ec;
+            std::filesystem::copy (folder, dest, std::filesystem::copy_options::recursive, ec);
+            if (ec) { std::filesystem::remove_all (dest, ec); return result (OpResult::fail ("no se pudo copiar el proyecto (¿espacio?)")).dump(); }
+            pj["name"] = str ("name");
+            pj["id"] = newId ("prj");
+            if (! atomicWriteFile (dest + "/project.json", pj.dump (2), err, false)) return result (OpResult::fail (err)).dump();
+            removeFile (dest + "/project.json.bak");
+            return json { { "ok", true }, { "folder", dest } }.dump();
+        }
         if (cmd == "openProject")
         {
             LoadReport rep;
@@ -75,7 +167,24 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         }
         if (cmd == "closeProject") { s.close(); return json { { "ok", true } }.dump(); }
         if (cmd == "save") return result (s.save()).dump();
-        if (cmd == "addTrack") return result (s.addTrack (str ("name"))).dump();
+        if (cmd == "addTrack") return result (s.addTrack (str ("name"), q.value ("kind", std::string ("audio")))).dump();
+        if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();
+        if (cmd == "loadPreset") return result (s.loadSynthPreset (str ("trackId"), str ("preset"))).dump();
+        if (cmd == "addPattern") return result (s.addPattern (str ("trackId"), str ("copyFrom"))).dump();
+        if (cmd == "setStep") return result (s.setPatternStep (str ("trackId"), str ("patternId"), (int) num ("lane"), (int) num ("step"), (int) num ("velocity"))).dump();
+        if (cmd == "setPatternLength") return result (s.setPatternLength (str ("trackId"), str ("patternId"), (int) num ("steps", 16))).dump();
+        if (cmd == "setSwing") return result (s.setPatternSwing (str ("trackId"), str ("patternId"), (float) num ("swing"))).dump();
+        if (cmd == "setPatternLanes") return result (s.setPatternLanes (str ("trackId"), str ("patternId"), q.at ("lanes").get<std::vector<std::vector<int>>>())).dump();
+        if (cmd == "renamePattern") return result (s.renamePattern (str ("trackId"), str ("patternId"), str ("name"))).dump();
+        if (cmd == "addMidiClip") return result (s.addMidiClip (str ("trackId"), (Tick) num ("start"), (Tick) num ("length", 4 * kPpq * 4), str ("patternId"))).dump();
+        if (cmd == "moveMidiClip") return result (s.moveMidiClip (str ("clipId"), (Tick) num ("start"), str ("trackId"))).dump();
+        if (cmd == "resizeMidiClip") return result (s.resizeMidiClip (str ("clipId"), (Tick) num ("start"), (Tick) num ("length"))).dump();
+        if (cmd == "deleteMidiClip") return result (s.deleteMidiClip (str ("clipId"))).dump();
+        if (cmd == "duplicateMidiClip") return result (s.duplicateMidiClip (str ("clipId"))).dump();
+        if (cmd == "setClipPattern") return result (s.setMidiClipPattern (str ("clipId"), str ("patternId"))).dump();
+        if (cmd == "setClipNotes") return result (s.setClipNotes (str ("clipId"), parseNotes (q.value ("notes", json::array())))).dump();
+        if (cmd == "quantizeClip") return result (s.quantizeClip (str ("clipId"), (Tick) num ("grid", kStepTicks), (float) num ("strength", 1.0), flag ("lengths"))).dump();
+        if (cmd == "setLoop") return result (s.setLoop (flag ("on"), (Tick) num ("start"), (Tick) num ("end", 16 * kPpq))).dump();
         if (cmd == "removeTrack") return result (s.removeTrack (str ("trackId"))).dump();
         if (cmd == "renameTrack") return result (s.renameTrack (str ("trackId"), str ("name"))).dump();
         if (cmd == "setVolume") return result (s.setTrackVolumeDb (str ("trackId"), (float) num ("db"))).dump();

@@ -1,5 +1,6 @@
 #include "cs/Session.h"
 
+#include "cs/Instruments.h"
 #include "cs/Resampler.h"
 #include "cs/Wav.h"
 
@@ -174,6 +175,89 @@ std::shared_ptr<Session::Source> Session::makeSource (std::shared_ptr<const Audi
 }
 
 // --- Grafo de render ----------------------------------------------------------------------------------------------
+std::shared_ptr<Instrument> Session::instrumentFor (const TrackModel& t)
+{
+    if (t.instrument.type.empty()) return nullptr;
+    auto& inst = instrumentInstances[t.id];
+    if (inst && inst->typeId() != t.instrument.type) inst.reset();
+    if (! inst)
+    {
+        inst = std::dynamic_pointer_cast<Instrument> (createProcessor (t.instrument.type));
+        if (! inst) return nullptr; // tipo desconocido (proyecto de una versión futura)
+        if (! t.instrument.state.empty()) inst->loadState (t.instrument.state);
+        inst->prepare (proj.sampleRate, kProcessorMaxBlock);
+    }
+    return inst;
+}
+
+// Construye la pista de render. offline = true: instancias propias (clonadas por estado) para la exportación,
+// para no compartir procesadores con el hilo de audio.
+TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, RenderGraph& g)
+{
+    TrackRT tr;
+    tr.slot = slot;
+    for (const auto& c : t.clips)
+    {
+        ClipRT rc;
+        auto it = pool.find (c.sourceId);
+        if (it != pool.end())
+        {
+            rc.data = it->second->audio.get();
+            g.keepAlive.push_back (it->second->audio);
+        }
+        rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
+        rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.gainDb);
+        tr.clips.push_back (rc);
+    }
+    std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
+    for (const auto& ins : t.inserts)
+    {
+        if (ins.bypass) continue;
+        if (offline)
+        {
+            ProcessorPtr fx = createProcessor (ins.type);
+            if (! fx) continue;
+            auto live = insertInstances.find (ins.id);
+            fx->loadState (live != insertInstances.end() && live->second ? live->second->saveState() : ins.state);
+            fx->prepare (proj.sampleRate, 1024);
+            tr.inserts.push_back (fx);
+            continue;
+        }
+        auto& inst = insertInstances[ins.id];
+        if (! inst)
+        {
+            inst = createProcessor (ins.type);
+            if (! inst) continue; // tipo desconocido (p. ej. proyecto de una versión con más plugins)
+            if (! ins.state.empty()) inst->loadState (ins.state);
+            inst->prepare (proj.sampleRate, kProcessorMaxBlock);
+        }
+        tr.inserts.push_back (inst);
+    }
+    if (! t.instrument.type.empty())
+    {
+        if (offline)
+        {
+            auto live = instrumentInstances.find (t.id);
+            auto inst = std::dynamic_pointer_cast<Instrument> (createProcessor (t.instrument.type));
+            if (inst)
+            {
+                inst->loadState (live != instrumentInstances.end() && live->second ? live->second->saveState() : t.instrument.state);
+                inst->prepare (proj.sampleRate, 1024);
+                tr.instrument = inst;
+            }
+        }
+        else tr.instrument = instrumentFor (t);
+        if (tr.instrument)
+        {
+            for (const auto& c : t.midiClips)
+                appendClipEvents (c, c.patternId.empty() ? nullptr : t.findPattern (c.patternId), proj.bpm, proj.sampleRate, tr.events);
+            sortEvents (tr.events);
+            tr.eventsHash = hashEvents (tr.events);
+        }
+    }
+    return tr;
+}
+
 void Session::rebuildGraph()
 {
     auto g = std::make_unique<RenderGraph>();
@@ -182,41 +266,17 @@ void Session::rebuildGraph()
     g->beatsPerBar = proj.beatsPerBar;
     g->contentEnd = proj.contentEnd();
     int slot = 0;
-    for (const auto& t : proj.tracks)
-    {
-        TrackRT tr;
-        tr.slot = slot++;
-        for (const auto& c : t.clips)
-        {
-            ClipRT rc;
-            auto it = pool.find (c.sourceId);
-            if (it != pool.end())
-            {
-                rc.data = it->second->audio.get();
-                g->keepAlive.push_back (it->second->audio);
-            }
-            rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
-            rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.gainDb);
-            tr.clips.push_back (rc);
-        }
-        std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
-        for (const auto& ins : t.inserts)
-        {
-            if (ins.bypass) continue;
-            auto& inst = insertInstances[ins.id];
-            if (! inst)
-            {
-                inst = createProcessor (ins.type);
-                if (! inst) continue; // tipo desconocido (p. ej. proyecto de una versión con más plugins)
-                if (! ins.state.empty()) inst->loadState (ins.state);
-                inst->prepare (proj.sampleRate, kProcessorMaxBlock);
-            }
-            tr.inserts.push_back (inst);
-        }
-        g->tracks.push_back (std::move (tr));
-    }
+    for (const auto& t : proj.tracks) g->tracks.push_back (makeTrackRT (t, slot++, false, *g));
+    // Instancias de pistas borradas: fuera de la caché (el grafo anterior las mantiene vivas mientras haga falta).
+    for (auto it = instrumentInstances.begin(); it != instrumentInstances.end();)
+        it = proj.findTrack (it->first) ? std::next (it) : instrumentInstances.erase (it);
     applyMixerParams();
     engine.publish (std::move (g));
+}
+
+void Session::applyLoopLocked()
+{
+    engine.setLoop (proj.loopEnabled, proj.ticksToFrames (proj.loopStart), proj.ticksToFrames (proj.loopEnd));
 }
 
 void Session::applyMixerParams()
@@ -232,10 +292,11 @@ void Session::applyMixerParams()
     }
     engine.setMasterGain (dbToGain (proj.masterDb));
     engine.setMetronome (proj.metronome);
+    applyLoopLocked();
 }
 
 // --- Proyecto -----------------------------------------------------------------------------------------------------
-OpResult Session::createProject (const std::string& folderPath, const std::string& name, int sampleRate)
+OpResult Session::createProject (const std::string& folderPath, const std::string& name, int sampleRate, const std::string& templateId)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     close();
@@ -249,6 +310,7 @@ OpResult Session::createProject (const std::string& folderPath, const std::strin
     proj.createdAt = proj.modifiedAt = nowMs();
     open = true;
     dirty = true;
+    applyTemplateLocked (templateId);
     rebuildGraph();
     OpResult r = save();
     r.id = proj.id;
@@ -285,6 +347,15 @@ OpResult Session::openProject (const std::string& folderPath, LoadReport* report
         if (firstError.empty()) firstError = err;
     }
     if (! loaded) return OpResult::fail ("no se pudo abrir el proyecto: " + firstError);
+
+    if (p.version < kProjectFormatVersion)
+    {
+        // Migración: el primer guardado escribirá el formato nuevo. Antes conservamos el original intacto.
+        const std::string legacy = folderPath + "/project.v" + std::to_string (p.version) + ".json";
+        std::string text, err;
+        if (! fileExists (legacy) && readFile (folderPath + "/" + kProjectFile, text)) atomicWriteFile (legacy, text, err, false);
+        p.version = kProjectFormatVersion;
+    }
 
     dir = folderPath;
     proj = std::move (p);
@@ -386,6 +457,7 @@ void Session::close()
     dirty = false;
     pool.clear();
     insertInstances.clear();
+    instrumentInstances.clear();
     undoStack.clear();
     redoStack.clear();
     proj = ProjectModel();
@@ -402,6 +474,7 @@ void Session::abandonForTest()
     dirty = false;
     pool.clear();
     insertInstances.clear();
+    instrumentInstances.clear();
     undoStack.clear();
     redoStack.clear();
 }
@@ -428,17 +501,49 @@ std::string Session::stateJson() const
 }
 
 // --- Pistas -------------------------------------------------------------------------------------------------------
-OpResult Session::addTrack (const std::string& name)
+OpResult Session::addTrack (const std::string& name, const std::string& kind)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     if (proj.tracks.size() >= (size_t) kMaxTracks) return OpResult::fail ("límite de pistas alcanzado");
+    if (kind != "audio" && kind != "synth" && kind != "drums") return OpResult::fail ("tipo de pista desconocido");
     pushUndo();
     TrackModel t;
     t.id = newId ("trk");
-    t.name = name.empty() ? "Track " + std::to_string (proj.tracks.size() + 1) : name;
-    static const uint32_t palette[] = { 0xFF4FC3F7, 0xFFFFB74D, 0xFF81C784, 0xFFE57373, 0xFFBA68C8, 0xFFFFF176, 0xFF4DB6AC, 0xFFF06292 };
+    t.kind = kind;
+    t.name = name.empty() ? (kind == "drums" ? "Cauce Drums" : kind == "synth" ? "Cauce Synth" : "Track " + std::to_string (proj.tracks.size() + 1)) : name;
+    // Paleta de pistas de la identidad visual: violeta, azul eléctrico, cian, ámbar, verde, rosa, lima, naranja.
+    static const uint32_t palette[] = { 0xFF8B5CF6, 0xFF3B82F6, 0xFF22D3EE, 0xFFF59E0B, 0xFF34D399, 0xFFF472B6, 0xFFA3E635, 0xFFFB923C };
     t.color = palette[proj.tracks.size() % 8];
+    const Tick bar = (Tick) kPpq * proj.beatsPerBar;
+    if (kind == "drums")
+    {
+        t.instrument.type = "cs.drums";
+        t.instrument.state = "{\"kit\":0}";
+        DrumPattern pt;
+        pt.id = newId ("pat");
+        pt.name = "A";
+        t.patterns.push_back (pt);
+        MidiClipModel c;
+        c.id = newId ("mcl");
+        c.name = "A";
+        c.patternId = pt.id;
+        c.start = 0;
+        c.length = 4 * bar;
+        t.midiClips.push_back (c);
+    }
+    else if (kind == "synth")
+    {
+        t.instrument.type = "cs.synth";
+        t.instrument.state = synthPresetState ("soft_keys");
+        t.instrument.preset = "soft_keys";
+        MidiClipModel c;
+        c.id = newId ("mcl");
+        c.name = t.name;
+        c.start = 0;
+        c.length = 4 * bar;
+        t.midiClips.push_back (c);
+    }
     proj.tracks.push_back (t);
     finishEditLocked();
     OpResult r;
@@ -822,8 +927,7 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     if (recorder) return OpResult::fail ("no se puede exportar durante la grabación");
-    const Frame total = proj.contentEnd() + std::max<Frame> (0, tailFrames);
-    if (total <= 0) return OpResult::fail ("el proyecto está vacío");
+    if (proj.contentEnd() <= 0) return OpResult::fail ("el proyecto está vacío");
 
     // Motor independiente: no interfiere con la reproducción en curso y parte de un estado limpio.
     Engine offline;
@@ -831,34 +935,17 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
     auto g = std::make_unique<RenderGraph>();
     g->sampleRate = proj.sampleRate; g->bpm = proj.bpm; g->beatsPerBar = proj.beatsPerBar;
     int slot = 0;
+    Frame instrumentTail = 0;
     for (const auto& t : proj.tracks)
     {
-        TrackRT tr;
-        tr.slot = slot;
-        TrackParams& p = offline.trackParams (slot++);
+        TrackParams& p = offline.trackParams (slot);
         p.gain.store (dbToGain (t.volumeDb)); p.pan.store (t.pan); p.mute.store (t.mute); p.solo.store (t.solo);
-        for (const auto& c : t.clips)
-        {
-            ClipRT rc;
-            if (auto it = pool.find (c.sourceId); it != pool.end()) { rc.data = it->second->audio.get(); g->keepAlive.push_back (it->second->audio); }
-            rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
-            rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.gainDb);
-            tr.clips.push_back (rc);
-        }
-        std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
-        for (const auto& ins : t.inserts)
-        {
-            if (ins.bypass) continue;
-            // Instancia propia (clonada por estado) para no compartir un procesador con el hilo de audio.
-            ProcessorPtr fx = createProcessor (ins.type);
-            if (! fx) continue;
-            auto live = insertInstances.find (ins.id);
-            fx->loadState (live != insertInstances.end() && live->second ? live->second->saveState() : ins.state);
-            fx->prepare (proj.sampleRate, 1024);
-            tr.inserts.push_back (fx);
-        }
+        TrackRT tr = makeTrackRT (t, slot++, true, *g);
+        if (tr.instrument && ! tr.events.empty()) instrumentTail = std::max<Frame> (instrumentTail, tr.instrument->tailSamples());
         g->tracks.push_back (std::move (tr));
     }
+    // Las colas de los instrumentos (release, platillos) se incluyen siempre: el archivo no corta notas.
+    const Frame total = proj.contentEnd() + std::max<Frame> (std::max<Frame> (0, tailFrames), instrumentTail);
     offline.setMasterGain (dbToGain (proj.masterDb));
     offline.publish (std::move (g));
 

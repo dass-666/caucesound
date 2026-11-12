@@ -2,11 +2,16 @@
 # Lo comparten la app Android (JNI + Oboe), la futura app iOS (Core Audio) y las pruebas en escritorio.
 add_library(cs_core STATIC
     src/Api.cpp
+    src/Drums.cpp
+    src/Effects.cpp
     src/Engine.cpp
+    src/Midi.cpp
     src/Processor.cpp
     src/Project.cpp
     src/Resampler.cpp
     src/Session.cpp
+    src/SessionMusic.cpp
+    src/Synth.cpp
     src/Wav.cpp
 )
 target_include_directories(cs_core PUBLIC include ${CMAKE_CURRENT_LIST_DIR}/../third_party)

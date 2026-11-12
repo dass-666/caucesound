@@ -10,6 +10,7 @@
 // Garantías comprobadas por pruebas: 0 reservas de memoria en process(), salida idéntica bit a bit con cualquier
 // tamaño de bloque, y la exportación offline usa exactamente el mismo código que la reproducción.
 #include "cs/AudioData.h"
+#include "cs/Midi.h"
 #include "cs/Processor.h"
 #include "cs/SpscRing.h"
 
@@ -34,7 +35,11 @@ struct TrackRT
     int slot = 0;                       // índice en los parámetros atómicos
     std::vector<ClipRT> clips;          // ordenados por start
     std::vector<ProcessorPtr> inserts;  // ya preparados
+    std::shared_ptr<Instrument> instrument;  // pistas de instrumento (Cauce Synth / Cauce Drums); ya preparado
+    std::vector<SchedEvent> events;          // eventos MIDI planificados en frames absolutos, ordenados
+    uint64_t eventsHash = 0;                 // huella de 'events' (calculada en el hilo de control)
 };
+uint64_t hashEvents (const std::vector<SchedEvent>& ev);
 
 struct RenderGraph
 {
@@ -73,6 +78,14 @@ public:
     void setMetronome (bool on) { metronomeOn.store (on); }
     void setMetronomeGain (float linear) { metronomeGain.store (linear); }
     void setMonitoring (bool on, float gain = 1.0f) { monitorGain.store (on ? gain : 0.0f); }
+    // Región de bucle [start, end) en frames. Se ignora mientras se graba (la toma es lineal).
+    void setLoop (bool on, Frame start, Frame end);
+    bool loopEnabled() const { return loopOn.load(); }
+
+    // Eventos MIDI en vivo (pads, teclado, vista previa del piano roll) hacia la pista 'slot'. Cualquier hilo
+    // de interfaz (los productores se serializan con un spinlock que el hilo de audio nunca toma). Se aplican al
+    // principio del siguiente bloque. Devuelve false si la cola está llena.
+    bool sendLive (int slot, uint8_t status, uint8_t data1, uint8_t data2);
 
     // --- Transporte (cualquier hilo) ---------------------------------------------------------------------------
     void play() { playing.store (true); }
@@ -103,6 +116,9 @@ public:
 
 private:
     void renderBlock (const RenderGraph* g, Frame pos, bool rolling, float* L, float* R, int n);
+    void renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n);
+    void notesOff (const RenderGraph* g, bool hard);
+    void drainLive (const RenderGraph* g);
     void adoptPendingGraph();
     void snapSmoothersToTargets();
 
@@ -126,6 +142,13 @@ private:
     std::atomic<float> masterGain { 1.0f }, metronomeGain { 0.5f }, monitorGain { 0.0f }, masterPeakOut { 0.0f };
     std::atomic<bool> metronomeOn { false };
     std::atomic<long> hostXruns { 0 };
+
+    std::atomic<bool> loopOn { false };
+    std::atomic<Frame> loopStart { 0 }, loopEnd { 0 };
+    bool prevRolling = false;
+    struct LiveMidi { int slot; uint8_t status, d1, d2; };
+    SpscRing<LiveMidi> live { 1024 };
+    std::atomic_flag liveLock = ATOMIC_FLAG_INIT;
 
     std::atomic<SpscRing<float>*> recRing { nullptr };
     std::atomic<int> recChannels { 1 };

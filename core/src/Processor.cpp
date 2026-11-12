@@ -67,10 +67,16 @@ private:
 };
 } // namespace
 
+ProcessorPtr createSynth();
+ProcessorPtr createDrums();
+ProcessorPtr createEffect (const std::string& typeId); // Effects.cpp (Cauce FX)
+
 ProcessorPtr createProcessor (const std::string& typeId)
 {
     if (typeId == "cs.gain") return std::make_shared<GainProcessor>();
-    return nullptr;
+    if (typeId == "cs.synth") return createSynth();
+    if (typeId == "cs.drums") return createDrums();
+    return createEffect (typeId);
 }
 
 std::vector<std::string> availableProcessorTypes() { return { "cs.gain" }; }

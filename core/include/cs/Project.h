@@ -2,13 +2,17 @@
 // Modelo del proyecto (hilo de control). No contiene audio, solo referencias a archivos dentro de la carpeta
 // del proyecto. Se serializa a JSON versionado; la carga valida todo antes de aceptar el archivo.
 #include "cs/AudioData.h"
+#include "cs/Midi.h"
 
 #include <string>
 #include <vector>
 
 namespace cs
 {
-constexpr int kProjectFormatVersion = 1;
+// v1: fase 1 (solo audio). v2: pistas de instrumento, patrones, clips MIDI, bucle y plantilla.
+// Un proyecto v1 se lee sin cambios (los campos nuevos toman su valor por defecto) y, antes del primer guardado
+// en v2, Session copia el original a project.v1.json (ver Session::openProject).
+constexpr int kProjectFormatVersion = 2;
 
 struct SourceRef
 {
@@ -35,15 +39,28 @@ struct ClipModel
     float gainDb = 0.0f;
 };
 
+struct InstrumentModel
+{
+    std::string type;   // "" (pista de audio), "cs.synth" o "cs.drums"
+    std::string state;  // JSON del instrumento (parámetros)
+    std::string preset; // último preset cargado (informativo)
+};
+
 struct TrackModel
 {
     std::string id, name;
+    std::string kind = "audio"; // "audio" | "synth" | "drums"
     float volumeDb = 0.0f; // -inf se guarda como -144
     float pan = 0.0f;
     bool mute = false, solo = false, armed = false;
     uint32_t color = 0xFF4FC3F7;
     std::vector<ClipModel> clips;
     std::vector<InsertModel> inserts;
+    InstrumentModel instrument;
+    std::vector<DrumPattern> patterns;     // solo pistas de batería
+    std::vector<MidiClipModel> midiClips;  // pistas de instrumento
+    const DrumPattern* findPattern (const std::string& id) const;
+    DrumPattern* findPattern (const std::string& id);
 };
 
 struct ProjectModel
@@ -57,6 +74,9 @@ struct ProjectModel
     float masterDb = 0.0f;
     Frame recordLatencyOffset = 0; // compensación aplicada a grabaciones nuevas (frames)
     int64_t createdAt = 0, modifiedAt = 0; // epoch ms
+    std::string templateId;                // plantilla con la que se creó ("trap", "reggaeton"...), informativo
+    bool loopEnabled = false;
+    Tick loopStart = 0, loopEnd = 16 * kPpq; // 4 compases de 4/4
     std::vector<TrackModel> tracks;
     std::vector<SourceRef> sources;
 
@@ -64,7 +84,9 @@ struct ProjectModel
     TrackModel* findTrack (const std::string& id);
     const TrackModel* findTrack (const std::string& id) const;
     ClipModel* findClip (const std::string& id, TrackModel** owner = nullptr);
-    Frame contentEnd() const; // final del último clip
+    MidiClipModel* findMidiClip (const std::string& id, TrackModel** owner = nullptr);
+    Frame contentEnd() const; // final del último clip (audio o MIDI), en frames
+    Frame ticksToFrames (Tick t) const { return cs::ticksToFrames (t, bpm, sampleRate); }
 };
 
 std::string toJson (const ProjectModel& p, bool pretty = true);

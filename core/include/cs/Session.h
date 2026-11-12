@@ -39,7 +39,8 @@ public:
     ~Session();
 
     // --- Proyecto -------------------------------------------------------------------------------------------------
-    OpResult createProject (const std::string& folder, const std::string& name, int sampleRate = 48000);
+    // templateId: "" o "empty" (vacío), "trap", "reggaeton", "hiphop", "pop", "electronic" (ver Templates.cpp).
+    OpResult createProject (const std::string& folder, const std::string& name, int sampleRate = 48000, const std::string& templateId = {});
     OpResult openProject (const std::string& folder, LoadReport* report = nullptr);
     OpResult save();
     void close();
@@ -50,7 +51,8 @@ public:
     std::string stateJson() const;   // modelo + datos derivados para la interfaz
 
     // --- Pistas ---------------------------------------------------------------------------------------------------
-    OpResult addTrack (const std::string& name = {});
+    // kind: "audio" (por defecto), "synth" (Cauce Synth + clip MIDI vacío) o "drums" (Cauce Drums + patrón + clip).
+    OpResult addTrack (const std::string& name = {}, const std::string& kind = "audio");
     OpResult removeTrack (const std::string& trackId);
     OpResult renameTrack (const std::string& trackId, const std::string& name);
     // Mezcla: no entra en deshacer (se aplica al instante por atómicos), sí marca el proyecto como modificado.
@@ -77,6 +79,32 @@ public:
     bool canRedo() const;
     OpResult undo();
     OpResult redo();
+
+    // --- Instrumentos (sin deshacer, como la mezcla: se aplican al instante) ----------------------------------
+    OpResult setInstrumentParam (const std::string& trackId, const std::string& paramId, float value);
+    OpResult loadSynthPreset (const std::string& trackId, const std::string& presetId);
+    int activeVoices (const std::string& trackId) const; // para pruebas e indicadores
+
+    // --- Patrones de batería (con deshacer) -----------------------------------------------------------------
+    OpResult addPattern (const std::string& trackId, const std::string& copyFromId = {});
+    OpResult setPatternStep (const std::string& trackId, const std::string& patternId, int lane, int step, int velocity);
+    OpResult setPatternLength (const std::string& trackId, const std::string& patternId, int steps); // 16 <-> 32
+    OpResult setPatternSwing (const std::string& trackId, const std::string& patternId, float swing);
+    OpResult setPatternLanes (const std::string& trackId, const std::string& patternId, const std::vector<std::vector<int>>& lanes);
+    OpResult renamePattern (const std::string& trackId, const std::string& patternId, const std::string& name);
+
+    // --- Clips MIDI (con deshacer). Posiciones en ticks (kPpq por negra) ------------------------------------
+    OpResult addMidiClip (const std::string& trackId, Tick start, Tick length, const std::string& patternId = {});
+    OpResult moveMidiClip (const std::string& clipId, Tick start, const std::string& newTrackId = {});
+    OpResult resizeMidiClip (const std::string& clipId, Tick start, Tick length);
+    OpResult deleteMidiClip (const std::string& clipId);
+    OpResult duplicateMidiClip (const std::string& clipId);
+    OpResult setMidiClipPattern (const std::string& clipId, const std::string& patternId);
+    OpResult setClipNotes (const std::string& clipId, std::vector<MidiNote> notes);
+    OpResult quantizeClip (const std::string& clipId, Tick grid, float strength, bool lengthsToo);
+
+    // --- Bucle --------------------------------------------------------------------------------------------------
+    OpResult setLoop (bool on, Tick start, Tick end);
 
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
@@ -114,6 +142,11 @@ private:
 
     void pushUndo();
     void rebuildGraph();
+    TrackRT makeTrackRT (const TrackModel& t, int slot, bool offline, RenderGraph& g);
+    std::shared_ptr<Instrument> instrumentFor (const TrackModel& t);
+    void applyLoopLocked();
+    void applyTemplateLocked (const std::string& templateId);
+    TrackModel* instrumentTrack (const std::string& trackId, const char* kind, OpResult& err);
     void applyMixerParams();
     OpResult loadSourceLocked (const SourceRef& ref, bool* ok);
     std::shared_ptr<Source> makeSource (std::shared_ptr<const AudioData> audio) const;
@@ -129,6 +162,7 @@ private:
     ProjectModel proj;
     std::map<std::string, std::shared_ptr<Source>> pool;
     std::map<std::string, ProcessorPtr> insertInstances;
+    std::map<std::string, std::shared_ptr<Instrument>> instrumentInstances; // por id de pista
     std::vector<ProjectModel> undoStack, redoStack;
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;

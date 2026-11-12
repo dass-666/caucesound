@@ -8,6 +8,7 @@
 //  - latencySamples() es fijo tras prepare() (el motor compensará la latencia en fases futuras).
 // Los motores de VocalShift / Solo AI / Spatial Echo se integrarán como implementaciones de estas interfaces.
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -44,11 +45,28 @@ struct MidiEvent
     uint8_t status = 0, data1 = 0, data2 = 0;
 };
 
-// Instrumento: genera audio a partir de eventos MIDI (futuro piano roll / Solo AI Studio).
+// Contexto de transporte que el motor ofrece a los procesadores (para efectos sincronizados, Solo AI Studio, etc.).
+struct TransportInfo
+{
+    double sampleRate = 48000, bpm = 120;
+    int beatsPerBar = 4;
+    bool playing = false;
+    int64_t positionFrames = 0;    // primera muestra del bloque actual
+    double positionQuarters = 0;   // misma posición en negras
+};
+
+// Instrumento: genera audio a partir de eventos MIDI (Cauce Synth, Cauce Drums, futuro Solo AI Studio).
+// El motor divide el bloque en cada evento, así que handleMidi() recibe eventos con frameOffset = 0 y
+// process() SUMA su salida estéreo a io[0], io[1]. Resultado idéntico con cualquier tamaño de bloque.
 class Instrument : public AudioProcessor
 {
 public:
     virtual void handleMidi (const MidiEvent* events, int count) = 0; // hilo de audio, antes de process()
+    // hard = false: pasa todas las voces a release (stop, loop, seek). hard = true: silencio inmediato.
+    virtual void allNotesOff (bool hard) = 0;
+    virtual int activeVoices() const { return 0; }
+    // Cola máxima tras el último Note Off (release, decaimiento), para la exportación.
+    virtual int tailSamples() const { return 0; }
 };
 
 using ProcessorPtr = std::shared_ptr<AudioProcessor>;

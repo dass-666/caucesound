@@ -70,11 +70,98 @@ void Engine::adoptPendingGraph()
 {
     RenderGraph* g = pending.exchange (nullptr, std::memory_order_acq_rel);
     if (! g) return;
+    // Con el transporte en marcha, si el plan de eventos de un instrumento cambió, puede faltar el Note Off de una
+    // nota que ya suena (p. ej. se borró mientras sonaba): se liberan sus voces para que ninguna quede atascada.
+    if (prevRolling)
+        for (const auto& t : g->tracks)
+        {
+            if (! t.instrument) continue;
+            bool same = false;
+            if (active)
+                for (const auto& o : active->tracks)
+                    if (o.instrument == t.instrument) { same = o.eventsHash == t.eventsHash; break; }
+            if (! same) t.instrument->allNotesOff (false);
+        }
     if (active && ! trash.push (&active, 1))
     {
         // Cola llena (el hilo de control no recoge basura): preferimos una fuga a liberar en tiempo real.
     }
     active = g;
+}
+
+uint64_t hashEvents (const std::vector<SchedEvent>& ev)
+{
+    uint64_t h = 1469598103934665603ull; // FNV-1a
+    auto mix = [&] (uint64_t v) { h ^= v; h *= 1099511628211ull; };
+    for (const auto& e : ev) { mix ((uint64_t) e.frame); mix (((uint64_t) e.status << 16) | ((uint64_t) e.data1 << 8) | e.data2); }
+    return h;
+}
+
+void Engine::setLoop (bool on, Frame start, Frame end)
+{
+    loopStart.store (std::max<Frame> (0, start));
+    loopEnd.store (std::max<Frame> (0, end));
+    loopOn.store (on && end > start);
+}
+
+bool Engine::sendLive (int slot, uint8_t status, uint8_t data1, uint8_t data2)
+{
+    while (liveLock.test_and_set (std::memory_order_acquire)) {}
+    const LiveMidi m { slot, status, data1, data2 };
+    const bool ok = live.push (&m, 1);
+    liveLock.clear (std::memory_order_release);
+    return ok;
+}
+
+void Engine::notesOff (const RenderGraph* g, bool hard)
+{
+    if (! g) return;
+    for (const auto& t : g->tracks) if (t.instrument) t.instrument->allNotesOff (hard);
+}
+
+void Engine::drainLive (const RenderGraph* g)
+{
+    LiveMidi m;
+    while (live.pop (&m, 1) == 1)
+    {
+        if (! g) continue;
+        for (const auto& t : g->tracks)
+            if (t.slot == m.slot && t.instrument)
+            {
+                const MidiEvent ev { 0, m.status, m.d1, m.d2 };
+                t.instrument->handleMidi (&ev, 1);
+            }
+    }
+}
+
+void Engine::renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n)
+{
+    Instrument& inst = *t.instrument;
+    int cursor = 0;
+    if (rolling && ! t.events.empty())
+    {
+        const Frame blockEnd = position + n;
+        auto it = std::lower_bound (t.events.begin(), t.events.end(), position,
+                                    [] (const SchedEvent& e, Frame f) { return e.frame < f; });
+        while (it != t.events.end() && it->frame < blockEnd)
+        {
+            const int off = (int) (it->frame - position);
+            if (off > cursor)
+            {
+                float* io[2] = { tl + cursor, tr + cursor };
+                inst.process (io, 2, off - cursor);
+                cursor = off;
+            }
+            const MidiEvent ev { 0, it->status, it->data1, it->data2 };
+            inst.handleMidi (&ev, 1);
+            ++it;
+        }
+    }
+    if (cursor < n)
+    {
+        float* io[2] = { tl + cursor, tr + cursor };
+        inst.process (io, 2, n - cursor);
+    }
 }
 
 void Engine::startRecording (SpscRing<float>* ring, int channels)
@@ -117,6 +204,32 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
     {
         snapSmoothersToTargets();
         wasRolling = false;
+        if (! g) return;
+        // Parado: solo suenan los instrumentos (pads, teclado, colas de release), con la mezcla ya aplicada.
+        bool anySoloStopped = false;
+        for (const auto& t : g->tracks) anySoloStopped |= params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
+        for (const auto& t : g->tracks)
+        {
+            if (! t.instrument) continue;
+            float* tl = trackL.data();
+            float* tr = trackR.data();
+            std::fill (tl, tl + n, 0.0f);
+            std::fill (tr, tr + n, 0.0f);
+            renderInstrument (t, position, false, tl, tr, n);
+            float* io[2] = { tl, tr };
+            for (const auto& fx : t.inserts) fx->process (io, 2, n);
+            const float gl = smGainL[(size_t) t.slot], gr = smGainR[(size_t) t.slot];
+            float peak = 0.0f;
+            for (int i = 0; i < n; ++i)
+            {
+                const float l = tl[i] * gl * smMaster, r = tr[i] * gr * smMaster;
+                L[i] += l;
+                R[i] += r;
+                peak = std::max (peak, std::max (std::fabs (l), std::fabs (r)));
+            }
+            params[(size_t) t.slot].peak.store (peak, std::memory_order_relaxed);
+        }
+        (void) anySoloStopped;
         return;
     }
     // Al arrancar el transporte, la mezcla empieza ya en su valor (sin rampa desde 0), igual que la exportación.
@@ -157,6 +270,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
             }
             any = true;
         }
+        if (t.instrument) { renderInstrument (t, position, true, tl, tr, n); any = true; }
 
         float* io[2] = { tl, tr };
         for (const auto& fx : t.inserts) fx->process (io, 2, n);
@@ -205,14 +319,20 @@ void Engine::process (const float* input, int inChannels, float* output, int out
     adoptPendingGraph();
     const RenderGraph* g = active;
     const Frame s = seekRequest.exchange (-1, std::memory_order_acq_rel);
-    if (s >= 0) pos = s;
+    if (s >= 0) { pos = s; notesOff (g, false); }
+    drainLive (g);
 
     float mPeak = 0.0f;
     int done = 0;
     while (done < frames)
     {
-        const int n = std::min (maxBlock, frames - done);
+        int n = std::min (maxBlock, frames - done);
         const bool rolling = playing.load (std::memory_order_relaxed);
+        if (prevRolling && ! rolling) notesOff (g, false); // stop: las notas pasan a release
+        prevRolling = rolling;
+        const bool looping = rolling && loopOn.load (std::memory_order_relaxed) && ! recording.load (std::memory_order_relaxed);
+        const Frame lEnd = loopEnd.load (std::memory_order_relaxed);
+        if (looping && pos < lEnd && pos + n > lEnd) n = (int) (lEnd - pos);
         float* L = mixL.data();
         float* R = mixR.data();
         renderBlock (g, pos, rolling, L, R, n);
@@ -283,7 +403,15 @@ void Engine::process (const float* input, int inChannels, float* output, int out
                 for (int c = 2; c < outChannels; ++c) out[(size_t) i * (size_t) outChannels + (size_t) c] = 0.0f;
             }
         }
-        if (rolling) pos += n;
+        if (rolling)
+        {
+            pos += n;
+            if (looping && pos == lEnd)
+            {
+                pos = loopStart.load (std::memory_order_relaxed);
+                notesOff (g, false); // ninguna nota cruza el reinicio del bucle
+            }
+        }
         done += n;
     }
     positionOut.store (pos, std::memory_order_release);
@@ -297,7 +425,10 @@ void Engine::renderOffline (Frame from, float* left, float* right, Frame frames)
     const RenderGraph* g = active;
     if (g)
         for (const auto& t : g->tracks)
+        {
             for (const auto& fx : t.inserts) fx->reset();
+            if (t.instrument) t.instrument->reset();
+        }
     Frame done = 0;
     while (done < frames)
     {
