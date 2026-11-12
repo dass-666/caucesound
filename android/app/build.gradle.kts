@@ -12,7 +12,7 @@ android {
     defaultConfig {
         applicationId = "com.caucesound.app"
         minSdk = 26          // Android 8.0: AAudio disponible; Oboe elige AAudio u OpenSL ES según el dispositivo
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-fase1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

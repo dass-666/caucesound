@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pruebas del motor (Release)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ./build/cs_core_tests
+      - name: Pruebas del motor (ASan + UBSan)
+        run: |
+          cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCS_SANITIZE=ON
+          cmake --build build-asan
+          ./build-asan/cs_core_tests
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: SDK y NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "ndk;27.2.12479018" "cmake;3.31.6"
+      - name: Compilar y probar
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caucesound-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
