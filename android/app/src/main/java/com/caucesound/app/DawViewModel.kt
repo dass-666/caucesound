@@ -12,6 +12,10 @@ import com.caucesound.app.data.CommandResult
 import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.ProjectSummary
 import com.caucesound.app.data.StateParser
+import com.caucesound.app.data.Catalog
+import com.caucesound.app.data.NoteState
+import com.caucesound.app.ui.Panel
+import com.caucesound.app.ui.StudioActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -32,7 +36,7 @@ import java.io.File
 @OptIn(ExperimentalCoroutinesApi::class)
 const val WAVE_BLOCK = 256L
 
-class DawViewModel(app: Application) : AndroidViewModel(app) {
+class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val control = Dispatchers.IO.limitedParallelism(1)
     val projectsRoot = File(app.filesDir, "projects").apply { mkdirs() }
 
@@ -42,6 +46,12 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<ProjectState?> = _state.asStateFlow()
     private val _selectedClip = MutableStateFlow<String?>(null)
     val selectedClip: StateFlow<String?> = _selectedClip.asStateFlow()
+    private val _catalog = MutableStateFlow(Catalog.EMPTY)
+    val catalog: StateFlow<Catalog> = _catalog.asStateFlow()
+    private val _selectedTrack = MutableStateFlow<String?>(null)
+    val selectedTrack: StateFlow<String?> = _selectedTrack.asStateFlow()
+    private val _panel = MutableStateFlow(Panel.ARRANGE)
+    val panel: StateFlow<Panel> = _panel.asStateFlow()
     private val _messages = MutableStateFlow<String?>(null)
     val messages: StateFlow<String?> = _messages.asStateFlow()
     private val _busy = MutableStateFlow<String?>(null)
@@ -71,6 +81,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
         _route.value = currentRoute()
         startAudio()
         refreshProjects()
+        viewModelScope.launch { _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) } }
     }
 
     private fun currentRoute(): AudioGuard.Route = runCatching { guard.outputRoute() }.getOrDefault(AudioGuard.Route.SPEAKER)
@@ -131,15 +142,33 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createProject(name: String, defaultTrackName: (Int) -> String) {
+    /** template: "trap", "reggaeton", "hiphop", "pop", "electronic" o "empty" (definidas en el motor). */
+    fun createProject(name: String, template: String, defaultTrackName: (Int) -> String) {
         viewModelScope.launch {
             val safe = name.trim().ifEmpty { "Proyecto" }
             val folder = File(projectsRoot, "p_" + System.currentTimeMillis())
-            val r = call(Cmd.createProject(folder.absolutePath, safe))
+            val r = call(Cmd.createProject(folder.absolutePath, safe, template))
             if (!r.ok) { toast(r.error ?: ""); return@launch }
-            for (i in 1..4) call(Cmd.addTrack(defaultTrackName(i)))
+            if (template == "empty") for (i in 1..4) call(Cmd.addTrack(defaultTrackName(i)))
             call(Cmd.save())
             onProjectOpened()
+        }
+    }
+
+    fun renameProject(folder: String, name: String) {
+        viewModelScope.launch {
+            val r = call(Cmd.renameProject(projectsRoot.absolutePath, folder, name.trim().ifEmpty { "Proyecto" }))
+            if (!r.ok) toast(r.error ?: "")
+            refreshProjects()
+        }
+    }
+
+    fun duplicateProject(folder: String, name: String) {
+        viewModelScope.launch {
+            val dest = File(projectsRoot, "p_" + System.currentTimeMillis()).absolutePath
+            val r = call(Cmd.duplicateProject(projectsRoot.absolutePath, folder, dest, name))
+            if (!r.ok) toast(r.error ?: "")
+            refreshProjects()
         }
     }
 
@@ -161,7 +190,9 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun onProjectOpened() {
         _waveforms.value = emptyMap()
         _selectedClip.value = null
+        _panel.value = Panel.ARRANGE
         refresh()
+        _selectedTrack.value = _state.value?.tracks?.firstOrNull { !it.isAudio }?.id ?: _state.value?.tracks?.firstOrNull()?.id
         autosave?.cancel()
         autosave = viewModelScope.launch {
             while (isActive) {
@@ -196,20 +227,20 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
     fun saveNow() = edit(Cmd.save()) { toast(str(R.string.msg_saved)) }
 
     // --- Transporte ---------------------------------------------------------------------------------------------
-    fun play() {
+    override fun play() {
         guard.requestFocus()
         edit(Cmd.play())
     }
 
-    fun stop() {
+    override fun stop() {
         val wasRecording = _state.value?.recording == true
         edit(Cmd.stop()) { if (wasRecording) toast(str(R.string.msg_recording_saved)) }
     }
 
-    fun seek(frame: Long) { viewModelScope.launch { call(Cmd.seek(frame.coerceAtLeast(0))) } }
+    override fun seek(frame: Long) { viewModelScope.launch { call(Cmd.seek(frame.coerceAtLeast(0))) } }
 
     /** Requiere el permiso RECORD_AUDIO (lo pide la Activity) y una pista armada. */
-    fun record() {
+    override fun record() {
         viewModelScope.launch {
             val s = _state.value ?: return@launch
             val armed = s.tracks.firstOrNull { it.armed } ?: run { toast(str(R.string.msg_arm_track)); return@launch }
@@ -222,29 +253,66 @@ class DawViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setTempo(bpm: Double, beatsPerBar: Int) = edit(Cmd.setTempo(bpm, beatsPerBar))
-    fun setMetronome(on: Boolean) = edit(Cmd.setMetronome(on))
+    override fun setTempo(bpm: Double, beatsPerBar: Int) = edit(Cmd.setTempo(bpm, beatsPerBar))
+    override fun setMetronome(on: Boolean) = edit(Cmd.setMetronome(on))
     fun setLatencyOffsetMs(ms: Double) = edit(Cmd.setLatencyOffset(Math.round(ms * 48.0)))
-    fun undo() = edit(Cmd.undo())
-    fun redo() = edit(Cmd.redo())
+    override fun undo() = edit(Cmd.undo())
+    override fun redo() = edit(Cmd.redo())
 
     // --- Pistas -------------------------------------------------------------------------------------------------
     fun addTrack(name: String) = edit(Cmd.addTrack(name))
+    override fun addTrack(name: String, kind: String) = edit(Cmd.addTrack(name, kind)) { r -> r.id?.let { _selectedTrack.value = it } }
+    override fun selectTrack(id: String) { _selectedTrack.value = id }
+    override fun openPanel(panel: Panel) { _panel.value = panel }
+    override fun setMasterLive(db: Float) { viewModelScope.launch { call(Cmd.setMaster(db)) } }
+    override fun setLoop(on: Boolean, startTick: Long, endTick: Long) = edit(Cmd.setLoop(on, startTick, endTick))
+
+    // --- MIDI y batería ---------------------------------------------------------------------------------------
+    override fun addMidiClip(trackId: String, startTick: Long, lengthTick: Long, patternId: String?) =
+        edit(Cmd.addMidiClip(trackId, startTick, lengthTick, patternId)) { r -> _selectedClip.value = r.id }
+    override fun moveMidiClip(id: String, startTick: Long, trackId: String?) = edit(Cmd.moveMidiClip(id, startTick, trackId))
+    override fun resizeMidiClip(id: String, startTick: Long, lengthTick: Long) = edit(Cmd.resizeMidiClip(id, startTick, lengthTick))
+    override fun deleteMidiClip(id: String) = edit(Cmd.deleteMidiClip(id)) { if (_selectedClip.value == id) _selectedClip.value = null }
+    override fun duplicateMidiClip(id: String) = edit(Cmd.duplicateMidiClip(id)) { r -> _selectedClip.value = r.id }
+    override fun setClipPattern(id: String, patternId: String) = edit(Cmd.setClipPattern(id, patternId))
+    override fun setClipNotes(clipId: String, notes: List<NoteState>) = edit(Cmd.setClipNotes(clipId, notes))
+    override fun quantizeClip(clipId: String, gridTicks: Long) = edit(Cmd.quantizeClip(clipId, gridTicks))
+    override fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) = edit(Cmd.setStep(trackId, patternId, lane, step, velocity))
+    override fun addPattern(trackId: String, copyFrom: String?) = edit(Cmd.addPattern(trackId, copyFrom))
+    override fun setPatternLength(trackId: String, patternId: String, steps: Int) = edit(Cmd.setPatternLength(trackId, patternId, steps))
+    override fun setSwing(trackId: String, patternId: String, swing: Float) = edit(Cmd.setSwing(trackId, patternId, swing))
+    override fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) = edit(Cmd.setPatternLanes(trackId, patternId, lanes))
+
+    /** Parámetros de instrumento: se aplican al instante; el estado (y la interfaz) se refresca al terminar. */
+    override fun setParam(trackId: String, param: String, value: Float) {
+        viewModelScope.launch {
+            val r = call(Cmd.setInstrumentParam(trackId, param, value))
+            if (!r.ok && r.error != null) toast(r.error)
+            if (param == "kit" || param.startsWith("mute") || param.startsWith("solo")) refresh()
+        }
+    }
+    fun commitParams() { viewModelScope.launch { refresh() } }
+    override fun loadPreset(trackId: String, presetId: String) = edit(Cmd.loadPreset(trackId, presetId))
+
+    /** Directo al motor (sin pasar por el hilo de control): la latencia de los pads es la del búfer de audio. */
+    override fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {
+        NativeEngine.liveMidi(slot, if (on) 0x90 else 0x80, key, if (on) velocity.coerceIn(1, 127) else 0)
+    }
     fun removeTrack(id: String) = edit(Cmd.removeTrack(id))
     fun renameTrack(id: String, name: String) = edit(Cmd.renameTrack(id, name))
-    fun setMute(id: String, on: Boolean) = edit(Cmd.setMute(id, on))
-    fun setSolo(id: String, on: Boolean) = edit(Cmd.setSolo(id, on))
-    fun setArmed(id: String, on: Boolean) = edit(Cmd.setArmed(id, on))
+    override fun setMute(id: String, on: Boolean) = edit(Cmd.setMute(id, on))
+    override fun setSolo(id: String, on: Boolean) = edit(Cmd.setSolo(id, on))
+    override fun setArmed(id: String, on: Boolean) = edit(Cmd.setArmed(id, on))
 
     /** Deslizadores: se aplican al instante; el estado se refresca al soltar. */
-    fun setVolumeLive(id: String, db: Float) { viewModelScope.launch { call(Cmd.setVolume(id, db)) } }
-    fun setPanLive(id: String, pan: Float) { viewModelScope.launch { call(Cmd.setPan(id, pan)) } }
-    fun commitMixer() { viewModelScope.launch { refresh() } }
+    override fun setVolumeLive(id: String, db: Float) { viewModelScope.launch { call(Cmd.setVolume(id, db)) } }
+    override fun setPanLive(id: String, pan: Float) { viewModelScope.launch { call(Cmd.setPan(id, pan)) } }
+    override fun commitMixer() { viewModelScope.launch { refresh() } }
 
     // --- Clips --------------------------------------------------------------------------------------------------
-    fun selectClip(id: String?) { _selectedClip.value = id }
-    fun moveClip(id: String, start: Long, trackId: String?) = edit(Cmd.moveClip(id, start, trackId))
-    fun trimClip(id: String, start: Long, length: Long) = edit(Cmd.trimClip(id, start, length))
+    override fun selectClip(id: String?) { _selectedClip.value = id }
+    override fun moveClip(id: String, start: Long, trackId: String?) = edit(Cmd.moveClip(id, start, trackId))
+    override fun trimClip(id: String, start: Long, length: Long) = edit(Cmd.trimClip(id, start, length))
     fun splitSelectedAt(frame: Long) { _selectedClip.value?.let { id -> edit(Cmd.splitClip(id, frame)) { r -> _selectedClip.value = r.id } } }
     fun deleteSelected() { _selectedClip.value?.let { id -> edit(Cmd.deleteClip(id)) { _selectedClip.value = null } } }
     fun duplicateSelected() { _selectedClip.value?.let { id -> edit(Cmd.duplicateClip(id)) { r -> _selectedClip.value = r.id } } }

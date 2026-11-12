@@ -20,4 +20,6 @@ object NativeEngine {
     external fun recordedFrames(): Long
     external fun meters(numTracks: Int): FloatArray
     external fun peaks(sourceId: String, from: Long, to: Long, buckets: Int): FloatArray
+    /** MIDI en vivo hacia la pista 'slot' (índice): pads, teclado y vista previa. Sin bloqueo, cualquier hilo. */
+    external fun liveMidi(slot: Int, status: Int, data1: Int, data2: Int): Boolean
 }

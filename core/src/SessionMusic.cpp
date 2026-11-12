@@ -362,6 +362,23 @@ const std::vector<TemplateDef>& templates()
 }
 } // namespace
 
+std::vector<TemplateInfo> projectTemplates()
+{
+    std::vector<TemplateInfo> out;
+    for (const auto& t : templates())
+    {
+        TemplateInfo i;
+        i.id = t.id;
+        i.bpm = t.bpm;
+        i.kitId = drumKits()[(size_t) t.kit].id;
+        i.tracks.push_back ("Drums");
+        for (const auto& s : t.synths) i.tracks.push_back (s.first);
+        i.tracks.push_back ("Voz");
+        out.push_back (i);
+    }
+    return out;
+}
+
 void Session::applyTemplateLocked (const std::string& templateId)
 {
     // Proyecto vacío (o plantilla desconocida): una pista de voz, como antes.

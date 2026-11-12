@@ -12,8 +12,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.caucesound.app.ui.CauceTheme
-import com.caucesound.app.ui.EditorScreen
-import com.caucesound.app.ui.ProjectsScreen
+import com.caucesound.app.ui.HomeActions
+import com.caucesound.app.ui.HomeScreen
+import com.caucesound.app.ui.StudioScreen
 
 class MainActivity : ComponentActivity() {
     private val vm: DawViewModel by viewModels()
@@ -30,14 +31,28 @@ class MainActivity : ComponentActivity() {
         else { afterPermission = action; micPermission.launch(Manifest.permission.RECORD_AUDIO) }
     }
 
+    private val homeActions = object : HomeActions {
+        override fun open(folder: String) = vm.openProject(folder)
+        override fun create(name: String, template: String) =
+            vm.createProject(name, template) { i -> getString(R.string.default_track_name) + " " + i }
+        override fun rename(folder: String, name: String) = vm.renameProject(folder, name)
+        override fun duplicate(folder: String, name: String) = vm.duplicateProject(folder, name)
+        override fun delete(folder: String) = vm.deleteProject(folder)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             CauceTheme {
                 val state by vm.state.collectAsState()
-                if (state == null) ProjectsScreen(vm)
-                else EditorScreen(vm, state!!, requestMic = ::withMicPermission)
+                val s = state
+                if (s == null) {
+                    val projects by vm.projects.collectAsState()
+                    val catalog by vm.catalog.collectAsState()
+                    val message by vm.messages.collectAsState()
+                    HomeScreen(projects, catalog.templates, message, vm::consumeMessage, homeActions)
+                } else StudioScreen(vm, s, requestMic = ::withMicPermission)
             }
         }
     }

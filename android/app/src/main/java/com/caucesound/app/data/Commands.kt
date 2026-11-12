@@ -1,5 +1,6 @@
 package com.caucesound.app.data
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Construye las peticiones JSON para cs::handleCommand. */
@@ -11,6 +12,32 @@ object Cmd {
     }
 
     fun state() = c("state")
+    fun catalog() = c("catalog")
+    fun createProject(folder: String, name: String, template: String) = c("createProject", "folder" to folder, "name" to name, "template" to template)
+    fun renameProject(root: String, folder: String, name: String) = c("renameProject", "root" to root, "folder" to folder, "name" to name)
+    fun duplicateProject(root: String, folder: String, dest: String, name: String) = c("duplicateProject", "root" to root, "folder" to folder, "dest" to dest, "name" to name)
+    fun addTrack(name: String, kind: String) = c("addTrack", "name" to name, "kind" to kind)
+    fun setInstrumentParam(trackId: String, param: String, value: Float) = c("setInstrumentParam", "trackId" to trackId, "param" to param, "value" to value.toDouble())
+    fun loadPreset(trackId: String, preset: String) = c("loadPreset", "trackId" to trackId, "preset" to preset)
+    fun addPattern(trackId: String, copyFrom: String?) = c("addPattern", "trackId" to trackId, "copyFrom" to copyFrom)
+    fun setStep(trackId: String, patternId: String, lane: Int, step: Int, velocity: Int) =
+        c("setStep", "trackId" to trackId, "patternId" to patternId, "lane" to lane, "step" to step, "velocity" to velocity)
+    fun setPatternLength(trackId: String, patternId: String, steps: Int) = c("setPatternLength", "trackId" to trackId, "patternId" to patternId, "steps" to steps)
+    fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
+    fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =
+        c("setPatternLanes", "trackId" to trackId, "patternId" to patternId, "lanes" to JSONArray(lanes.map { JSONArray(it) }))
+    fun addMidiClip(trackId: String, start: Long, length: Long, patternId: String?) =
+        c("addMidiClip", "trackId" to trackId, "start" to start, "length" to length, "patternId" to patternId)
+    fun moveMidiClip(id: String, start: Long, trackId: String?) = c("moveMidiClip", "clipId" to id, "start" to start, "trackId" to trackId)
+    fun resizeMidiClip(id: String, start: Long, length: Long) = c("resizeMidiClip", "clipId" to id, "start" to start, "length" to length)
+    fun deleteMidiClip(id: String) = c("deleteMidiClip", "clipId" to id)
+    fun duplicateMidiClip(id: String) = c("duplicateMidiClip", "clipId" to id)
+    fun setClipPattern(id: String, patternId: String) = c("setClipPattern", "clipId" to id, "patternId" to patternId)
+    fun setClipNotes(id: String, notes: List<NoteState>) =
+        c("setClipNotes", "clipId" to id, "notes" to JSONArray(notes.map { JSONArray(listOf(it.key, it.velocity, it.channel, it.start, it.length)) }))
+    fun quantizeClip(id: String, grid: Long) = c("quantizeClip", "clipId" to id, "grid" to grid, "strength" to 1.0)
+    fun setLoop(on: Boolean, start: Long, end: Long) = c("setLoop", "on" to on, "start" to start, "end" to end)
+    fun setMaster(db: Float) = c("setMaster", "db" to db.toDouble())
     fun listProjects(root: String) = c("listProjects", "root" to root)
     fun createProject(folder: String, name: String) = c("createProject", "folder" to folder, "name" to name)
     fun openProject(folder: String) = c("openProject", "folder" to folder)

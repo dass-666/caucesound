@@ -84,7 +84,7 @@ json catalog()
     json fx = json::array();
     for (const auto& t : availableProcessorTypes()) fx.push_back ({ { "type", t }, { "params", params (t.c_str()) } });
     json tpl = json::array();
-    for (const char* t : { "trap", "reggaeton", "hiphop", "pop", "electronic", "empty" }) tpl.push_back (t);
+    for (const auto& t : projectTemplates()) tpl.push_back ({ { "id", t.id }, { "bpm", t.bpm }, { "kit", t.kitId }, { "tracks", t.tracks } });
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
              { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl } };
 }

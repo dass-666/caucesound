@@ -32,6 +32,17 @@ struct LoadReport
 
 class Recorder;
 
+// Plantillas de proyecto (definidas en SessionMusic.cpp). La interfaz las muestra tal cual: lo que se anuncia es
+// exactamente lo que se crea.
+struct TemplateInfo
+{
+    std::string id;
+    double bpm = 120;
+    std::string kitId;
+    std::vector<std::string> tracks; // nombres de pista en orden
+};
+std::vector<TemplateInfo> projectTemplates();
+
 class Session
 {
 public:
