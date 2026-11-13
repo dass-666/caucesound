@@ -207,7 +207,8 @@ fun ChainDialog(track: TrackState, catalog: Catalog, onDismiss: () -> Unit, onAp
     val c = catalog.fxChains.firstOrNull { it.id == chosen }
     val fits = c != null && track.inserts.size + c.steps.size <= 8
     CauceDialog(tr("Cadenas de efectos", "Effect chains"), onDismiss, confirm = null, dismiss = tr("Cerrar", "Close")) {
-        Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).testTag("chain_dialog"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // La lista se desplaza; los botones quedan siempre a la vista debajo (no hay que buscarlos al final).
+        Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).testTag("chain_dialog"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(tr("Solo usan efectos de CAUCESOUND. Guardan el orden y los parámetros.", "They only use CAUCESOUND effects. Order and parameters are kept."), fontSize = 12.sp, color = Palette.TextDim)
             catalog.fxChains.forEach { ch ->
                 val on = ch.id == chosen
@@ -219,6 +220,9 @@ fun ChainDialog(track: TrackState, catalog: Catalog, onDismiss: () -> Unit, onAp
                     Text(ch.steps.mapIndexed { i, s -> "${i + 1}. ${catalog.effect(s)?.label() ?: effectName(s)}" }.joinToString("  "), fontSize = 11.sp, color = Palette.TextFaint)
                 }
             }
+        }
+        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (c == null) Text(tr("Elige una cadena.", "Pick a chain."), fontSize = 11.sp, color = Palette.TextFaint)
             if (c != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CauceButton(tr("Añadir al final", "Append"), { onApply(c.id, false) }, Modifier.weight(1f).testTag("chain_append"), enabled = fits)
                 CauceButton(tr("Reemplazar", "Replace"), { onApply(c.id, true) }, Modifier.weight(1f).testTag("chain_replace"), kind = ButtonKind.Primary)
@@ -235,7 +239,7 @@ private fun SendRow(track: TrackState, bus: TrackState, actions: StudioActions) 
     var v by remember(track.id, bus.id, level) { mutableStateOf(level) }
     Row(Modifier.fillMaxWidth().testTag("send_${bus.id}"), verticalAlignment = Alignment.CenterVertically) {
         Text(tr("Envío a «${bus.name}»", "Send to “${bus.name}”"), fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.width(120.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        androidx.compose.material3.Slider(v, { v = it; actions.setSendLive(track.id, bus.id, it) }, Modifier.weight(1f), onValueChangeFinished = actions::commitMixer,
+        androidx.compose.material3.Slider(v, { v = it; actions.setSendLive(track.id, bus.id, it) }, Modifier.weight(1f).testTag("send_slider_${bus.id}"), onValueChangeFinished = actions::commitMixer,
             colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Palette.Text, activeTrackColor = Palette.Violet, inactiveTrackColor = Palette.SurfaceTop))
         Text("${(v * 100).toInt()}%", fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.width(40.dp))
     }

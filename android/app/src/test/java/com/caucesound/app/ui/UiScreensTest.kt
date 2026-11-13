@@ -25,6 +25,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import com.caucesound.app.data.Catalog
 import com.caucesound.app.data.PPQ
 import com.caucesound.app.data.NoteState
@@ -544,14 +545,12 @@ class UiScreensTest {
         assertEquals(0.25f, synth.sends[bus.id]!!, 1e-6f)
         val rec = Recorder()
         val meters = mutableStateOf(FloatArray(st.tracks.size + 1) { 0.3f })
-        compose.setContent { Themed { MixerPanel(st, meters, null, rec) } }
+        compose.setContent { Themed { MixerPanel(st, meters, synth.id, rec, catalog) } }
         shot("05b_mixer_bus")
-        compose.onNodeWithContentDescription("Send 25%").assertExists()
-        // Una perilla visible por pista que no es bus (la del bus es un hueco invisible sin semántica).
-        assertEquals(st.tracks.count { !it.isBus }, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Send", substring = true), useUnmergedTree = true).fetchSemanticsNodes().size)
-        // La tira es clicable y fusiona la semántica de sus hijos: el gesto se dirige a la perilla en el árbol sin fusionar
-        // (en el fusionado, el «nodo» es la tira entera y el toque caería en su centro, sobre el fader).
-        compose.onNodeWithContentDescription("Send 25%", useUnmergedTree = true).performScrollTo().performTouchInput { swipeUp() }
+        // 0.7: el envío se ajusta en el rack del canal seleccionado (la perilla salió de la tira para dejar sitio al rack).
+        compose.onNodeWithTag("send_${bus.id}").performScrollTo().assertExists()
+        compose.onNodeWithText("25%").assertExists()
+        compose.onNodeWithTag("send_slider_${bus.id}").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0.5f) }
         assertTrue(rec.calls.contains("send:${synth.id}:${bus.id}"))
         assertEquals("commit", rec.calls.last())
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Bus de reverb")).fetchSemanticsNodes().isEmpty())

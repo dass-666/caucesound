@@ -101,6 +101,14 @@ data class SoloRequest(
 
 /** Familia de cuatro alternativas A-D. trackId = pista donde suena la elegida; variation != 0 = variación de la elegida. */
 data class SoloFamily(val request: SoloRequest, val proposals: List<SoloProposal>, val diversity: Double, val selected: Int = -1, val trackId: String? = null, val variation: Long = 0) {
+    /**
+     * Comando que pone a sonar la alternativa [index] (0 = A … 3 = D): misma petición y semilla que la familia, el
+     * número de la alternativa y la pista de Solo AI que se sustituye (si sigue existiendo). Lógica pura, probada en la
+     * JVM (misión 0.7): si la interfaz enviara siempre la misma propuesta, la prueba lo detecta.
+     */
+    fun pickCommand(index: Int, variation: Long, existingTrackIds: Set<String>): String =
+        Cmd.soloPick(request, index, variation, trackId?.takeIf { it in existingTrackIds })
+
     companion object {
         fun parse(req: SoloRequest, r: JSONObject): SoloFamily {
             val a = r.optJSONArray("proposals") ?: JSONArray()

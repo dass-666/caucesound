@@ -503,7 +503,7 @@ TEST (v1_project_opens_unchanged_and_is_migrated_with_backup)
     CHECK (f.session.save().ok);
     f.session.close();
     std::string saved;
-    CHECK (readFile (p + "/project.json", saved) && json::parse (saved)["version"] == 2);
+    CHECK (readFile (p + "/project.json", saved) && json::parse (saved)["version"] == kProjectFormatVersion);
     CHECK (f.session.openProject (p).ok);
     CHECK (f.session.exportMix (e2, 32).ok);
     std::string x, y;
@@ -517,7 +517,7 @@ TEST (future_format_and_broken_music_data_are_rejected)
 {
     ProjectModel p;
     std::string err;
-    CHECK (! fromJson (R"({"format":"caucesound-project","version":3,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[]})", p, err));
+    CHECK (! fromJson (R"({"format":"caucesound-project","version":4,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[]})", p, err));
     const std::string bad[] = {
         R"({"format":"caucesound-project","version":2,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[{"id":"t","clips":[],"kind":"synth"}]})",
         R"({"format":"caucesound-project","version":2,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[{"id":"t","clips":[],"kind":"drums","instrument":{"type":"cs.drums"},"patterns":[{"id":"p","steps":12,"lanes":[]}]}]})",
@@ -788,6 +788,13 @@ TEST (ui_fixtures_from_engine)
     for (const auto& t : st["project"]["tracks"])
         if (t["kind"] == "synth") { CHECK (json::parse (cmd ({ { "cmd", "setSend" }, { "trackId", t["id"] }, { "busId", bus["id"] }, { "level", 0.25 } }))["ok"] == true); break; }
     const std::string stateBus = f.session.stateJson();
+    // Variante Channel Rack / Mixer Pro (0.7): el bombo en su propio canal del Mixer y una cadena en la voz.
+    for (const auto& t : st["project"]["tracks"])
+    {
+        if (t["kind"] == "drums") CHECK (json::parse (cmd ({ { "cmd", "routeDrumLane" }, { "trackId", t["id"] }, { "lane", 0 }, { "own", true } }))["ok"] == true);
+        if (t["kind"] == "audio") CHECK (json::parse (cmd ({ { "cmd", "applyFxChain" }, { "trackId", t["id"] }, { "preset", "vocal_urban" }, { "replace", true } }))["ok"] == true);
+    }
+    const std::string stateRack = f.session.stateJson();
     const std::string catalog = cmd ({ { "cmd", "catalog" } });
     CHECK (json::parse (cmd ({ { "cmd", "createProject" }, { "folder", f.dir + "/vacio" }, { "name", "Idea vacía" }, { "template", "empty" } }))["ok"] == true);
     CHECK (json::parse (cmd ({ { "cmd", "save" } }))["ok"] == true);
@@ -799,6 +806,7 @@ TEST (ui_fixtures_from_engine)
         auto write = [&] (const char* name, const std::string& s) { std::ofstream (std::filesystem::path (out) / name) << json::parse (s).dump (1) << "\n"; };
         write ("state_trap.json", state);
         write ("state_bus.json", stateBus);
+        write ("state_rack.json", stateRack);
         write ("catalog.json", catalog);
         write ("projects.json", projects);
     }

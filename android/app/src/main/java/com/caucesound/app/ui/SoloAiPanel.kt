@@ -246,8 +246,8 @@ private fun Alternatives(state: ProjectState, fam: SoloFamily, actions: StudioAc
     val track = state.tracks.firstOrNull { it.id == fam.trackId }
     Card {
         Text(tr("Alternativas", "Alternatives"), fontWeight = FontWeight.Bold)
-        Text(tr("Toca una para ponerla en la pista y pulsa Escuchar. Las cuatro salen del mismo motivo; lo que cambia es la forma de desarrollarlo.",
-            "Tap one to put it on the track, then press Listen. All four come from the same motif; what changes is how it is developed."), color = Palette.TextDim, fontSize = 12.sp)
+        Text(tr("Toca una para ponerla en la pista y pulsa Escuchar. Cada una tiene su carácter: A sencilla y pegadiza, B emotiva, C rítmica y D experimental. Las cuatro respetan la tonalidad y los acordes.",
+            "Tap one to put it on the track, then press Listen. Each has its own character: A simple and catchy, B emotional, C rhythmic and D experimental. All four keep the key and the chords."), color = Palette.TextDim, fontSize = 12.sp)
         fam.proposals.forEachIndexed { i, p ->
             val on = i == fam.selected
             Row(
@@ -276,6 +276,20 @@ private fun Alternatives(state: ProjectState, fam: SoloFamily, actions: StudioAc
             }, Modifier.weight(1f).testTag("solo_listen"), icon = Icons.Default.PlayArrow, enabled = track != null)
             CauceButton(tr("Variación", "Variation"), actions::soloVary, Modifier.weight(1f).testTag("solo_vary"), icon = Icons.Default.Shuffle, enabled = track != null && fam.selected >= 0)
         }
+        // Comparar bien (0.7): con la melodía de la plantilla sonando encima, las diferencias entre A-D se oyen menos.
+        val templateMelodies = state.music?.roles?.filterValues { it == "melody" }?.keys?.mapNotNull { id -> state.tracks.firstOrNull { it.id == id && it.id != track?.id } } ?: emptyList()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PillToggle(tr("Escuchar sola", "Hear it alone"), track?.solo == true, { track?.let { actions.setSolo(it.id, !it.solo) } },
+                Modifier.weight(1f).testTag("solo_hear_alone"), height = 40.dp)
+            if (templateMelodies.isNotEmpty()) {
+                val allMuted = templateMelodies.all { it.mute }
+                PillToggle(tr("Silenciar melodía de la plantilla", "Mute template melody"), allMuted, { templateMelodies.forEach { actions.setMute(it.id, !allMuted) } },
+                    Modifier.weight(1f).testTag("solo_mute_template"), color = Palette.Mute, height = 40.dp)
+            }
+        }
+        if (templateMelodies.isNotEmpty() && templateMelodies.any { !it.mute } && track?.solo != true) Text(
+            tr("La melodía de la plantilla suena a la vez y tapa parte de la diferencia entre alternativas.", "The template melody plays at the same time and hides part of the difference between alternatives."),
+            color = Palette.TextFaint, fontSize = 11.sp)
         // Controles creativos (0.6): cada uno cambia de verdad las notas de la pista y se puede deshacer.
         Text(tr("Ajustar esta melodía", "Adjust this melody"), color = Palette.TextDim, fontSize = 12.sp)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

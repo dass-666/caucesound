@@ -113,6 +113,10 @@ interface StudioActions {
     fun setInsertParam(insertId: String, param: String, value: Float) {}
     fun setInsertBypass(insertId: String, bypass: Boolean) {}
     fun moveInsert(insertId: String, index: Int) {}
+    /** Mixer Pro: cadena completa (FxChains del motor). replace = true sustituye la cadena actual; un deshacer la recupera. */
+    fun applyFxChain(trackId: String, presetId: String, replace: Boolean) {}
+    /** Channel Rack: pieza de batería a su propio canal del mezclador (own = true) o de vuelta a la batería. */
+    fun routeDrumLane(trackId: String, lane: Int, own: Boolean) {}
 
     /** MIDI en vivo (pads, teclado, vista previa). slot = índice de la pista. */
     fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {}
@@ -120,4 +124,4 @@ interface StudioActions {
     fun openPanel(panel: Panel) {}
 }
 
-enum class Panel { ARRANGE, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO }
+enum class Panel { ARRANGE, RACK, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO }

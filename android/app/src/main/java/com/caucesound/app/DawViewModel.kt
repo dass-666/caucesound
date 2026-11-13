@@ -475,7 +475,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             val fam = _plugins.value.family ?: return@launch
             // Si la pista se borró o se deshizo, se crea de nuevo en vez de fallar.
             val target = fam.trackId?.takeIf { id -> _state.value?.tracks?.any { it.id == id } == true }
-            val r = call(Cmd.soloPick(fam.request, index, variation, target))
+            val r = call(fam.pickCommand(index, variation, _state.value?.tracks?.map { it.id }?.toSet() ?: emptySet()))
             if (!r.ok) { toast(r.error ?: ""); refresh(); return@launch }
             _plugins.value = _plugins.value.copy(family = fam.copy(selected = index, trackId = r.id ?: target, variation = variation))
             refresh()
@@ -489,6 +489,8 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         edit(Cmd.soloEnding(fam.request, fam.selected, fam.variation, id, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)))
     }
     override fun soloPick(index: Int) = soloApply(index, 0)
+    override fun applyFxChain(trackId: String, presetId: String, replace: Boolean) = edit(Cmd.applyFxChain(trackId, presetId, replace))
+    override fun routeDrumLane(trackId: String, lane: Int, own: Boolean) = edit(Cmd.routeDrumLane(trackId, lane, own))
     override fun soloVary() { _plugins.value.family?.takeIf { it.selected >= 0 }?.let { soloApply(it.selected, kotlin.random.Random.nextLong(1, 0x7FFFFFFFL)) } }
 
     /** Parámetros de instrumento: se aplican al instante; el estado (y la interfaz) se refresca al terminar. */

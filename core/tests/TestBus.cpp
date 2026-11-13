@@ -120,12 +120,12 @@ TEST (bus_persists_and_rejects_invalid_routing)
     CHECK (! f.session.setTrackSend (synth, synth, 0.4f).ok);    // solo hacia buses
     CHECK (! f.session.importWav (impulseWav (f.dir), b.id, 0).ok); // un bus no tiene clips
     CHECK (! f.session.setTrackSend (synth, b.id, std::nanf ("")).ok);
-    // La plantilla trap ya trae su bus «Reverb»: con este son 2, caben 2 más hasta el máximo de 4.
+    // La plantilla trap ya trae su bus «Reverb»: con este son 2; caben más hasta kMaxBuses (0.7: 8, antes 4).
     int buses = 0;
     for (const auto& t : f.session.model().tracks) if (t.kind == "bus") ++buses;
     CHECK (buses == 2);
-    for (int i = buses; i < 4; ++i) CHECK (f.session.addTrack ("", "bus").ok);
-    CHECK (! f.session.addTrack ("", "bus").ok); // máximo 4 buses
+    for (int i = buses; i < kMaxBuses; ++i) CHECK (f.session.addTrack ("", "bus").ok);
+    CHECK (! f.session.addTrack ("", "bus").ok); // máximo kMaxBuses
     // Persistencia.
     CHECK (f.session.save().ok);
     f.session.close();

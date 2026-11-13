@@ -257,7 +257,7 @@ fun fitLanes(src: List<List<Int>>, steps: Int): List<List<Int>> =
     List(8) { l -> List(steps) { s -> src.getOrNull(l)?.let { lane -> if (lane.isEmpty()) 0 else lane[s % lane.size] } ?: 0 } }
 
 @Composable
-private fun SwingSlider(value: Float, onCommit: (Float) -> Unit) {
+internal fun SwingSlider(value: Float, onCommit: (Float) -> Unit) {
     var v by remember(value) { mutableStateOf(value) }
     androidx.compose.material3.Slider(
         v, { v = it }, valueRange = 0f..1f, onValueChangeFinished = { onCommit(v) }, modifier = Modifier.height(36.dp),

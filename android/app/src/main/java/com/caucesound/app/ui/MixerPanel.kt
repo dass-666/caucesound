@@ -1,5 +1,7 @@
 package com.caucesound.app.ui
 
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,7 +61,7 @@ fun MixerPanel(state: ProjectState, meters: State<FloatArray>, selectedTrack: St
             Row(Modifier.fillMaxWidth().height(36.dp).background(Palette.Surface).clickable { rackOpen = !rackOpen }.padding(horizontal = 12.dp).testTag("rack_toggle"),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(if (rackOpen) tr("Ocultar efectos", "Hide effects") else "INSERT — ${sel.name} · ${sel.inserts.size} FX", fontSize = 12.sp, color = Palette.TextDim, modifier = Modifier.weight(1f))
-                androidx.compose.material3.Icon(if (rackOpen) androidx.compose.material.icons.Icons.Default.ExpandMore else androidx.compose.material.icons.Icons.Default.ExpandLess, null, tint = Palette.TextDim)
+                androidx.compose.material3.Icon(if (rackOpen) androidx.compose.material.icons.Icons.Default.KeyboardArrowDown else androidx.compose.material.icons.Icons.Default.KeyboardArrowUp, null, tint = Palette.TextDim)
             }
             if (rackOpen) InsertRack(state, sel, catalog, actions, Modifier.weight(0.45f).fillMaxWidth())
         }

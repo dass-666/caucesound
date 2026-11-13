@@ -467,6 +467,12 @@
  ],
  "effects": [
   {
+   "category": "tools",
+   "description": "Sube o baja el nivel dentro de la cadena, sin color.",
+   "descriptionEn": "Raises or lowers the level inside the chain, uncoloured.",
+   "latencySamples": 0,
+   "name": "Ganancia",
+   "nameEn": "Gain",
    "params": [
     {
      "default": 0.0,
@@ -479,6 +485,12 @@
    "type": "cs.gain"
   },
   {
+   "category": "eq",
+   "description": "Paso bajo o paso alto con resonancia. Quita graves de una voz o apaga los agudos.",
+   "descriptionEn": "Low-pass or high-pass with resonance. Removes lows from a voice or darkens the highs.",
+   "latencySamples": 0,
+   "name": "Filtro",
+   "nameEn": "Filter",
    "params": [
     {
      "default": 0.0,
@@ -505,6 +517,12 @@
    "type": "cs.filter"
   },
   {
+   "category": "eq",
+   "description": "Graves, medios (con frecuencia) y agudos. Para limpiar o dar brillo.",
+   "descriptionEn": "Lows, mids (with frequency) and highs. To clean up or add brightness.",
+   "latencySamples": 0,
+   "name": "EQ de 3 bandas",
+   "nameEn": "3-band EQ",
    "params": [
     {
      "default": 0.0,
@@ -538,6 +556,12 @@
    "type": "cs.eq"
   },
   {
+   "category": "distortion",
+   "description": "Calor y armónicos; con más drive, distorsión. Hace que el 808 se oiga en móviles.",
+   "descriptionEn": "Warmth and harmonics; more drive gives distortion. Helps the 808 come through on phones.",
+   "latencySamples": 0,
+   "name": "Saturación",
+   "nameEn": "Saturation",
    "params": [
     {
      "default": 0.30000001192092896,
@@ -564,6 +588,12 @@
    "type": "cs.saturation"
   },
   {
+   "category": "dynamics",
+   "description": "Iguala el volumen: sube lo suave y controla los picos.",
+   "descriptionEn": "Evens out the level: lifts quiet parts and controls peaks.",
+   "latencySamples": 0,
+   "name": "Compresor",
+   "nameEn": "Compressor",
    "params": [
     {
      "default": -18.0,
@@ -604,6 +634,12 @@
    "type": "cs.compressor"
   },
   {
+   "category": "delay",
+   "description": "Repeticiones (eco), con opción ping-pong entre izquierda y derecha.",
+   "descriptionEn": "Echo repeats, with an optional left-right ping-pong.",
+   "latencySamples": 0,
+   "name": "Delay",
+   "nameEn": "Delay",
    "params": [
     {
      "default": 375.0,
@@ -644,6 +680,12 @@
    "type": "cs.delay"
   },
   {
+   "category": "reverb",
+   "description": "Espacio y profundidad: coloca el sonido en una sala.",
+   "descriptionEn": "Space and depth: places the sound in a room.",
+   "latencySamples": 0,
+   "name": "Reverb",
+   "nameEn": "Reverb",
    "params": [
     {
      "default": 0.6000000238418579,
@@ -675,6 +717,92 @@
     }
    ],
    "type": "cs.reverb"
+  }
+ ],
+ "fxChains": [
+  {
+   "description": "Voz delante y con brillo: quita graves, comprime fuerte, un poco de calor, eco corto y sala pequeña.",
+   "descriptionEn": "Upfront, bright vocal: low cut, firm compression, a little warmth, short echo and a small room.",
+   "id": "vocal_urban",
+   "name": "Voz urbana",
+   "nameEn": "Urban vocal",
+   "steps": [
+    "cs.filter",
+    "cs.eq",
+    "cs.compressor",
+    "cs.saturation",
+    "cs.delay",
+    "cs.reverb"
+   ],
+   "suits": "vocal"
+  },
+  {
+   "description": "Natural: corte de graves suave, compresión moderada y una sala discreta.",
+   "descriptionEn": "Natural: gentle low cut, moderate compression and a discreet room.",
+   "id": "vocal_clean",
+   "name": "Voz limpia",
+   "nameEn": "Clean vocal",
+   "steps": [
+    "cs.filter",
+    "cs.eq",
+    "cs.compressor",
+    "cs.reverb"
+   ],
+   "suits": "vocal"
+  },
+  {
+   "description": "Detrás de la principal: sin graves, más oscura, eco ping-pong y más sala.",
+   "descriptionEn": "Behind the lead: no lows, darker, ping-pong echo and more room.",
+   "id": "vocal_double",
+   "name": "Segunda voz",
+   "nameEn": "Backing vocal",
+   "steps": [
+    "cs.filter",
+    "cs.eq",
+    "cs.compressor",
+    "cs.delay",
+    "cs.reverb"
+   ],
+   "suits": "vocal"
+  },
+  {
+   "description": "Saturación para que el 808 se oiga en altavoces pequeños y compresión lenta que conserva el golpe.",
+   "descriptionEn": "Saturation so the 808 is heard on small speakers and slow compression that keeps the punch.",
+   "id": "trap_808",
+   "name": "Trap 808",
+   "nameEn": "Trap 808",
+   "steps": [
+    "cs.saturation",
+    "cs.compressor",
+    "cs.filter"
+   ],
+   "suits": "bass"
+  },
+  {
+   "description": "Más pegada: realce de graves y agudos, medios despejados, compresión con ataque lento y un toque de calor.",
+   "descriptionEn": "More punch: low and high lift, cleared mids, slow-attack compression and a touch of warmth.",
+   "id": "drums_punch",
+   "name": "Batería",
+   "nameEn": "Drums",
+   "steps": [
+    "cs.eq",
+    "cs.compressor",
+    "cs.saturation"
+   ],
+   "suits": "drums"
+  },
+  {
+   "description": "Melodía amplia y lejana: sin graves que choquen con el 808, eco ping-pong y sala grande.",
+   "descriptionEn": "Wide, distant melody: no lows clashing with the 808, ping-pong echo and a large room.",
+   "id": "melody_space",
+   "name": "Melodía espacial",
+   "nameEn": "Spacious melody",
+   "steps": [
+    "cs.filter",
+    "cs.delay",
+    "cs.reverb"
+   ],
+   "suits": "melody"
   }
  ],
  "ok": true,

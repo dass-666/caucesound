@@ -149,7 +149,7 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
             meters.value = NativeEngine.meters(state.tracks.size)
         }
     }
-    BackHandler { when (panel) { Panel.ARRANGE -> vm.closeProject(); Panel.FX -> vm.openPanel(Panel.MIXER); else -> vm.openPanel(Panel.ARRANGE) } }
+    BackHandler { when (panel) { Panel.ARRANGE -> vm.closeProject(); Panel.FX -> vm.openPanel(Panel.MIXER); Panel.DRUMS -> vm.openPanel(Panel.RACK); else -> vm.openPanel(Panel.ARRANGE) } }
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val t = importTrack
@@ -298,7 +298,8 @@ fun StudioLayout(
                             actions.addTrack("Synth", "synth")
                         } else SynthPanel(state, t, catalog, actions, favorites)
                     }
-                    Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions)
+                    Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions, catalog)
+                    Panel.RACK -> ChannelRackPanel(state, catalog, position, playing, actions)
                     Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"))
                     // Los plugins solo tienen pantalla si están compilados en el motor.
                     Panel.VOCAL -> if (catalog.hasPlugin("vocalshift")) VocalShiftPanel(state, selected, plugins, waveforms, actions)
@@ -321,16 +322,16 @@ fun StudioLayout(
 private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit, compact: Boolean = false) {
     val items = listOf(
         Triple(Panel.ARRANGE, Icons.Default.ViewTimeline, tr("Arreglo", "Arrange")),
-        Triple(Panel.DRUMS, Icons.Default.GridOn, tr("Batería", "Drums")),
+        Triple(Panel.RACK, Icons.Default.GridOn, "Rack"),
         Triple(Panel.PIANO, Icons.Default.Piano, "Piano roll"),
-        Triple(Panel.SYNTH, Icons.Default.Tune, "Synth"),
-        Triple(Panel.MIXER, Icons.Default.GraphicEq, tr("Mezcla", "Mixer")),
+        Triple(Panel.MIXER, Icons.Default.GraphicEq, "Mixer"),
+        Triple(Panel.SYNTH, Icons.Default.Tune, tr("Sonido", "Sound")),
     )
     Column(Modifier.fillMaxWidth().background(Palette.Surface)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Stroke))
         Row(Modifier.fillMaxWidth().navigationBarsPadding().height(if (compact) 48.dp else 60.dp), verticalAlignment = Alignment.CenterVertically) {
             items.forEach { (p, icon, label) ->
-                val on = p == panel || (p == Panel.MIXER && panel == Panel.FX)
+                val on = p == panel || (p == Panel.MIXER && panel == Panel.FX) || (p == Panel.RACK && panel == Panel.DRUMS)
                 val tint = if (on) Palette.VioletSoft else Palette.TextDim
                 val content: @Composable () -> Unit = {
                     Box(
@@ -339,7 +340,7 @@ private fun StudioNav(panel: Panel, onSelect: (Panel) -> Unit, compact: Boolean 
                     Text(label, fontSize = 11.sp, maxLines = 1, color = if (on) Palette.Text else Palette.TextDim, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
                         modifier = if (compact) Modifier.padding(start = 6.dp) else Modifier.padding(top = 2.dp))
                 }
-                val m = Modifier.weight(1f).fillMaxHeight().clickable(role = androidx.compose.ui.semantics.Role.Tab) { onSelect(p) }
+                val m = Modifier.weight(1f).fillMaxHeight().clickable(role = androidx.compose.ui.semantics.Role.Tab) { onSelect(p) }.testTag("nav_$p")
                 if (compact) Row(m, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) { content() }
                 else Column(m, verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { content() }
             }
