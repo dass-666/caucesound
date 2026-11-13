@@ -366,6 +366,8 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) = edit(Cmd.setRoll(trackId, patternId, lane, step, roll))
     override fun varyPart(part: String, seed: Long, energy: Float?) = edit(Cmd.varyPart(part, seed, energy))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
+    override fun mutatePart(part: String, seed: Long) = edit(Cmd.mutatePart(part, seed))
+    override fun regenerateBeat(seed: Long) = edit(Cmd.regenerateBeat(seed))
 
     // --- Plugins: VocalShift y Solo AI ---------------------------------------------------------------------------
     private fun clearPluginUi() {

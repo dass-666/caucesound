@@ -706,7 +706,7 @@ TEST (api_music_commands_end_to_end)
     const std::string root = f.dir;
     CHECK (cmd ({ { "cmd", "createProject" }, { "folder", f.dir + "/p" }, { "name", "API" }, { "template", "reggaeton" } })["ok"] == true);
     const auto cat = cmd ({ { "cmd", "catalog" } });
-    CHECK (cat["ok"] == true && cat["synthPresets"].size() == 17 && cat["drumKits"].size() == 8 && cat["ppq"] == kPpq);
+    CHECK (cat["ok"] == true && cat["synthPresets"].size() == 22 && cat["drumKits"].size() == 11 && cat["ppq"] == kPpq);
     CHECK (cat["synthParams"].size() == 25 && cat["drumParams"].size() == 50);
     const auto add = cmd ({ { "cmd", "addTrack" }, { "name", "Lead" }, { "kind", "synth" } });
     CHECK (add["ok"] == true);

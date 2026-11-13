@@ -279,6 +279,8 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();
         if (cmd == "loadPreset") return result (s.loadSynthPreset (str ("trackId"), str ("preset"))).dump();
         if (cmd == "addPattern") return result (s.addPattern (str ("trackId"), str ("copyFrom"))).dump();
+        if (cmd == "mutatePart") return result (s.mutatePart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 1))).dump();
+        if (cmd == "regenerateBeat") return result (s.regenerateBeat ((uint32_t) q.value ("seed", (int64_t) 1))).dump();
         if (cmd == "varyPart")
         {
             const bool setE = q.contains ("energy");

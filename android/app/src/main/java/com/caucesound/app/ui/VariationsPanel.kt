@@ -71,23 +71,41 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
         return
     }
     var lastSeed by remember { mutableLongStateOf(0L) }
+    fun newSeed(): Long = Random.nextLong(1, 0xFFFFFFFFL).also { lastSeed = it }
     fun vary(part: String, energy: Float? = null) {
-        val seed = if (energy != null) 0L else Random.nextLong(1, 0xFFFFFFFFL)
-        if (seed != 0L) lastSeed = seed
+        val seed = if (energy != null) 0L else newSeed()
         actions.varyPart(part, seed, energy)
     }
+    val parts = listOf("drums", "bass", "chords", "melody", "pad").filter { plan.hasPart(it) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(tr("Variaciones", "Variations"), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text(tr("Genera otra versión con la misma tonalidad y acordes. Todo queda como notas y patrones que puedes editar. " +
-            "Sustituye las notas de las pistas sin candado: bloquea las que hayas retocado a mano.",
-            "Generate another version in the same key and chords. Everything stays as notes and patterns you can edit. " +
-            "It replaces the notes of unlocked tracks: lock the ones you edited by hand."), color = Palette.TextDim, fontSize = 12.sp)
+        Text(tr("Todo queda como notas y patrones que puedes editar. Solo cambian las pistas sin candado: bloquea las que hayas retocado a mano.",
+            "Everything stays as notes and patterns you can edit. Only unlocked tracks change: lock the ones you edited by hand."), color = Palette.TextDim, fontSize = 12.sp)
 
-        CauceButton(tr("Otra versión completa", "New full version"), { vary("all") }, Modifier.fillMaxWidth().testTag("vary_all"), kind = ButtonKind.Primary, icon = Icons.Default.AutoAwesome)
-        Text(tr("Cambiar solo una parte", "Change one part only"), color = Palette.TextFaint, fontSize = 12.sp)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("drums", "bass", "chords", "melody", "pad").filter { plan.hasPart(it) }.forEach { part ->
-                PillToggle(partName(part), false, { vary(part) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_$part"))
+        // Misión 0.8: dos acciones con intención distinta. VARIAR retoca la idea actual (misma progresión y motivo,
+        // con cambios pequeños); REGENERAR propone otra idea del mismo estilo, tono y tempo.
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Variar", "Vary"), fontWeight = FontWeight.Bold)
+            Text(tr("Conserva tu idea: mismos acordes y motivo, con detalles nuevos (adornos, golpes, inversiones).",
+                "Keeps your idea: same chords and motif, with new details (fills, hits, voicings)."), color = Palette.TextDim, fontSize = 12.sp)
+            CauceButton(tr("Variar todo", "Vary everything"), { actions.mutatePart("all", newSeed()) }, Modifier.fillMaxWidth().testTag("mutate_all"), kind = ButtonKind.Primary, icon = Icons.Default.AutoAwesome)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                parts.forEach { part ->
+                    PillToggle(partName(part), false, { actions.mutatePart(part, newSeed()) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("mutate_$part"))
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Regenerar", "Regenerate"), fontWeight = FontWeight.Bold)
+            Text(tr("Otra idea del mismo estilo, tono y tempo: acordes, groove, bajo y melodía nuevos. Lo bloqueado se queda (y si bloqueas una parte armónica, los acordes no cambian).",
+                "Another idea in the same style, key and tempo: new chords, groove, bass and melody. Locked parts stay (and if a harmonic part is locked, the chords don't change)."), color = Palette.TextDim, fontSize = 12.sp)
+            CauceButton(tr("Regenerar beat", "Regenerate beat"), { actions.regenerateBeat(newSeed()) }, Modifier.fillMaxWidth().testTag("regenerate_beat"), kind = ButtonKind.Primary, icon = Icons.Default.AutoAwesome)
+            Text(tr("Rehacer una sola parte (mismos acordes)", "Redo one part only (same chords)"), color = Palette.TextFaint, fontSize = 12.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                CauceButton(tr("Todas", "All"), { vary("all") }, Modifier.testTag("vary_all"))
+                parts.forEach { part ->
+                    PillToggle(partName(part), false, { vary(part) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_$part"))
+                }
             }
         }
 

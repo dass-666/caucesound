@@ -474,6 +474,29 @@ const std::vector<SynthPreset>& synthPresets()
         { "electro_arp", "Electro Arp", "lead", { { "osc1Wave", 3 }, { "osc2Wave", 2 }, { "osc2Mix", 0.3f }, { "osc2Octave", 1 }, { "attackMs", 1 }, { "decayMs", 170 },
                                          { "sustain", 0.15f }, { "releaseMs", 160 }, { "cutoffHz", 900 }, { "resonance", 0.45f }, { "filterEnv", 0.5f },
                                          { "filterDecayMs", 140 }, { "width", 0.45f }, { "volumeDb", -9 }, { "polyphony", 8 } } },
+        // --- Misión 0.8 (hip-hop crudo, jazz rap y oscuro). Los presets anteriores no cambian. --------------------
+        // Bajo orgánico (tipo contrabajo pulsado, sin imitarlo): triángulo + seno, ataque con un clic corto y caída rápida.
+        { "upright_bass", "Round Bass", "bass", { { "osc1Wave", 1 }, { "osc2Wave", 0 }, { "osc2Mix", 0.45f }, { "octave", -1 }, { "attackMs", 3 }, { "decayMs", 420 },
+                                         { "sustain", 0.22f }, { "releaseMs", 90 }, { "cutoffHz", 950 }, { "filterEnv", 0.3f }, { "filterDecayMs", 120 },
+                                         { "velToFilter", 0.45f }, { "noiseMix", 0.05f }, { "noiseDecayMs", 5 }, { "drive", 0.18f }, { "volumeDb", -3 },
+                                         { "mono", 1 }, { "polyphony", 1 } } },
+        // Teclas polvorientas (boom bap crudo): oscuras, con saturación y un soplo de ruido al atacar.
+        { "dusty_keys", "Dusty Keys", "keys", { { "osc1Wave", 1 }, { "osc2Wave", 3 }, { "osc2Mix", 0.14f }, { "attackMs", 2 }, { "decayMs", 750 },
+                                       { "sustain", 0.12f }, { "releaseMs", 260 }, { "cutoffHz", 1250 }, { "filterEnv", 0.2f }, { "filterDecayMs", 400 },
+                                       { "velToFilter", 0.5f }, { "drive", 0.4f }, { "noiseMix", 0.05f }, { "noiseDecayMs", 25 }, { "width", 0.3f },
+                                       { "volumeDb", -13 }, { "polyphony", 10 } } },
+        // Teclas soul (jazz rap): cálidas, larga caída, más brillo cuanto más fuerte se toca.
+        { "soul_keys", "Soul Keys", "keys", { { "osc1Wave", 0 }, { "osc2Wave", 1 }, { "osc2Mix", 0.22f }, { "osc2Octave", 1 }, { "attackMs", 2 }, { "decayMs", 1800 },
+                                     { "sustain", 0.32f }, { "releaseMs", 600 }, { "cutoffHz", 2300 }, { "filterEnv", 0.22f }, { "filterDecayMs", 700 },
+                                     { "velToFilter", 0.7f }, { "drive", 0.12f }, { "width", 0.45f }, { "volumeDb", -12 }, { "polyphony", 12 } } },
+        // Piano oscuro (dark hip-hop): ataque seco, cola larga, sin brillo.
+        { "dark_piano", "Dark Keys", "keys", { { "osc1Wave", 1 }, { "osc2Wave", 2 }, { "osc2Mix", 0.18f }, { "attackMs", 1 }, { "decayMs", 2600 },
+                                      { "sustain", 0.05f }, { "releaseMs", 900 }, { "cutoffHz", 1100 }, { "filterEnv", 0.25f }, { "filterDecayMs", 500 },
+                                      { "velToFilter", 0.5f }, { "width", 0.5f }, { "volumeDb", -9 }, { "polyphony", 10 } } },
+        // Sub oscuro: seno largo con un poco de caída de tono y saturación para oírse en el móvil.
+        { "dark_sub", "Dark Sub", "bass", { { "osc1Wave", 0 }, { "octave", -1 }, { "attackMs", 3 }, { "decayMs", 3000 }, { "sustain", 0.7f }, { "releaseMs", 400 },
+                                   { "cutoffHz", 650 }, { "drive", 0.42f }, { "pitchEnvSt", 3 }, { "pitchDecayMs", 30 }, { "volumeDb", -5 }, { "mono", 1 },
+                                   { "glideMs", 50 }, { "polyphony", 1 } } },
     };
     return p;
 }

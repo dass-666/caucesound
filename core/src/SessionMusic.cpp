@@ -607,6 +607,23 @@ const std::vector<GenreDef>& genreDefs()
           { { "Bajo", "cauce_sub", "bass", -9.5f, 0.0f, 0.0f }, { "Keys", "warm_keys", "chords", -1.0f, -0.12f, 0.25f },
             { "Melodía", "urban_pluck", "melody", 3.0f, 0.2f, 0.28f } },
           0.55f, 0.6f, { 0, 0, -0.1f, 0.18f, 0.22f, -0.25f, 0.35f, -0.15f }, { -7, 0, -3, 0, -3, -4, -4, -8 } },
+        // --- Misión 0.8: tres caracteres de hip-hop (la plantilla «hiphop» de siempre no cambia). Kits 8-10 nuevos. ---
+        // Boom bap crudo: batería seca y al frente (casi sin reverb), bajo redondo y corto, teclas polvorientas,
+        // melodía escasa. Sin pad: menos capas.
+        { "boombap", 90, 8, -2.0f, 0.03f,
+          { { "Bajo", "upright_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Keys", "dusty_keys", "chords", -2.0f, -0.15f, 0.1f },
+            { "Melodía", "urban_pluck", "melody", -2.0f, 0.2f, 0.15f } },
+          0.32f, 0.75f, { 0, 0, 0.05f, 0.22f, 0.25f, -0.3f, 0.35f, 0.0f }, { -6, 0, -4, -1, -4, -3, -6, -10 } },
+        // Jazz rap / soul: batería suave, bajo que camina, teclas soul con novenas, melodía cálida y algo de sala.
+        { "jazzrap", 86, 9, -4.0f, 0.08f,
+          { { "Bajo", "upright_bass", "bass", -5.0f, 0.0f, 0.0f }, { "Rhodes", "soul_keys", "chords", 0.0f, -0.12f, 0.24f },
+            { "Melodía", "soft_keys", "melody", -2.0f, 0.18f, 0.26f } },
+          0.5f, 0.7f, { 0, 0, 0.05f, 0.25f, 0.28f, -0.25f, 0.3f, 0.0f }, { -6, -1, -5, -2, -5, -2, -8, -12 } },
+        // Dark hip-hop: bombo y sub profundos, teclas oscuras largas, campana con mucha sala y un pad tenue.
+        { "darkhiphop", 80, 10, -3.0f, 0.06f,
+          { { "Sub", "dark_sub", "bass", -10.0f, 0.0f, 0.0f }, { "Keys", "dark_piano", "chords", -3.0f, -0.15f, 0.3f },
+            { "Melodía", "dark_bell", "melody", -2.0f, 0.15f, 0.36f }, { "Pad", "air_pad", "pad", -13.0f, 0.0f, 0.35f } },
+          0.88f, 0.55f, { 0, 0, 0.05f, 0.2f, 0.25f, -0.3f, 0.2f, 0.0f }, { -10, 0, -4, -4, -6, -4, -3, -8 } },
         { "pop", 108, 7, -4.0f, 0.06f,
           { { "Bajo", "synth_bass", "bass", -6.0f, 0.0f, 0.0f }, { "Keys", "bright_pluck", "chords", -5.0f, -0.2f, 0.25f },
             { "Melodía", "bright_lead", "melody", -5.0f, 0.15f, 0.25f }, { "Pad", "air_pad", "pad", -11.0f, 0.0f, 0.3f } },
@@ -679,6 +696,7 @@ void Session::composeTrackLocked (TrackModel& t, const MusicPlan& plan, const st
     if (role == "drums")
     {
         auto pats = composer::drumPatterns (plan, seed);
+        if (plan.variants.count ("drums")) for (auto& [key, pat] : pats) composer::mutatePattern (plan, pat, plan.variants.at ("drums"), key);
         for (const auto& [key, id] : plan.patternIds)
         {
             DrumPattern* p = t.findPattern (id);
@@ -859,11 +877,84 @@ OpResult Session::varyPart (const std::string& part, uint32_t seed, float energy
         const std::string& role = it->second;
         if (part != "all" && role != part) continue;
         if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
-        if (seed != 0) plan.seeds[role] = part == "all" ? seed ^ fnv32 (role) : seed;
+        if (seed != 0) { plan.seeds[role] = part == "all" ? seed ^ fnv32 (role) : seed; plan.variants.erase (role); }
         composeTrackLocked (t, plan, role);
         ++changed;
     }
     if (changed == 0) { undoStack.pop_back(); return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)"); }
+    proj.music = plan.toJson();
+    return finishEditLocked();
+}
+
+OpResult Session::mutatePart (const std::string& part, uint32_t seed)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    MusicPlan plan;
+    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan))
+        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
+    static const std::vector<std::string> parts = { "drums", "bass", "chords", "melody", "pad" };
+    if (part != "all" && std::find (parts.begin(), parts.end(), part) == parts.end()) return OpResult::fail ("parte desconocida: " + part);
+    if (seed == 0) seed = 1;
+    pushUndo();
+    int changed = 0;
+    for (auto& t : proj.tracks)
+    {
+        auto it = plan.roles.find (t.id);
+        if (it == plan.roles.end()) continue;
+        const std::string role = it->second;
+        if (part != "all" && role != part) continue;
+        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+        plan.variants[role] = (seed ^ fnv32 (role)) | 1u;
+        composeTrackLocked (t, plan, role);
+        ++changed;
+    }
+    if (changed == 0) { undoStack.pop_back(); return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)"); }
+    proj.music = plan.toJson();
+    return finishEditLocked();
+}
+
+OpResult Session::regenerateBeat (uint32_t seed)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    MusicPlan plan;
+    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan))
+        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
+    if (seed == 0) seed = 1;
+    // ¿Hay alguna parte armónica bloqueada? Entonces la progresión no cambia (lo bloqueado debe seguir encajando).
+    bool harmonyLocked = false, any = false;
+    for (const auto& [tid, role] : plan.roles)
+    {
+        const bool lk = std::find (plan.locked.begin(), plan.locked.end(), tid) != plan.locked.end();
+        if (lk && role != "drums") harmonyLocked = true;
+        if (! lk && proj.findTrack (tid)) any = true;
+    }
+    if (! any) return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)");
+    pushUndo();
+    if (! harmonyLocked)
+    {
+        auto bank = composer::progressionBank (plan.genre);
+        bank.erase (std::remove (bank.begin(), bank.end(), plan.progression), bank.end());
+        if (! bank.empty()) plan.progression = bank[(size_t) (seed % (uint32_t) bank.size())];
+    }
+    for (auto& t : proj.tracks)
+    {
+        auto it = plan.roles.find (t.id);
+        if (it == plan.roles.end()) continue;
+        const std::string role = it->second;
+        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+        uint32_t ns = (seed * 2654435761u) ^ fnv32 (role) ^ 0xBEA7u;
+        if (role == "drums") // la batería regenerada cambia siempre de familia rítmica (no solo de adornos)
+        {
+            const auto cur = plan.seeds.find (role);
+            const int was = composer::drumGroove (cur != plan.seeds.end() ? cur->second : 11u);
+            for (int k = 0; k < 64 && composer::drumGroove (ns) == was; ++k) ns = ns * 1664525u + 1013904223u;
+        }
+        plan.seeds[role] = ns;
+        plan.variants.erase (role);
+        composeTrackLocked (t, plan, role);
+    }
     proj.music = plan.toJson();
     return finishEditLocked();
 }

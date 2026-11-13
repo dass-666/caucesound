@@ -78,6 +78,8 @@ class UiScreensTest {
         override fun setLoop(on: Boolean, startTick: Long, endTick: Long) { calls += "loop:$on" }
         override fun seek(frame: Long) { calls += "seek:$frame" }
         override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
+        override fun mutatePart(part: String, seed: Long) { calls += "mutate:$part:${seed != 0L}" }
+        override fun regenerateBeat(seed: Long) { calls += "regen:${seed != 0L}" }
         override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
         var vocal: com.caucesound.app.data.VocalParams? = null
         var request: com.caucesound.app.data.SoloRequest? = null
@@ -160,14 +162,19 @@ class UiScreensTest {
         val rec = Recorder()
         compose.setContent { Themed { VariationsPanel(state04, rec) } }
         shot("12_variations")
-        compose.onNodeWithTag("vary_all").performClick()
-        compose.onNodeWithTag("vary_melody").performClick()
-        compose.onNodeWithText(tr("Más enérgica", "More energy")).performClick()
+        compose.onNodeWithTag("mutate_all").performClick()
+        compose.onNodeWithTag("mutate_drums").performClick()
+        compose.onNodeWithTag("regenerate_beat").performScrollTo().performClick()
+        compose.onNodeWithTag("vary_all").performScrollTo().performClick()
+        compose.onNodeWithTag("vary_melody").performScrollTo().performClick()
+        compose.onNodeWithText(tr("Más enérgica", "More energy")).performScrollTo().performClick()
         val bass = plan.roles.entries.first { it.value == "bass" }.key
         compose.onNodeWithTag("lock_$bass").performScrollTo().performClick()
-        assertEquals(listOf("vary:all:true:null", "vary:melody:true:null", "vary:all:false:0.6", "lock:$bass:true"), rec.calls)
+        assertEquals(listOf("mutate:all:true", "mutate:drums:true", "regen:true", "vary:all:true:null", "vary:melody:true:null",
+            "vary:all:false:0.6", "lock:$bass:true"), rec.calls)
         // El trap no tiene parte de acordes: no se ofrece un botón que no haría nada.
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("vary_chords")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("mutate_chords")).fetchSemanticsNodes().isEmpty())
     }
 
     // --- Misión 0.5: Solo AI 2.0 y VocalShift. Todos los datos son JSON reales del motor (cs_render --fixtures05). ---

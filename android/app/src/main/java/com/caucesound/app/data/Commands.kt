@@ -56,6 +56,8 @@ object Cmd {
     fun applyFxChain(trackId: String, preset: String, replace: Boolean) = c("applyFxChain", "trackId" to trackId, "preset" to preset, "replace" to replace)
     /** Channel Rack: pieza de batería a su propio canal del mezclador (own = true) o de vuelta a la batería. */
     fun routeDrumLane(trackId: String, lane: Int, own: Boolean) = c("routeDrumLane", "trackId" to trackId, "lane" to lane, "own" to own)
+    fun mutatePart(part: String, seed: Long) = c("mutatePart", "part" to part, "seed" to seed)
+    fun regenerateBeat(seed: Long) = c("regenerateBeat", "seed" to seed)
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =

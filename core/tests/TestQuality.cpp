@@ -138,7 +138,7 @@ double inharmonicDb (const std::vector<float>& v, size_t a, double f0)
 TEST (synth_presets_are_in_tune_balanced_and_end_cleanly)
 {
     const auto& presets = synthPresets();
-    CHECK (presets.size() == 17);
+    CHECK (presets.size() == 22);
     // Grupos: los bajos se miden aparte (a igual RMS, los graves suenan más suaves; ir más fuertes es intencionado).
     double louder[2] = { -1e9, -1e9 }, quieter[2] = { 1e9, 1e9 };
     std::printf ("    measure: preset        | afinación (cents) | RMS máx 50 ms | pico   | DC       | cola final | salto al soltar\n");
@@ -223,7 +223,7 @@ TEST (synth_oscillators_have_low_aliasing_at_high_notes)
 TEST (drum_kits_are_balanced_short_and_clean)
 {
     const auto& kits = drumKits();
-    CHECK (kits.size() == 8);
+    CHECK (kits.size() == 11);
     for (int k = 0; k < (int) kits.size(); ++k)
     {
         auto inst = makeInstrument ("cs.drums", "{\"kit\":" + std::to_string (k) + "}");
