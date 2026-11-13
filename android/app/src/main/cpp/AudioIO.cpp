@@ -68,6 +68,26 @@ void AudioIO::closeLocked()
 bool AudioIO::start()
 {
     std::lock_guard<std::mutex> l (mtx);
+    return startLocked();
+}
+
+bool AudioIO::ensureRunning()
+{
+    std::lock_guard<std::mutex> l (mtx);
+    if (running.load() && out)
+    {
+        const oboe::StreamState st = out->getState();
+        if (st == oboe::StreamState::Started || st == oboe::StreamState::Starting) return true;
+        LOGW ("Play con el stream en estado %s: se reabre", oboe::convertToText (st));
+    }
+    closeLocked();
+    running.store (false);
+    ensureRestarts.fetch_add (1);
+    return startLocked();
+}
+
+bool AudioIO::startLocked()
+{
     if (running.load()) return true;
     if (! openOutputLocked()) return false;
     if (wantInput.load() && openInputLocked())
@@ -151,12 +171,15 @@ oboe::DataCallbackResult AudioIO::onAudioReady (oboe::AudioStream* stream, void*
 void AudioIO::onErrorAfterClose (oboe::AudioStream* stream, oboe::Result error)
 {
     LOGW ("stream cerrado: %s", oboe::convertToText (error));
-    if (error != oboe::Result::ErrorDisconnected) return;
-    // Cambio de dispositivo (auriculares desconectados, USB, Bluetooth): el transporte se detiene por seguridad
-    // (evita que el audio salte de golpe al altavoz) y se reabre con el nuevo dispositivo por defecto.
+    lastError.store ((int) error);
+    // Oboe ya cerró el stream. Antes solo se reabría con ErrorDisconnected: con cualquier otro error 'running'
+    // seguía en true sin stream vivo, start() no hacía nada y el audio quedaba mudo hasta reiniciar la app.
+    // Ahora se reabre siempre. Cambio de dispositivo (auriculares, USB, Bluetooth): el transporte se detiene por
+    // seguridad (evita que el audio salte de golpe al altavoz) y se reabre con el nuevo dispositivo por defecto.
     engine.stop();
     std::lock_guard<std::mutex> l (mtx);
     if (! running.load()) return;
+    if (stream != out.get() && stream != in.get()) return; // aviso tardío de un stream que ya sustituimos
     closeLocked();
     reopenCount.fetch_add (1);
     if (openOutputLocked())
@@ -174,7 +197,11 @@ std::string AudioIO::statusJson()
     std::ostringstream s;
     s << "{\"running\":" << (running.load() ? "true" : "false");
     s << ",\"reopenCount\":" << reopenCount.load() << ",\"inputShortReads\":" << inputShortReads.load();
-    s << ",\"callbacks\":" << callbacks.load();
+    s << ",\"callbacks\":" << callbacks.load() << ",\"processedFrames\":" << engine.processedFrames()
+      << ",\"ensureRestarts\":" << ensureRestarts.load() << ",\"lastError\":" << lastError.load();
+    if (out) s << ",\"outState\":\"" << oboe::convertToText (out->getState()) << "\"";
+    s << ",\"dspLoadAvg\":" << engine.dspLoadAverage() << ",\"dspLoadPeak\":" << engine.takeDspLoadPeak()
+      << ",\"dspOverBudget\":" << engine.blocksOverBudget();
     if (out)
     {
         auto lat = out->calculateLatencyMillis();

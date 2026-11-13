@@ -280,6 +280,83 @@ TEST (recording_places_audio_at_the_right_position)
     }
 }
 
+TEST (count_in_clicks_then_records_from_the_exact_start_position)
+{
+    Fixture f ("rec_countin");
+    f.session.createProject (f.dir + "/p", "R"); // 120 BPM, 4/4: un compás = 96000 frames a 48 kHz
+    const std::string t = f.session.addTrack ("Voz").id;
+    f.session.setTrackArmed (t, true);
+    f.engine.seek (96000);
+    std::vector<float> o (64);
+    f.engine.process (nullptr, 0, o.data(), 2, 0);
+    CHECK (f.session.startRecording ("", 1, true, 1).ok);
+
+    // Durante la cuenta: el transporte no avanza, no se graba y suenan 4 clics (el primero, acentuado).
+    const int block = 1000; // no divide 96000: la cuenta termina a mitad de un bloque del anfitrión
+    std::vector<float> in ((size_t) block), out ((size_t) block * 2), heard;
+    Frame fed = 0;
+    while (fed + block <= 96000)
+    {
+        for (int i = 0; i < block; ++i) in[(size_t) i] = (float) ((fed + i) % 4096) / 4096.0f;
+        f.engine.process (in.data(), 1, out.data(), 2, block);
+        for (int i = 0; i < block; ++i) heard.push_back (out[(size_t) i * 2]);
+        fed += block;
+        CHECK (f.engine.position() == 96000);
+        CHECK (f.engine.countInRemaining() == 96000 - fed);
+        CHECK (f.engine.recordStartPosition() < 0);
+    }
+    CHECK (fed == 96000);
+    float peakAt[4] = { 0, 0, 0, 0 }, between = 0;
+    for (size_t i = 0; i < heard.size(); ++i)
+    {
+        const size_t beat = i / 24000, off = i % 24000;
+        if (off < 2400) peakAt[beat] = std::max (peakAt[beat], std::fabs (heard[i]));
+        else if (off > 6000) between = std::max (between, std::fabs (heard[i]));
+    }
+    CHECK (peakAt[0] > 0.2f && peakAt[1] > 0.1f && peakAt[2] > 0.1f && peakAt[3] > 0.1f);
+    CHECK (peakAt[0] > peakAt[1]);
+    CHECK (between < 1e-4f);
+
+    // Tras la cuenta: 1 s de toma. Empieza exactamente en la posición de partida y con la primera muestra
+    // que entró después de la cuenta (la rampa de entrada sigue donde iba).
+    Frame counter = fed;
+    feedInput (f.engine, 48000, 192, counter);
+    CHECK (f.engine.countInRemaining() == 0);
+    auto r = f.session.stopRecording();
+    CHECK_MSG (r.ok, r.error);
+    auto m = f.session.model();
+    const ClipModel* clip = nullptr;
+    for (const auto& c : m.findTrack (t)->clips) clip = &c;
+    CHECK (clip != nullptr);
+    if (! clip) return;
+    CHECK (clip->start == 96000);
+    CHECK (clip->length == 48000);
+    AudioData a;
+    std::string err;
+    CHECK (readWav (f.dir + "/p/" + m.findSource (clip->sourceId)->file, a, err));
+    long wrong = 0;
+    for (Frame i = 0; i < a.numFrames(); ++i) if (a.channels[0][(size_t) i] != (float) ((96000 + i) % 4096) / 4096.0f) ++wrong;
+    CHECK (wrong == 0);
+    MEASURE ("cuenta previa de 1 compás: clics %.2f/%.2f/%.2f/%.2f, toma colocada en %lld con %ld muestras erróneas", peakAt[0], peakAt[1], peakAt[2], peakAt[3], (long long) clip->start, wrong);
+
+    // Parar durante la cuenta la cancela sin error, sin clip y sin dejar la cuenta pendiente para el siguiente play.
+    const size_t clipsBefore = m.findTrack (t)->clips.size();
+    f.engine.seek (0);
+    CHECK (f.session.startRecording ("", 1, true, 2).ok);
+    f.engine.process (in.data(), 1, out.data(), 2, block);
+    CHECK (f.engine.countInRemaining() == 2 * 96000 - block);
+    auto cancel = f.session.stopRecording();
+    CHECK_MSG (cancel.ok, cancel.error);
+    CHECK (cancel.id.empty());
+    CHECK (f.session.model().findTrack (t)->clips.size() == clipsBefore);
+    f.engine.process (in.data(), 1, out.data(), 2, block);
+    CHECK (f.engine.countInRemaining() == 0);
+    f.engine.play();
+    f.engine.process (in.data(), 1, out.data(), 2, block);
+    CHECK (f.engine.position() == block);
+    f.engine.stop();
+}
+
 TEST (recording_is_recovered_after_unexpected_close)
 {
     Fixture f ("rec_crash");

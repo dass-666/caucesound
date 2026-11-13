@@ -1,0 +1,52 @@
+{
+ "diversity": 0.8097135996539141,
+ "keyRoot": 9,
+ "minor": true,
+ "ok": true,
+ "proposals": [
+  {
+   "description": "Motivo reconocible, repetición controlada, registro cómodo, frases memorables",
+   "highKey": 65,
+   "inScale": 1.0,
+   "lengthTicks": 30600,
+   "lowKey": 55,
+   "name": "A · Sencilla y pegajosa",
+   "notes": 22,
+   "similarity": 0.26735891438439185,
+   "strongChordTones": 0.6
+  },
+  {
+   "description": "Notas sostenidas, tensión armónica, resoluciones claras, desarrollo expresivo",
+   "highKey": 64,
+   "inScale": 1.0,
+   "lengthTicks": 29956,
+   "lowKey": 55,
+   "name": "B · Emocional",
+   "notes": 22,
+   "similarity": 0.34034585497335823,
+   "strongChordTones": 1.0
+  },
+  {
+   "description": "Síncopas, variedad de duraciones, respuestas a los golpes del beat, pausas intencionadas",
+   "highKey": 65,
+   "inScale": 1.0,
+   "lengthTicks": 29760,
+   "lowKey": 57,
+   "name": "C · Rítmica",
+   "notes": 20,
+   "similarity": 0.259239772370897,
+   "strongChordTones": 1.0
+  },
+  {
+   "description": "Más exploración, tensiones controladas, intervalos amplios, variaciones inesperadas pero armónicas",
+   "highKey": 67,
+   "inScale": 1.0,
+   "lengthTicks": 30720,
+   "lowKey": 55,
+   "name": "D · Atrevida",
+   "notes": 23,
+   "similarity": 0.27960024885406365,
+   "strongChordTones": 1.0
+  }
+ ]
+}

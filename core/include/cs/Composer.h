@@ -1,0 +1,63 @@
+#pragma once
+// Compositor local de CAUCESOUND (misión 0.4, «Cauce Signature Sound»): genera arreglos editables para las
+// plantillas y variaciones de cada parte. Sin red ni modelos: reglas musicales explícitas + semillas, así que el
+// mismo plan y la misma semilla dan siempre las mismas notas (reproducible y comprobable en pruebas).
+//
+// Todo lo que produce son datos editables del proyecto: patrones de batería (con redobles) y notas MIDI en clips.
+// La tonalidad y la progresión NO se infieren del audio: vienen del plan guardado en el proyecto.
+#include "cs/Midi.h"
+
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace cs
+{
+struct SongSection
+{
+    std::string name;   // "Intro", "A", "B", "Break", "Final" (es también el nombre de los clips)
+    int startBar = 0, bars = 4;
+    float energy = 0;   // -1 (muy tranquila) .. +1 (muy enérgica), relativa a la energía global
+};
+
+struct MusicPlan
+{
+    std::string genre;            // "trap", "reggaeton", "hiphop", "pop", "electronic"
+    int keyRoot = 9;              // clase de altura de la tónica (0 = Do ... 9 = La)
+    bool minor = true;
+    std::vector<int> progression; // grados de la escala (0..6), un acorde por compás, en ciclo
+    float energy = 0;             // energía global -1..+1 (variación «más tranquila / más enérgica»)
+    std::map<std::string, uint32_t> seeds;      // por parte: "drums", "bass", "chords", "melody", "pad"
+    std::map<std::string, std::string> roles;   // id de pista -> parte
+    std::map<std::string, std::string> patternIds; // clave de patrón ("main", "fill"...) -> id del patrón en la pista de batería
+    std::vector<std::string> locked;            // pistas bloqueadas: las variaciones no las tocan
+    std::vector<SongSection> sections;
+
+    std::string toJson() const;
+    static bool fromJson (const std::string& text, MusicPlan& out);
+};
+
+// Parte de batería de una sección: qué patrón (por clave) suena durante cuántos compases.
+struct DrumSlot { std::string patternKey; int bars = 1; std::string clipName; };
+
+namespace composer
+{
+// Escala de la tonalidad del plan (7 clases de altura desde la tónica).
+std::vector<int> scale (const MusicPlan& p);
+// Notas MIDI del acorde del compás 'bar' (tríada o cuatriada según el género), en el registro dado.
+std::vector<int> chordAt (const MusicPlan& p, int bar, bool sevenths);
+
+// Patrones de batería del plan, por clave ("intro", "main", "var", "varCrash", "fill", "break").
+std::map<std::string, DrumPattern> drumPatterns (const MusicPlan& p, uint32_t seed);
+// Disposición de patrones dentro de una sección.
+std::vector<DrumSlot> drumLayout (const MusicPlan& p, const SongSection& s);
+
+// Notas de una parte para una sección (start relativo al inicio de la sección). part: "bass", "chords",
+// "melody" o "pad". Respetan la escala y el acorde de cada compás; la energía cambia densidad e intensidad.
+std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, const SongSection& s, uint32_t seed, int beatsPerBar);
+
+// Plan por defecto de cada plantilla ("" si el género no existe).
+MusicPlan defaultPlan (const std::string& genre);
+} // namespace composer
+} // namespace cs

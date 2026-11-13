@@ -1,0 +1,245 @@
+{
+ "ok": true,
+ "presets": [
+  {
+   "description": "Tu voz al frente y una segunda voz +7 st a −12 dB: ancha, con reverb y eco corto controlados, cuerpo y presencia. Magia manda el espacio, Carácter el color.",
+   "id": "urban_spatial",
+   "name": "Urbano Espacial — Segunda voz",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 65.0,
+    "formantOffset": 0.0,
+    "magic": 70.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "urban_spatial",
+    "radical": false,
+    "secondGainDb": -12.0,
+    "secondVoice": true,
+    "semitones": 7.0,
+    "spatial": true
+   }
+  },
+  {
+   "description": "Valores de referencia del proyecto: +7 st, Carácter 65 %, Magia 70 %, conservando identidad.",
+   "id": "reference",
+   "name": "Referencia (+7 · 65 % · 70 %)",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 65.0,
+    "formantOffset": 0.0,
+    "magic": 70.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "reference",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": 7.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "Tu voz original al frente y una segunda voz +7 st, 9 dB por debajo, centrada.",
+   "id": "second_voice_7",
+   "name": "Segunda voz +7 (referencia)",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 65.0,
+    "formantOffset": 0.0,
+    "magic": 70.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "second_voice_7",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": true,
+    "semitones": 7.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "Tu voz original al frente y una segunda voz una octava arriba, 9 dB por debajo.",
+   "id": "second_voice_12",
+   "name": "Segunda voz +12 (octava)",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 65.0,
+    "formantOffset": 0.0,
+    "magic": 70.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "second_voice_12",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": true,
+    "semitones": 12.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "Sin transposición, sin cambio de timbre y sin mejoras.",
+   "id": "neutral",
+   "name": "Neutro (sin cambio)",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 0.0,
+    "formantOffset": 0.0,
+    "magic": 0.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "neutral",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": 0.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "+4 st, timbre casi intacto, mejoras suaves.",
+   "id": "high_natural",
+   "name": "Agudo natural",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 15.0,
+    "formantOffset": 0.0,
+    "magic": 40.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "high_natural",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": 4.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "+9 st en modo radical con carácter moderado.",
+   "id": "high_intense",
+   "name": "Agudo intenso",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 35.0,
+    "formantOffset": 0.0,
+    "magic": 60.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "high_intense",
+    "radical": true,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": 9.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "-4 st, timbre casi intacto, mejoras suaves.",
+   "id": "low_natural",
+   "name": "Grave natural",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 15.0,
+    "formantOffset": 0.0,
+    "magic": 40.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "low_natural",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": -4.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "-9 st conservando identidad con carácter alto.",
+   "id": "low_deep",
+   "name": "Grave profundo",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 80.0,
+    "formantOffset": 0.0,
+    "magic": 60.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "low_deep",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": -9.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "Misma nota; modo radical: formantes y brillo hacia arriba.",
+   "id": "bright_voice",
+   "name": "Voz brillante",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 45.0,
+    "formantOffset": 0.0,
+    "magic": 50.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "bright_voice",
+    "radical": true,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": 0.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "Misma nota; ajustes finos de formantes -2.5 st y brillo -4 dB.",
+   "id": "dark_voice",
+   "name": "Voz oscura",
+   "params": {
+    "brightnessOffset": -4.0,
+    "character": 0.0,
+    "formantOffset": -2.5,
+    "magic": 50.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "dark_voice",
+    "radical": false,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": 0.0,
+    "spatial": false
+   }
+  },
+  {
+   "description": "-12 st, modo radical al 100 %: voz de monstruo.",
+   "id": "creative_extreme",
+   "name": "Efecto creativo extremo",
+   "params": {
+    "brightnessOffset": 0.0,
+    "character": 100.0,
+    "formantOffset": 0.0,
+    "magic": 50.0,
+    "mixPercent": 100.0,
+    "offsetMs": 0.0,
+    "pan": 0.0,
+    "preset": "creative_extreme",
+    "radical": true,
+    "secondGainDb": -9.0,
+    "secondVoice": false,
+    "semitones": -12.0,
+    "spatial": false
+   }
+  }
+ ]
+}

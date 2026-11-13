@@ -1,5 +1,6 @@
 #include "cs/Session.h"
 
+#include "cs/Instruments.h"
 #include "cs/Resampler.h"
 #include "cs/Wav.h"
 
@@ -143,6 +144,42 @@ void Session::pushUndo()
     undoStack.push_back (proj);
     if (undoStack.size() > kMaxUndo) undoStack.erase (undoStack.begin());
     redoStack.clear();
+    paramGestureKey.clear(); // cualquier otra edición cierra el gesto de parámetros abierto
+}
+
+void Session::paramUndoLocked (const std::string& key)
+{
+    if (key == paramGestureKey) return; // mismo gesto: el estado previo ya está guardado
+    pushUndo();
+    paramGestureKey = key;
+}
+
+void Session::endParamGesture()
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    paramGestureKey.clear();
+}
+
+// Deshacer/rehacer cambian el estado guardado de instrumentos y efectos; las instancias que ya suenan deben seguirlo
+// (si no, se oiría una cosa y se guardaría otra). El kit de batería es estructural: se recrea la instancia.
+void Session::syncInstancesLocked()
+{
+    paramGestureKey.clear();
+    for (const auto& t : proj.tracks)
+    {
+        auto it = instrumentInstances.find (t.id);
+        if (it != instrumentInstances.end() && it->second && ! t.instrument.state.empty() && it->second->saveState() != t.instrument.state)
+        {
+            if (t.instrument.type == "cs.drums") instrumentInstances.erase (it);
+            else it->second->loadState (t.instrument.state);
+        }
+        for (const auto& ins : t.inserts)
+        {
+            auto fx = insertInstances.find (ins.id);
+            if (fx != insertInstances.end() && fx->second && ! ins.state.empty() && fx->second->saveState() != ins.state)
+                fx->second->loadState (ins.state);
+        }
+    }
 }
 
 OpResult Session::finishEditLocked()
@@ -174,6 +211,157 @@ std::shared_ptr<Session::Source> Session::makeSource (std::shared_ptr<const Audi
 }
 
 // --- Grafo de render ----------------------------------------------------------------------------------------------
+std::shared_ptr<Instrument> Session::instrumentFor (const TrackModel& t)
+{
+    if (t.instrument.type.empty()) return nullptr;
+    auto& inst = instrumentInstances[t.id];
+    if (inst && inst->typeId() != t.instrument.type) inst.reset();
+    if (! inst)
+    {
+        inst = std::dynamic_pointer_cast<Instrument> (createProcessor (t.instrument.type));
+        if (! inst) return nullptr; // tipo desconocido (proyecto de una versión futura)
+        if (! t.instrument.state.empty()) inst->loadState (t.instrument.state);
+        inst->prepare (proj.sampleRate, kProcessorMaxBlock);
+    }
+    return inst;
+}
+
+// Construye la pista de render. offline = true: instancias propias (clonadas por estado) para la exportación,
+// para no compartir procesadores con el hilo de audio.
+int Session::busIndexOf (const std::string& trackId) const
+{
+    int b = 0;
+    for (const auto& x : proj.tracks)
+        if (x.kind == "bus") { if (x.id == trackId) return b; ++b; }
+    return -1;
+}
+
+void Session::applySendsTo (TrackParams& p, const TrackModel& t) const
+{
+    for (auto& v : p.send) v.store (0.0f);
+    for (const auto& [busId, level] : t.sends)
+    {
+        const int b = busIndexOf (busId);
+        if (b >= 0 && b < kMaxBuses) p.send[b].store (std::clamp (level, 0.0f, 1.0f));
+    }
+}
+
+TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, RenderGraph& g)
+{
+    TrackRT tr;
+    tr.slot = slot;
+    if (t.kind == "bus")
+    {
+        tr.busIndex = busIndexOf (t.id);
+        for (const auto& o : proj.tracks)
+            for (const auto& r : o.laneRoutes) tr.laneChannel = tr.laneChannel || r.second == t.id;
+    }
+    for (const auto& [lane, busId] : t.laneRoutes)
+        if (lane >= 0 && lane < kMaxAuxLanes) tr.laneBus[lane] = busIndexOf (busId);
+    for (const auto& c : t.clips)
+    {
+        // Escucha previa de VocalShift: original + región de prueba procesada. Solo en vivo y solo si el clip sigue
+        // siendo el mismo que cuando se hizo la prueba (si se recortó o movió su audio, la prueba ya no vale).
+        if (! offline && listenPreview && preview.valid() && c.id == preview.clipId)
+        {
+            const std::string& srcId = c.processed() ? c.origSourceId : c.sourceId;
+            const Frame baseOffset = c.processed() ? c.origOffset : c.sourceOffset;
+            const Frame baseLength = c.processed() ? c.origLength : c.length;
+            auto src = pool.find (srcId);
+            if (src != pool.end() && srcId == preview.srcId && baseOffset == preview.baseOffset && baseLength == preview.baseLength
+                && preview.from >= 0 && preview.from + preview.length <= baseLength)
+            {
+                const float gn = dbToGain (c.gainDb);
+                const Frame edge = std::min<Frame> (preview.length / 4, proj.sampleRate / 100); // 10 ms para no chasquear
+                g.keepAlive.push_back (src->second->audio);
+                g.keepAlive.push_back (preview.audio);
+                if (preview.from > 0)
+                {
+                    ClipRT a;
+                    a.data = src->second->audio.get();
+                    a.start = c.start; a.length = preview.from; a.sourceOffset = baseOffset;
+                    a.fadeIn = std::min (c.fadeIn, a.length); a.gain = gn;
+                    tr.clips.push_back (a);
+                }
+                ClipRT b;
+                b.data = preview.audio.get();
+                b.start = c.start + preview.from; b.length = preview.length; b.sourceOffset = preview.skip;
+                b.fadeIn = edge; b.fadeOut = edge; b.gain = gn;
+                tr.clips.push_back (b);
+                const Frame rest = baseLength - preview.from - preview.length;
+                if (rest > 0)
+                {
+                    ClipRT d;
+                    d.data = src->second->audio.get();
+                    d.start = c.start + preview.from + preview.length; d.length = rest; d.sourceOffset = baseOffset + preview.from + preview.length;
+                    d.fadeOut = std::min (c.fadeOut, d.length); d.gain = gn;
+                    tr.clips.push_back (d);
+                }
+                continue;
+            }
+        }
+        ClipRT rc;
+        auto it = pool.find (c.sourceId);
+        if (it != pool.end())
+        {
+            rc.data = it->second->audio.get();
+            g.keepAlive.push_back (it->second->audio);
+        }
+        rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
+        rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; // Escucha A/B a volumen igualado: solo en el grafo en vivo y solo para el clip que se está comparando.
+        const bool listenMatch = ! offline && ! listenMatchClip.empty() && c.id == listenMatchClip && c.processed() && ! c.playingOriginal();
+        rc.gain = dbToGain (c.gainDb + (listenMatch ? -c.procLevelDb : 0.0f));
+        tr.clips.push_back (rc);
+    }
+    std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
+    for (const auto& ins : t.inserts)
+    {
+        if (ins.bypass) continue;
+        if (offline)
+        {
+            ProcessorPtr fx = createProcessor (ins.type);
+            if (! fx) continue;
+            auto live = insertInstances.find (ins.id);
+            fx->loadState (live != insertInstances.end() && live->second ? live->second->saveState() : ins.state);
+            fx->prepare (proj.sampleRate, 1024);
+            tr.inserts.push_back (fx);
+            continue;
+        }
+        auto& inst = insertInstances[ins.id];
+        if (! inst)
+        {
+            inst = createProcessor (ins.type);
+            if (! inst) continue; // tipo desconocido (p. ej. proyecto de una versión con más plugins)
+            if (! ins.state.empty()) inst->loadState (ins.state);
+            inst->prepare (proj.sampleRate, kProcessorMaxBlock);
+        }
+        tr.inserts.push_back (inst);
+    }
+    if (! t.instrument.type.empty())
+    {
+        if (offline)
+        {
+            auto live = instrumentInstances.find (t.id);
+            auto inst = std::dynamic_pointer_cast<Instrument> (createProcessor (t.instrument.type));
+            if (inst)
+            {
+                inst->loadState (live != instrumentInstances.end() && live->second ? live->second->saveState() : t.instrument.state);
+                inst->prepare (proj.sampleRate, 1024);
+                tr.instrument = inst;
+            }
+        }
+        else tr.instrument = instrumentFor (t);
+        if (tr.instrument)
+        {
+            for (const auto& c : t.midiClips)
+                appendClipEvents (c, c.patternId.empty() ? nullptr : t.findPattern (c.patternId), proj.bpm, proj.sampleRate, tr.events);
+            sortEvents (tr.events);
+            tr.eventsHash = hashEvents (tr.events);
+        }
+    }
+    return tr;
+}
+
 void Session::rebuildGraph()
 {
     auto g = std::make_unique<RenderGraph>();
@@ -182,41 +370,17 @@ void Session::rebuildGraph()
     g->beatsPerBar = proj.beatsPerBar;
     g->contentEnd = proj.contentEnd();
     int slot = 0;
-    for (const auto& t : proj.tracks)
-    {
-        TrackRT tr;
-        tr.slot = slot++;
-        for (const auto& c : t.clips)
-        {
-            ClipRT rc;
-            auto it = pool.find (c.sourceId);
-            if (it != pool.end())
-            {
-                rc.data = it->second->audio.get();
-                g->keepAlive.push_back (it->second->audio);
-            }
-            rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
-            rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.gainDb);
-            tr.clips.push_back (rc);
-        }
-        std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
-        for (const auto& ins : t.inserts)
-        {
-            if (ins.bypass) continue;
-            auto& inst = insertInstances[ins.id];
-            if (! inst)
-            {
-                inst = createProcessor (ins.type);
-                if (! inst) continue; // tipo desconocido (p. ej. proyecto de una versión con más plugins)
-                if (! ins.state.empty()) inst->loadState (ins.state);
-                inst->prepare (proj.sampleRate, kProcessorMaxBlock);
-            }
-            tr.inserts.push_back (inst);
-        }
-        g->tracks.push_back (std::move (tr));
-    }
+    for (const auto& t : proj.tracks) g->tracks.push_back (makeTrackRT (t, slot++, false, *g));
+    // Instancias de pistas borradas: fuera de la caché (el grafo anterior las mantiene vivas mientras haga falta).
+    for (auto it = instrumentInstances.begin(); it != instrumentInstances.end();)
+        it = proj.findTrack (it->first) ? std::next (it) : instrumentInstances.erase (it);
     applyMixerParams();
     engine.publish (std::move (g));
+}
+
+void Session::applyLoopLocked()
+{
+    engine.setLoop (proj.loopEnabled, proj.ticksToFrames (proj.loopStart), proj.ticksToFrames (proj.loopEnd));
 }
 
 void Session::applyMixerParams()
@@ -229,13 +393,15 @@ void Session::applyMixerParams()
         p.pan.store (t.pan);
         p.mute.store (t.mute);
         p.solo.store (t.solo);
+        applySendsTo (p, t);
     }
     engine.setMasterGain (dbToGain (proj.masterDb));
     engine.setMetronome (proj.metronome);
+    applyLoopLocked();
 }
 
 // --- Proyecto -----------------------------------------------------------------------------------------------------
-OpResult Session::createProject (const std::string& folderPath, const std::string& name, int sampleRate)
+OpResult Session::createProject (const std::string& folderPath, const std::string& name, int sampleRate, const std::string& templateId)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     close();
@@ -249,6 +415,7 @@ OpResult Session::createProject (const std::string& folderPath, const std::strin
     proj.createdAt = proj.modifiedAt = nowMs();
     open = true;
     dirty = true;
+    applyTemplateLocked (templateId);
     rebuildGraph();
     OpResult r = save();
     r.id = proj.id;
@@ -286,6 +453,15 @@ OpResult Session::openProject (const std::string& folderPath, LoadReport* report
     }
     if (! loaded) return OpResult::fail ("no se pudo abrir el proyecto: " + firstError);
 
+    if (p.version < kProjectFormatVersion)
+    {
+        // Migración: el primer guardado escribirá el formato nuevo. Antes conservamos el original intacto.
+        const std::string legacy = folderPath + "/project.v" + std::to_string (p.version) + ".json";
+        std::string text, err;
+        if (! fileExists (legacy) && readFile (folderPath + "/" + kProjectFile, text)) atomicWriteFile (legacy, text, err, false);
+        p.version = kProjectFormatVersion;
+    }
+
     dir = folderPath;
     proj = std::move (p);
     open = true;
@@ -301,6 +477,7 @@ OpResult Session::openProject (const std::string& folderPath, LoadReport* report
         if (! ok) rep.missingSources.push_back (s.id);
     }
     recoverRecordingsLocked (&rep);
+    cleanStaleTempLocked();
     rebuildGraph();
     if (dirty) save();
     if (report) *report = rep;
@@ -378,14 +555,25 @@ OpResult Session::save()
 void Session::close()
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
+    // Trabajos offline del proyecto que se cierra: se cancelan y se espera a que suelten sus archivos. No hay bloqueo
+    // mutuo: un trabajo nunca espera el cerrojo de la sesión, lo intenta y vuelve a mirar si lo han cancelado.
+    jobs.cancelAll();
+    jobs.waitIdle();
+    listenMatchClip.clear();
+    clearPreviewLocked();
     if (recorder) stopRecording();
     if (open && dirty) save();
+    // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
+    // proyecto siguiente heredaba la posición del anterior (p. ej. compás 40 tras reproducir A un rato) y sonaba
+    // silencio más allá de su contenido hasta reiniciar la app (fallo de la 0.3.0; ver TestSwitch.cpp).
     engine.stop();
+    engine.resetTransport();
     engine.publish (std::make_unique<RenderGraph>());
     open = false;
     dirty = false;
     pool.clear();
     insertInstances.clear();
+    instrumentInstances.clear();
     undoStack.clear();
     redoStack.clear();
     proj = ProjectModel();
@@ -395,13 +583,22 @@ void Session::close()
 void Session::abandonForTest()
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
+    jobs.cancelAll();
+    jobs.waitIdle();
+    listenMatchClip.clear();
+    clearPreviewLocked();
     if (recorder) { recorder->abandon(); recorder.reset(); }
+    // El motor sobrevive entre proyectos: además de parar, se deja el transporte como recién creado. Sin esto, el
+    // proyecto siguiente heredaba la posición del anterior (p. ej. compás 40 tras reproducir A un rato) y sonaba
+    // silencio más allá de su contenido hasta reiniciar la app (fallo de la 0.3.0; ver TestSwitch.cpp).
     engine.stop();
+    engine.resetTransport();
     engine.publish (std::make_unique<RenderGraph>());
     open = false;
     dirty = false;
     pool.clear();
     insertInstances.clear();
+    instrumentInstances.clear();
     undoStack.clear();
     redoStack.clear();
 }
@@ -424,21 +621,64 @@ std::string Session::stateJson() const
         for (const auto& c : t.clips)
             if (pool.find (c.sourceId) == pool.end()) missing.push_back (c.id);
     j["missingClips"] = missing;
+    j["missingPlugins"] = missingPlugins();
+    j["listenMatchClip"] = listenMatchClip; // estado de escucha, no del proyecto
+    if (preview.valid())
+        j["vocalPreview"] = { { "clipId", preview.clipId }, { "from", preview.from }, { "length", preview.length }, { "listening", listenPreview },
+                              { "params", nlohmann::json::parse (preview.paramsJson, nullptr, false) }, { "seconds", preview.seconds } };
     return j.dump();
 }
 
 // --- Pistas -------------------------------------------------------------------------------------------------------
-OpResult Session::addTrack (const std::string& name)
+OpResult Session::addTrack (const std::string& name, const std::string& kind)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     if (proj.tracks.size() >= (size_t) kMaxTracks) return OpResult::fail ("límite de pistas alcanzado");
+    if (kind != "audio" && kind != "synth" && kind != "drums" && kind != "bus") return OpResult::fail ("tipo de pista desconocido");
+    if (kind == "bus")
+    {
+        int buses = 0;
+        for (const auto& x : proj.tracks) buses += x.kind == "bus";
+        if (buses >= kMaxBuses) return OpResult::fail ("límite de buses alcanzado");
+    }
     pushUndo();
     TrackModel t;
     t.id = newId ("trk");
-    t.name = name.empty() ? "Track " + std::to_string (proj.tracks.size() + 1) : name;
-    static const uint32_t palette[] = { 0xFF4FC3F7, 0xFFFFB74D, 0xFF81C784, 0xFFE57373, 0xFFBA68C8, 0xFFFFF176, 0xFF4DB6AC, 0xFFF06292 };
+    t.kind = kind;
+    t.name = name.empty() ? (kind == "drums" ? "Cauce Drums" : kind == "synth" ? "Cauce Synth" : kind == "bus" ? "Bus FX" : "Track " + std::to_string (proj.tracks.size() + 1)) : name;
+    // Paleta de pistas de la identidad visual: violeta, azul eléctrico, cian, ámbar, verde, rosa, lima, naranja.
+    static const uint32_t palette[] = { 0xFF8B5CF6, 0xFF3B82F6, 0xFF22D3EE, 0xFFF59E0B, 0xFF34D399, 0xFFF472B6, 0xFFA3E635, 0xFFFB923C };
     t.color = palette[proj.tracks.size() % 8];
+    const Tick bar = (Tick) kPpq * proj.beatsPerBar;
+    if (kind == "drums")
+    {
+        t.instrument.type = "cs.drums";
+        t.instrument.state = "{\"kit\":0}";
+        DrumPattern pt;
+        pt.id = newId ("pat");
+        pt.name = "A";
+        t.patterns.push_back (pt);
+        MidiClipModel c;
+        c.id = newId ("mcl");
+        c.name = "A";
+        c.patternId = pt.id;
+        c.start = 0;
+        c.length = 4 * bar;
+        t.midiClips.push_back (c);
+    }
+    else if (kind == "synth")
+    {
+        t.instrument.type = "cs.synth";
+        t.instrument.state = synthPresetState ("soft_keys");
+        t.instrument.preset = "soft_keys";
+        MidiClipModel c;
+        c.id = newId ("mcl");
+        c.name = t.name;
+        c.start = 0;
+        c.length = 4 * bar;
+        t.midiClips.push_back (c);
+    }
     proj.tracks.push_back (t);
     finishEditLocked();
     OpResult r;
@@ -454,6 +694,12 @@ OpResult Session::removeTrack (const std::string& id)
     if (recorder) return OpResult::fail ("no se puede borrar una pista durante la grabación");
     pushUndo();
     proj.tracks.erase (it);
+    for (auto& t : proj.tracks)
+    {
+        t.sends.erase (id); // envíos hacia un bus borrado
+        // Canal propio de una pieza de batería borrado: la pieza vuelve a sonar por su pista de batería.
+        for (auto r = t.laneRoutes.begin(); r != t.laneRoutes.end();) r = r->second == id ? t.laneRoutes.erase (r) : std::next (r);
+    }
     return finishEditLocked();
 }
 
@@ -485,6 +731,21 @@ CS_MIXER_SETTER (setTrackMute, bool, mute, v)
 CS_MIXER_SETTER (setTrackSolo, bool, solo, v)
 #undef CS_MIXER_SETTER
 
+OpResult Session::setTrackSend (const std::string& id, const std::string& busId, float level)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    TrackModel* t = proj.findTrack (id);
+    const TrackModel* b = proj.findTrack (busId);
+    if (! t || ! b) return OpResult::fail ("pista no encontrada");
+    if (b->kind != "bus" || t->kind == "bus") return OpResult::fail ("los envíos van de una pista a un bus");
+    if (! std::isfinite (level)) return OpResult::fail ("valor no válido");
+    level = std::clamp (level, 0.0f, 1.0f);
+    if (level <= 0.0f) t->sends.erase (busId); else t->sends[busId] = level;
+    touchLocked();
+    applyMixerParams();
+    return {};
+}
+
 OpResult Session::setTrackArmed (const std::string& id, bool on)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
@@ -513,6 +774,7 @@ OpResult Session::importWav (const std::string& path, const std::string& trackId
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     TrackModel* t = trackId.empty() ? (proj.tracks.empty() ? nullptr : &proj.tracks.front()) : proj.findTrack (trackId);
     if (! t) return OpResult::fail ("pista no encontrada");
+    if (t->kind == "bus") return OpResult::fail ("un bus no admite clips: importa en una pista de audio");
     const std::string tid = t->id;
 
     AudioData a;
@@ -552,6 +814,7 @@ OpResult Session::moveClip (const std::string& clipId, Frame newStart, const std
     if (! c) return OpResult::fail ("clip no encontrado");
     TrackModel* dest = newTrackId.empty() ? owner : proj.findTrack (newTrackId);
     if (! dest) return OpResult::fail ("pista destino no encontrada");
+    if (dest->kind == "bus") return OpResult::fail ("un bus no admite clips");
     pushUndo();
     c = proj.findClip (clipId, &owner);
     ClipModel moved = *c;
@@ -577,6 +840,7 @@ OpResult Session::trimClip (const std::string& clipId, Frame newStart, Frame new
         return OpResult::fail ("recorte fuera de los límites del audio");
     pushUndo();
     c = proj.findClip (clipId);
+    c->clearProcess(); // recortar «acepta» la versión que suena (el original sigue en disco)
     c->sourceOffset = newOffset;
     c->start = newStart;
     c->length = newLength;
@@ -594,6 +858,7 @@ OpResult Session::splitClip (const std::string& clipId, Frame at)
     if (at <= c->start || at >= c->start + c->length) return OpResult::fail ("el punto de corte no está dentro del clip");
     pushUndo();
     c = proj.findClip (clipId, &owner);
+    c->clearProcess(); // dividir «acepta» la versión que suena
     ClipModel right = *c;
     const Frame leftLen = at - c->start;
     right.id = newId ("clp");
@@ -680,6 +945,7 @@ OpResult Session::undo()
     for (auto& t : proj.tracks)
         if (auto it = mixer.find (t.id); it != mixer.end())
         { t.volumeDb = it->second.volumeDb; t.pan = it->second.pan; t.mute = it->second.mute; t.solo = it->second.solo; t.armed = it->second.armed; }
+    syncInstancesLocked();
     return finishEditLocked();
 }
 
@@ -696,6 +962,7 @@ OpResult Session::redo()
     for (auto& t : proj.tracks)
         if (auto it = mixer.find (t.id); it != mixer.end())
         { t.volumeDb = it->second.volumeDb; t.pan = it->second.pan; t.mute = it->second.mute; t.solo = it->second.solo; t.armed = it->second.armed; }
+    syncInstancesLocked();
     return finishEditLocked();
 }
 
@@ -730,7 +997,7 @@ OpResult Session::setRecordLatencyOffset (Frame frames)
 }
 
 // --- Grabación ----------------------------------------------------------------------------------------------------
-OpResult Session::startRecording (const std::string& trackId, int channels, bool startTransport)
+OpResult Session::startRecording (const std::string& trackId, int channels, bool startTransport, int countInBars)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
@@ -739,6 +1006,7 @@ OpResult Session::startRecording (const std::string& trackId, int channels, bool
     if (! trackId.empty()) t = proj.findTrack (trackId);
     else for (const auto& x : proj.tracks) if (x.armed) t = &x;
     if (! t) return OpResult::fail ("no hay pista armada para grabar");
+    if (t->kind == "bus") return OpResult::fail ("no se puede grabar en un bus");
 
     const std::string sid = newId ("rec");
     json meta = { { "sourceId", sid }, { "trackId", t->id }, { "channels", channels }, { "latencyOffset", proj.recordLatencyOffset },
@@ -749,7 +1017,14 @@ OpResult Session::startRecording (const std::string& trackId, int channels, bool
     if (! recorder->start (err)) { recorder.reset(); return OpResult::fail ("no se pudo iniciar la grabación: " + err); }
     recordingSourceId = sid;
     recordingTrackId = t->id;
-    if (startTransport) engine.play();
+    recordingCountIn = false;
+    if (startTransport)
+    {
+        const int bars = std::clamp (countInBars, 0, 4);
+        const Frame countIn = proj.bpm > 0 ? (Frame) std::llround ((double) bars * proj.beatsPerBar * 60.0 * proj.sampleRate / proj.bpm) : 0;
+        recordingCountIn = countIn > 0;
+        if (countIn > 0) engine.playWithCountIn (countIn); else engine.play();
+    }
     OpResult r;
     r.id = sid;
     return r;
@@ -773,6 +1048,8 @@ OpResult Session::stopRecording()
     if (startPos < 0)
     {
         removeFile (part); removeFile (sidecar);
+        // Parar durante la cuenta previa no es un error: simplemente no hay toma (resultado correcto, sin id).
+        if (recordingCountIn) { recordingCountIn = false; return OpResult(); }
         return OpResult::fail ("no se recibió audio del micrófono");
     }
     if (std::rename (part.c_str(), absPath (rel).c_str()) != 0) return OpResult::fail ("no se pudo finalizar el archivo de grabación");
@@ -822,8 +1099,7 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     if (recorder) return OpResult::fail ("no se puede exportar durante la grabación");
-    const Frame total = proj.contentEnd() + std::max<Frame> (0, tailFrames);
-    if (total <= 0) return OpResult::fail ("el proyecto está vacío");
+    if (proj.contentEnd() <= 0) return OpResult::fail ("el proyecto está vacío");
 
     // Motor independiente: no interfiere con la reproducción en curso y parte de un estado limpio.
     Engine offline;
@@ -831,34 +1107,22 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
     auto g = std::make_unique<RenderGraph>();
     g->sampleRate = proj.sampleRate; g->bpm = proj.bpm; g->beatsPerBar = proj.beatsPerBar;
     int slot = 0;
+    Frame instrumentTail = 0, busTail = 0;
     for (const auto& t : proj.tracks)
     {
-        TrackRT tr;
-        tr.slot = slot;
-        TrackParams& p = offline.trackParams (slot++);
+        TrackParams& p = offline.trackParams (slot);
         p.gain.store (dbToGain (t.volumeDb)); p.pan.store (t.pan); p.mute.store (t.mute); p.solo.store (t.solo);
-        for (const auto& c : t.clips)
-        {
-            ClipRT rc;
-            if (auto it = pool.find (c.sourceId); it != pool.end()) { rc.data = it->second->audio.get(); g->keepAlive.push_back (it->second->audio); }
-            rc.start = c.start; rc.length = c.length; rc.sourceOffset = c.sourceOffset;
-            rc.fadeIn = c.fadeIn; rc.fadeOut = c.fadeOut; rc.gain = dbToGain (c.gainDb);
-            tr.clips.push_back (rc);
-        }
-        std::sort (tr.clips.begin(), tr.clips.end(), [] (const ClipRT& a, const ClipRT& b) { return a.start < b.start; });
-        for (const auto& ins : t.inserts)
-        {
-            if (ins.bypass) continue;
-            // Instancia propia (clonada por estado) para no compartir un procesador con el hilo de audio.
-            ProcessorPtr fx = createProcessor (ins.type);
-            if (! fx) continue;
-            auto live = insertInstances.find (ins.id);
-            fx->loadState (live != insertInstances.end() && live->second ? live->second->saveState() : ins.state);
-            fx->prepare (proj.sampleRate, 1024);
-            tr.inserts.push_back (fx);
-        }
+        applySendsTo (p, t);
+        TrackRT tr = makeTrackRT (t, slot++, true, *g);
+        Frame trackTail = tr.instrument && ! tr.events.empty() ? tr.instrument->tailSamples() : 0;
+        for (const auto& fx : tr.inserts) trackTail += fx->tailSamples(); // delay y reverb en serie suman su cola
+        if (tr.busIndex >= 0) busTail = std::max<Frame> (busTail, trackTail);
+        else instrumentTail = std::max<Frame> (instrumentTail, trackTail);
         g->tracks.push_back (std::move (tr));
     }
+    // Las colas de los instrumentos (release, platillos) se incluyen siempre: el archivo no corta notas.
+    // Un bus recibe la cola de las pistas y añade la suya (p. ej. la reverb compartida).
+    const Frame total = proj.contentEnd() + std::max<Frame> (std::max<Frame> (0, tailFrames), instrumentTail + busTail);
     offline.setMasterGain (dbToGain (proj.masterDb));
     offline.publish (std::move (g));
 

@@ -21,7 +21,6 @@ import androidx.core.content.ContextCompat
  */
 class AudioGuard(private val context: Context, private val onInterrupt: (reason: String) -> Unit, private val onDevicesChanged: () -> Unit) {
     private val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private var focusRequest: AudioFocusRequest? = null
 
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
@@ -44,21 +43,40 @@ class AudioGuard(private val context: Context, private val onInterrupt: (reason:
         abandonFocus()
     }
 
-    fun requestFocus(): Boolean {
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+    // UNA sola petición de foco (y un solo oyente) para toda la vida de la app. Antes se creaba una petición con un
+    // oyente nuevo en cada Play: Android identifica al dueño del foco por el oyente, así que la petición nueva le
+    // quitaba el foco (AUDIOFOCUS_LOSS) a la anterior de la misma app, ese oyente llamaba a onInterrupt y el
+    // transporte se paraba justo después de arrancar. Desde el segundo Play, Play «dejaba de funcionar» hasta
+    // reiniciar la app (fallo de la 0.3.0). Ver MediaFocusControl/FocusRequester en AOSP.
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS -> { held = false; onInterrupt("focus") }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> onInterrupt("focus")
+        }
+    }
+    private val request: AudioFocusRequest by lazy {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            .setOnAudioFocusChangeListener { change ->
-                if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) onInterrupt("focus")
-            }
+            .setOnAudioFocusChangeListener(focusListener)
             .build()
-        focusRequest = req
-        return am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+    @Volatile var held = false
+        private set
+
+    /** Idempotente: pedirlo con el foco ya concedido no genera ninguna pérdida (mismo oyente = mismo dueño). */
+    fun requestFocus(): Boolean {
+        val granted = am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        held = granted
+        return granted
     }
 
     fun abandonFocus() {
-        focusRequest?.let { am.abandonAudioFocusRequest(it) }
-        focusRequest = null
+        if (held) am.abandonAudioFocusRequest(request)
+        held = false
     }
+
+    /** Para pruebas: la petición que se usa siempre. */
+    internal fun focusRequestForTest(): AudioFocusRequest = request
 
     /** Descripción de la salida actual: importa para la latencia (Bluetooth añade típicamente 100-300 ms). */
     fun outputRoute(): Route {

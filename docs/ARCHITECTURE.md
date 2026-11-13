@@ -46,10 +46,16 @@ core/                      C++17 puro, sin dependencias de plataforma (compartid
   include/cs/Api.h         API de comandos JSON para las interfaces
   include/cs/Wav.h         lectura/escritura WAV, escritura incremental y reparación
   include/cs/Resampler.h   conversión de frecuencia (importación)
-  tests/                   28 pruebas + bench
+  include/cs/Midi.h        notas, patrones, clips MIDI, ticks↔frames, cuantización, swing, expansión a eventos
+  include/cs/Instruments.h presets de Cauce Synth y kits de Cauce Drums (catálogo)
+  src/Synth.cpp, Drums.cpp instrumentos propios;  src/Effects.cpp  Cauce FX
+  src/SessionMusic.cpp     edición musical, plantillas, inserciones
+  tests/                   58 pruebas + bench
 android/                   app Android (Kotlin + Compose) y puente nativo (JNI + Oboe)
   app/src/main/cpp/        AudioIO (Oboe dúplex), JniBridge
 third_party/nlohmann/      JSON (MIT, un solo archivo)
+desktop/cli/               programa `cauce`: el mismo motor en un ordenador (abrir, renderizar, exportar, verificar)
+desktop/tools/             comprobación independiente del paquete para DAW (Python + mido)
 docs/
 ```
 
@@ -74,6 +80,8 @@ docs/
 - La grabación pasa por una cola SPSC sin bloqueo hacia un hilo de disco que escribe un WAV float32 incremental y
   actualiza el encabezado cada segundo, más un archivo auxiliar `.rec.json` con la posición. Tras un cierre
   inesperado, abrir el proyecto recupera la toma (`recording_is_recovered_after_unexpected_close`).
+- Desnormales a cero dentro de `Engine::process` y `renderOffline` (FTZ/DAZ en x86, FZ en ARM64), restaurados al
+  salir: las colas que decaen no disparan la CPU en silencio (`stress_decaying_tails_never_produce_denormals`).
 - IA y procesamiento offline: irán en hilos de trabajo propios y entregarán resultados (audio o MIDI) como nuevas
   fuentes/clips por la misma vía que una importación. Nunca en el callback.
 
@@ -97,3 +105,104 @@ docs/
 tienen una cadena de inserciones persistente en el proyecto (`inserts`: tipo + estado JSON). Hoy solo existe
 `cs.gain` para validar la cadena (prueba `processor_gain_insert_in_chain`). Cómo encajan los plugins propios:
 ver [PLUGINS.md](PLUGINS.md). Pendiente: compensación de latencia de inserciones (necesaria para VocalShift, 150 ms).
+
+Desde la fase 1.2 existen además `cs.synth`, `cs.drums` (instrumentos) y los efectos `cs.filter`, `cs.eq`,
+`cs.saturation`, `cs.compressor`, `cs.delay`, `cs.reverb`. `tailSamples()` está en la clase base: la exportación
+suma la cola del instrumento y la de los efectos de cada pista.
+
+## 6. MIDI, instrumentos y formato v2 (fase 1.2)
+
+**Tiempo musical**: posiciones y duraciones MIDI en ticks (PPQ 960; un paso de batería = 240). Se convierten a
+frames con el tempo del proyecto (`llround`), así que cambiar el tempo mueve las notas y no el audio
+(`tempo_change_moves_midi_events_but_not_audio`).
+
+**Planificación**: al publicar el grafo, el hilo de control expande cada clip (notas o patrón repetido, con swing) a
+una lista ordenada de eventos en frames absolutos por pista. En el hilo de audio, `Engine` parte el bloque en cada
+evento y llama a `handleMidi` + `process` por tramos: el resultado es idéntico con cualquier tamaño de bloque
+(probado con bloques de 1 a 4096 y aleatorios). Note Off va antes que Note On en el mismo frame.
+
+**Sin notas colgadas**: stop, seek, salto de bucle y cambios de grafo envían «all notes off» (release suave); un
+grafo nuevo solo corta notas si cambió el hash de eventos de esa pista. Probado con ediciones durante la reproducción.
+
+**Bucle**: rango [inicio, fin) en frames por atómicos; se ignora durante la grabación para no solapar tomas.
+
+**MIDI en vivo** (pads, teclado, vista previa del piano roll): cola SPSC por pista desde JNI, sin pasar por el hilo
+de control; los instrumentos suenan también con el transporte parado.
+
+**Instrumentos**: instancias vivas por pista en la sesión (`instrumentInstances`), preparadas fuera del hilo de
+audio. Cambiar el kit regenera los sonidos en el hilo de control y publica una instancia nueva. La exportación usa
+copias offline con el mismo estado.
+
+**Formato de proyecto v2**: añade `kind` (audio/synth/drums), `instrument` (tipo, estado JSON, preset),
+`patterns`, `midiClips` (notas como `[tecla, velocidad, canal, inicio, duración]`), `loop`, `template`, `ppq`.
+Se leen proyectos v1 sin cambios; al guardar se migra y se conserva una sola vez `project.v1.json`. Un proyecto con
+versión futura o datos musicales inválidos se rechaza con error, sin tocar el archivo.
+
+**Extensiones previstas** (el modelo las admite sin romper el formato): pitch bend, CC y aftertouch como eventos
+adicionales del clip; automatización como curvas por parámetro; MIDI externo (`android.media.midi` / CoreMIDI)
+entrando por la misma cola en vivo; importar/exportar archivos MIDI convirtiendo ticks (PPQ distinto se reescala).
+
+**Interfaz Android**: las pantallas no conocen el motor: reciben `ProjectState` y la interfaz `StudioActions`
+(implementada por `DawViewModel`). Por eso se pueden renderizar en la JVM con datos del motor (`UiScreensTest`).
+Posición y medidores se leen en la fase de dibujo para no recomponer toda la pantalla a 60 Hz.
+
+## 7. Trabajos offline y clips no destructivos (misión 0.5)
+
+- **`JobRunner`** (`core/src/Jobs.cpp`): un hilo de trabajo y una cola corta. Cada trabajo recibe un progreso
+  atómico y una señal de cancelación. Es el último miembro de `Session`, así que se destruye primero.
+- **Sin interbloqueo**: `close()` cancela y espera a los trabajos con el cerrojo de la sesión tomado; por eso un
+  trabajo nunca espera ese cerrojo: lo intenta (`try_lock`) y, si le han pedido cancelar, se retira.
+- **Nada de esto toca el hilo de audio**: el trabajo lee el audio original (inmutable), escribe un archivo temporal y,
+  al terminar, aplica el resultado como una edición normal (un paso de deshacer, grafo nuevo publicado atómicamente).
+- **Clip con dos versiones**: `ClipModel` guarda el audio original y, si existe, el procesado y sus parámetros.
+  `clipVersion` alterna entre ambos sin paso de deshacer y sin parar el transporte (A/B). El procesado se alinea
+  descontando la latencia del plugin, así que A y B ocupan la misma posición en la línea de tiempo. El motor mide
+  la diferencia de nivel RMS entre ambas (`procLevelDb`) y, con `procMatch`, reproduce B compensada para comparar.
+- **Armonía confirmada** (`ProjectModel::harmony`): tonalidad y acordes que el usuario acepta tras el análisis de un
+  beat. Solo AI los usa cuando la canción no viene de una plantilla. Los acordes detectados solo se aplican si el
+  tempo del proyecto coincide (1,5 %) con el tempo en que se analizaron.
+- **Android**: `DawViewModel` sigue cada trabajo consultando `jobStatus` cada 120 ms y expone el estado en
+  `PluginUi`. Las pantallas (`VocalShiftPanel`, `SoloAiPanel`) solo se muestran si el catálogo anuncia el plugin.
+
+
+## 8. Exportación para DAW y ecosistema (misión 0.6)
+
+CAUCESOUND pasa a ser tres productos sobre un mismo motor y un mismo formato de proyecto: **Mobile** (esta app),
+**Cauce Link** (puente con el ordenador; ver CAUCE_LINK.md) y **Studio** (Windows; ver CAUCESOUND_STUDIO.md). Solo el
+primero existe como producto. De los otros dos hay diseño y el programa `cauce`.
+
+- **Paquete para DAW** (`Session::exportDaw`, `core/src/SessionExport.cpp`): un trabajo de `JobRunner` que renderiza
+  cada pista por separado y escribe `Nombre-cauce-daw.zip` con `stems/`, `midi/`, `mix/`, `project/`,
+  `manifest.json` (SHA-256 de cada archivo) y `README.txt`. No modifica el proyecto ni crea pasos de deshacer.
+- **Dos modos**. *Con efectos*: cada stem lleva sus inserciones, volumen y panorama; cada bus de envío (la reverb
+  compartida) sale una sola vez como stem «retorno»; la suma de todos por el máster da la mezcla (comprobado en la
+  prueba con diferencia 0). *Sin efectos*: pistas limpias a 0 dB y centradas.
+- **Alineación**: todos los WAV empiezan en el compás 1 y duran lo mismo. El silencio final común se recorta
+  (−100 dB más 0,25 s), nunca antes del final del contenido.
+- **MIDI**: archivo estándar tipo 1, 960 pulsos por negra, una pista por instrumento, batería en el canal 10, nombres
+  en ASCII (el nombre real con acentos queda en el manifiesto). `Smf.h` escribe y lee; la lectura se usa en pruebas.
+- **Cancelación**: `Engine::renderOffline` consulta la señal de cancelar; al cancelar o cerrar el proyecto no queda
+  ningún archivo parcial. En Android, si el destino es un documento del sistema ya creado, se borra.
+- **ZIP sin compresión** (`writeStoredZip`): el audio PCM apenas se comprime y así no hace falta ninguna biblioteca.
+- **Plantillas**: los valores de mezcla (volúmenes, inserciones) se guardan en el proyecto al crearlo. Cambiar una
+  plantilla solo afecta a canciones nuevas: es lo que mantiene intactas las canciones de versiones anteriores.
+- **Idea rápida**: no es un modo aparte. Es un proyecto vacío con una pista de audio armada que empieza a grabar.
+
+## 9. Channel Rack y Mixer Pro (misión 0.7)
+
+- **Mixer Pro, sin motor nuevo.** El rack de inserciones usa el `InsertModel` que ya existía (máximo 8 por pista, orden = orden de proceso).
+  - El catálogo (`effects` del comando `catalog`) añade categoría, nombre y descripción en los dos idiomas, y `latencySamples`.
+  - Las cadenas (`core/src/FxChains.cpp`, comando `applyFxChain`) son listas de pasos con parámetros.
+  - Se validan **antes** de tocar nada: los tipos deben existir, caber en las 8 ranuras y no llevar efectos con latencia en un bus.
+  - Se aplican como **un solo** paso de deshacer. `replace` sustituye la cadena; si no, se añade al final.
+  - El delay acepta `timeBeats`, que se convierte a ms con el BPM del proyecto.
+- **El master no tiene inserciones en el motor.** Por eso no existe la cadena «Master ligero». Añadirlas exige un `InsertChain` en el grafo de salida y su PDC; no se hizo.
+- **Channel Rack, sin segundo secuenciador.** La pantalla (`ChannelRackPanel.kt`) edita los mismos patrones de Cauce Drums con los mismos comandos (`setPatternStep`, `setPatternLength`, `setSwing`, `addPattern`).
+  - Las filas melódicas abren el Piano Roll existente y crean clips con `addMidiClip`.
+- **Pieza de batería en canal propio** (`routeDrumLane`):
+  - Crea un bus normal y guarda `laneRoutes[pieza] = busId` en la pista de batería (formato v3, ver FORMAT_V3.md).
+  - En el hilo de audio, `Instrument::setAuxOut` apunta la pieza al buffer de entrada de ese bus durante el `process` del bloque. El puntero se fija antes y se limpia después, sin reservar memoria.
+  - El bus se procesa en la segunda pasada, como un bus de envío, y aporta fader, mute/solo, medidor e inserciones.
+  - Limitación: solo con la batería sin latencia de inserciones (`latency == 0`). En otro caso la pieza se queda en la batería para no desalinearse.
+  - El *soft-clip* de la batería solo actúa sobre la suma principal.
+- **Navegación del estudio:** Arreglo · Rack · Piano roll · Mixer · Sonido. La rejilla completa de batería se abre desde el Rack, y Atrás vuelve al Rack.

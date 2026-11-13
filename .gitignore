@@ -8,3 +8,8 @@ android/local.properties
 *.iml
 .idea/
 .DS_Store
+
+# Residuos del fuzzing antiguo (WAV exportados con rutas relativas; la API ya las rechaza). Nunca son fuente.
+/.tmp
+/mcl_*
+/trk_*

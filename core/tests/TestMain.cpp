@@ -38,6 +38,15 @@ void* operator new (std::size_t n)
     throw std::bad_alloc();
 }
 void* operator new[] (std::size_t n) { return operator new (n); }
+// Variantes nothrow (las usa std::stable_sort): deben reservar con el mismo malloc que libera delete.
+void* operator new (std::size_t n, const std::nothrow_t&) noexcept
+{
+    if (cstest::countAllocations.load (std::memory_order_relaxed)) cstest::allocationCount.fetch_add (1);
+    return std::malloc (n ? n : 1);
+}
+void* operator new[] (std::size_t n, const std::nothrow_t& t) noexcept { return operator new (n, t); }
+void operator delete (void* p, const std::nothrow_t&) noexcept { std::free (p); }
+void operator delete[] (void* p, const std::nothrow_t&) noexcept { std::free (p); }
 void operator delete (void* p) noexcept { std::free (p); }
 void operator delete[] (void* p) noexcept { std::free (p); }
 void operator delete (void* p, std::size_t) noexcept { std::free (p); }

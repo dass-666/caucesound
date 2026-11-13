@@ -8,6 +8,7 @@
 //  - latencySamples() es fijo tras prepare() (el motor compensará la latencia en fases futuras).
 // Los motores de VocalShift / Solo AI / Spatial Echo se integrarán como implementaciones de estas interfaces.
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,6 +29,8 @@ public:
     virtual void prepare (double sampleRate, int maxBlockSize) = 0;
     virtual void reset() = 0;
     virtual int latencySamples() const { return 0; }
+    // Cola tras el final del contenido (release, delay, reverb): la exportación la incluye.
+    virtual int tailSamples() const { return 0; }
     virtual void process (float* const* io, int numChannels, int numFrames) = 0; // en el sitio, tiempo real
 
     virtual std::vector<ParameterInfo> parameters() const { return {}; }
@@ -44,11 +47,36 @@ struct MidiEvent
     uint8_t status = 0, data1 = 0, data2 = 0;
 };
 
-// Instrumento: genera audio a partir de eventos MIDI (futuro piano roll / Solo AI Studio).
+// Contexto de transporte que el motor ofrece a los procesadores (para efectos sincronizados, Solo AI Studio, etc.).
+struct TransportInfo
+{
+    double sampleRate = 48000, bpm = 120;
+    int beatsPerBar = 4;
+    bool playing = false;
+    int64_t positionFrames = 0;    // primera muestra del bloque actual
+    double positionQuarters = 0;   // misma posición en negras
+};
+
+// Instrumento: genera audio a partir de eventos MIDI (Cauce Synth, Cauce Drums, futuro Solo AI Studio).
+// El motor divide el bloque en cada evento, así que handleMidi() recibe eventos con frameOffset = 0 y
+// process() SUMA su salida estéreo a io[0], io[1]. Resultado idéntico con cualquier tamaño de bloque.
 class Instrument : public AudioProcessor
 {
 public:
+    Instrument();
+    ~Instrument() override;
+    // Instancias vivas en el proceso (diagnóstico y pruebas: tras cerrar un proyecto y recoger la basura del motor
+    // debe volver a 0; si no, algún grafo antiguo sigue referenciado).
+    static int liveInstances();
     virtual void handleMidi (const MidiEvent* events, int count) = 0; // hilo de audio, antes de process()
+    // hard = false: pasa todas las voces a release (stop, loop, seek). hard = true: silencio inmediato.
+    virtual void allNotesOff (bool hard) = 0;
+    virtual int activeVoices() const { return 0; }
+    // Salidas auxiliares por carril (misión 0.7: pieza de batería en su propio canal del mezclador). Hilo de audio.
+    // Si l y r no son nulos, el siguiente process() SUMA el carril 'lane' ahí (mismos n frames) en vez de a io.
+    // El motor los fija antes de cada process() de una pista con carriles enrutados y los anula después.
+    virtual int auxLanes() const { return 0; }
+    virtual void setAuxOut (int lane, float* l, float* r) { (void) lane; (void) l; (void) r; }
 };
 
 using ProcessorPtr = std::shared_ptr<AudioProcessor>;
@@ -56,4 +84,5 @@ using ProcessorPtr = std::shared_ptr<AudioProcessor>;
 // Registro de tipos. Fase 1: solo procesadores integrados en el binario (no hay carga dinámica).
 ProcessorPtr createProcessor (const std::string& typeId);
 std::vector<std::string> availableProcessorTypes();
+std::vector<std::string> effectTypes(); // efectos de inserción disponibles (Cauce FX)
 } // namespace cs

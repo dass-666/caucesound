@@ -9,8 +9,53 @@
 | libc++ (NDK) | r27c | Apache 2.0 con excepción LLVM | Runtime C++ | Sí |
 | JUnit | 4.13.2 | EPL 1.0 | Solo pruebas | No |
 | org.json (pruebas JVM) | 20240303 | Dominio público / JSON License según versión — verificar | Solo pruebas | No |
+| Robolectric | 4.16.1 | MIT | Solo pruebas de interfaz en la JVM | No |
+| Roborazzi (+ compose) | 1.70.0 | Apache 2.0 | Solo pruebas: capturas renderizadas en la JVM | No |
+| Compose UI Test (junit4, manifest) | BOM 2025.12.01 | Apache 2.0 | Solo pruebas (el manifest de prueba va solo en `debug`) | No |
 
 No se incluye JUCE, ni samples, fuentes, imágenes o modelos de IA de terceros.
+
+## Contenido musical de la fase 1.2
+
+| Elemento | Origen | Derechos |
+|---|---|---|
+| Sonidos de Cauce Drums (4 kits, 8 carriles) | **Síntesis propia** en `core/src/Drums.cpp` (osciladores, ruido, envolventes), generados al cargar el kit | Propios del proyecto. Ningún sample grabado ni descargado |
+| Cauce Synth y sus 7 presets | Síntesis sustractiva propia (`core/src/Synth.cpp`) | Propios. Los nombres describen el carácter («808 Bass» es un nombre genérico de estilo, no reproduce grabaciones de ninguna caja de ritmos) |
+| Cauce FX (filtro, EQ, saturación, compresor, delay, reverb) | Implementación propia (`core/src/Effects.cpp`), algoritmos clásicos de dominio público (SVF TPT, biquads RBJ, red de combs/all-pass) | Propios. Sin código de terceros |
+| Patrones y progresiones de las plantillas | Patrones rítmicos y progresiones de 4 acordes genéricos escritos para el proyecto (`core/src/SessionMusic.cpp`) | Ritmos y progresiones genéricas no protegibles; no citan ninguna obra |
+
+### Añadido en la misión 0.4 («Cauce Signature Sound»)
+
+| Elemento | Origen | Derechos |
+|---|---|---|
+| Kits 4-7: Cauce Dembow, Cauce Trap, Cauce Boom Bap, Cauce Pop (incluye güira, timbal, conga, chasquido, crash, shaker) | **Síntesis propia** en `core/src/Drums.cpp` (capas de bombo, membranas, ruido filtrado, metales inarmónicos, sala corta) | Propios. Sigue sin haber ningún sample grabado ni descargado |
+| 10 presets nuevos de Cauce Synth (cauce_808, dembow_bass, cauce_sub, urban_pluck, warm_keys, dark_bell, air_pad, bright_pluck, bright_lead, electro_arp) y los parámetros noiseMix, noiseDecayMs y width (ancho estéreo con chorus) | Síntesis propia (`core/src/Synth.cpp`) | Propios |
+| Arreglos de 16 compases, patrones por sección, bajos, acordes y melodías | Compositor local por reglas y semilla (`core/src/Composer.cpp`): progresiones diatónicas genéricas, ritmos de género (dembow, trap, boom bap, four-on-the-floor) | Recursos de estilo genéricos, no protegibles; ninguna melodía ni patrón copiado de una obra |
+
+Presupuesto usado: 0 $. Ningún banco de sonidos, modelo ni servicio externo.
+
+Si en el futuro se añaden samples grabados, cada paquete necesitará su licencia documentada aquí (origen, autor,
+licencia que permita redistribuir dentro de una app comercial) antes de incluirlo.
+
+### Añadido en la misión 0.5 (VocalShift)
+
+| Componente | Origen | Licencia | Cómo entra |
+|---|---|---|---|
+| `vs_core` de VocalShift | `dass-666/vocalshift-ai-studio`, rama `feat/urban-spatial`, commit `10e679c` | **Sin licencia declarada** (código del propietario) | Submódulo fijado; solo se compilan los fuentes del núcleo, no su plugin JUCE |
+| Signalsmith Stretch | `Signalsmith-Audio/signalsmith-stretch`, commit `88061fd` | MIT | Submódulo fijado (solo cabeceras) |
+| Signalsmith Linear | `Signalsmith-Audio/linear`, commit `7bb1c8f` | MIT | Submódulo fijado (solo cabeceras) |
+
+MIT permite el uso en una app comercial cerrada; obliga a incluir el aviso de copyright al distribuir. **Pendiente**:
+una pantalla o archivo «Licencias de terceros» dentro de la app antes de publicarla (para un APK de prueba privado no
+es bloqueante). JUCE **no** se compila ni se enlaza. No hay modelos neuronales, ni audio o MIDI de terceros.
+Las grabaciones del usuario no salen del teléfono: los plugins no usan red.
+
+## Clave de firma de prueba
+
+`caucesound-preview.jks` (RSA 3072, válida 25 años, SHA-256 del certificado `56:B4:DE:46:…:AB:2E`) firma solo los
+APK de prueba «Preview». No está en git: vive en la carpeta del proyecto junto a `keystore.properties`. **No sirve
+para publicar**: para Google Play hay que crear una clave de subida propia y usar Play App Signing (decisión
+pendiente del propietario).
 
 ## Pendiente de decidir (propietario)
 

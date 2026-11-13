@@ -12,6 +12,7 @@
     <string name="clip_gain">Clip gain</string>
     <string name="create">Create</string>
     <string name="default_track_name">Track</string>
+    <string name="quick_idea_track">Voice</string>
     <string name="delete">Delete</string>
     <string name="delete_project_text">“%1$s” and all its audio will be deleted from this device. This cannot be undone.</string>
     <string name="delete_project_title">Delete project?</string>
@@ -19,8 +20,6 @@
     <string name="duplicate">Duplicate</string>
     <string name="exclusive">exclusive</string>
     <string name="export">Export</string>
-    <string name="export_note">Exports the full mix (with volume, pan, mute and solo) as a WAV file. The metronome is not included.</string>
-    <string name="export_wav">Export WAV</string>
     <string name="fade_in_ms">Fade in: %1$d ms</string>
     <string name="fade_out_ms">Fade out: %1$d ms</string>
     <string name="fades">Fades</string>
@@ -33,6 +32,7 @@
     <string name="monitoring_note">Plays the microphone through the output. Use headphones to avoid feedback. No effects yet.</string>
     <string name="msg_arm_track">Arm a track (R) before recording</string>
     <string name="msg_audio_failed">Could not start the audio output</string>
+    <string name="msg_focus_denied">Another app (or a call) is using audio. Try again when it ends.</string>
     <string name="msg_export_clipped">Exported, but %1$d samples clipped. Lower the levels.</string>
     <string name="msg_export_failed">Export failed: %1$s</string>
     <string name="msg_exported">Exported</string>
@@ -76,4 +76,5 @@
     <string name="unsaved">Unsaved changes</string>
     <string name="zoom_in">Zoom in</string>
     <string name="zoom_out">Zoom out</string>
+    <string name="bus_reverb_name">Reverb</string>
 </resources>

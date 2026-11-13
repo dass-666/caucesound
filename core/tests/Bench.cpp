@@ -1,6 +1,10 @@
 // Medición de rendimiento del motor en la máquina donde se ejecuta. NO representa un teléfono:
 // los resultados en ARM deben medirse en el dispositivo (ver docs/TESTING_ON_DEVICE.md).
 #include "cs/Engine.h"
+#include "cs/Midi.h"
+#include "cs/Session.h"
+
+#include <filesystem>
 
 #include <algorithm>
 #include <chrono>
@@ -49,6 +53,51 @@ int main()
         const double budget = 1e6 * block / rate;
         std::printf ("  %2d pistas: %.0fx tiempo real; por bloque p50 %.1f us, p99 %.1f us, max %.1f us (presupuesto %.0f us => p99 = %.2f%%)\n",
                      tracks, 30.0 / total, us[us.size() / 2], us[us.size() * 99 / 100], us.back(), budget, 100 * us[us.size() * 99 / 100] / budget);
+    }
+
+    // Proyecto musical típico: plantilla trap (batería + 2 synths + voz) con acordes densos (pad de 16 voces),
+    // reverb y delay en los synths y EQ + compresor en la batería.
+    std::printf ("Proyecto musical (plantilla trap + pad polifónico + 5 efectos)\n");
+    {
+        const std::string dir = (std::filesystem::temp_directory_path() / "cs_bench_music").string();
+        std::filesystem::remove_all (dir);
+        Engine e;
+        e.prepare (rate, block);
+        Session s (e);
+        s.createProject (dir, "bench", rate, "trap");
+        std::string drums, synthA, synthB;
+        for (const auto& t : s.model().tracks)
+        {
+            if (t.kind == "drums") drums = t.id;
+            else if (t.kind == "synth") (synthA.empty() ? synthA : synthB) = t.id;
+        }
+        s.addInsert (drums, "cs.eq");
+        s.addInsert (drums, "cs.compressor");
+        s.addInsert (synthA, "cs.delay");
+        s.addInsert (synthB, "cs.reverb");
+        auto pad = s.addTrack ("Pad", "synth");
+        s.loadSynthPreset (pad.id, "pad");
+        std::vector<MidiNote> chords;
+        for (int bar = 0; bar < 8; ++bar)
+            for (int k = 0; k < 8; ++k) chords.push_back ({ 48 + k * 3 + (bar % 2) * 2, 90, 0, (Tick) bar * 4 * kPpq, 4 * kPpq - 60 });
+        for (const auto& t : s.model().tracks) if (t.id == pad.id) s.setClipNotes (t.midiClips.front().id, chords);
+        s.addInsert (pad.id, "cs.reverb");
+        e.play();
+        std::vector<float> out ((size_t) block * 2);
+        const int blocks = rate * 13 / block; // 8 compases a 140 BPM ~ 13,7 s
+        std::vector<double> us ((size_t) blocks);
+        for (int b = 0; b < blocks; ++b)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            e.process (nullptr, 0, out.data(), 2, block);
+            us[(size_t) b] = std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - t0).count();
+        }
+        std::sort (us.begin(), us.end());
+        const double budget = 1e6 * block / rate;
+        std::printf ("  por bloque p50 %.1f us, p99 %.1f us, max %.1f us (presupuesto %.0f us => p99 = %.2f%%)\n",
+                     us[us.size() / 2], us[us.size() * 99 / 100], us.back(), budget, 100 * us[us.size() * 99 / 100] / budget);
+        s.close();
+        std::filesystem::remove_all (dir);
     }
     return 0;
 }

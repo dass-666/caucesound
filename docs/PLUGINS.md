@@ -43,8 +43,8 @@ Trabajo offline     ◄── generación de solos/melodías/armonías → produ
 ```
 
 Trabajo necesario (estimación, no medida):
-1. **Compensación de latencia de inserciones (PDC)** en el motor: VocalShift declara 150 ms. Sin PDC, la pista se
-   desalinearía. Es el requisito técnico número uno antes de integrar VocalShift.
+1. **Compensación de latencia de inserciones (PDC)** en el motor: VocalShift declara 150 ms. **Hecha en la fase 1.2**
+   (ver §5); falta validarla con VocalShift real.
 2. **Pistas MIDI y piano roll** para que Solo AI entregue MIDI editable (requisito de producto: resultados editables).
 3. Contexto de transporte para instrumentos (`TransportState`: tempo, posición, reproducción).
 4. Spatial Echo: es el que más trabajo pide (sustituir `juce::AudioBuffer`, `juce::Thread`, `juce::var`/JSON).
@@ -73,3 +73,43 @@ Trabajo necesario (estimación, no medida):
 
 Recomendación: plugins propios como módulos internos en ambas plataformas; en iOS, además, host AUv3 y exportar
 nuestros motores como AUv3 en una fase posterior.
+
+## 5. Preparación para la fase 2 (estado tras la fase 1.2)
+
+No se ha modificado ni copiado código de VocalShift, Solo AI ni Spatial Echo. Lo que el DAW ya ofrece y lo que falta:
+
+| Necesidad | Estado | Dónde |
+|---|---|---|
+| Pistas MIDI editables (Solo AI entrega MIDI) | **Hecho**: clips con notas, piano roll, persistencia, cuantización | `Midi.h`, `SessionMusic.cpp`, `PianoRoll.kt` |
+| Interfaz de instrumento con MIDI exacto a la muestra | **Hecho**: `cs::Instrument::handleMidi` + `allNotesOff` + `tailSamples` | `Processor.h` |
+| Contexto de transporte (tempo, compás, posición en negras, reproducción) | **Definido** (`cs::TransportInfo`); falta pasarlo a cada instrumento por bloque cuando un plugin lo necesite | `Processor.h` |
+| Efectos de inserción con estado, bypass, orden y deshacer | **Hecho** (Cauce FX los usa) | `Session.h` (`addInsert`…) |
+| Colas en la exportación | **Hecho** (`tailSamples` en la clase base) | `Session::exportMix` |
+| **Compensación de latencia (PDC)** | **Hecho** (lectura adelantada por pista); probado con un efecto sintético, no con VocalShift | `Engine.cpp` (`TrackRT::latency`) |
+| Generación offline (solos, armonías) sin bloquear | Falta un hilo de trabajo con progreso y cancelación; el resultado entraría como clip MIDI (`setClipNotes`) o audio (como una importación) | — |
+
+### PDC: diseño implementado
+
+1. Cada pista declara su latencia = suma de `latencySamples()` de sus inserciones activas (las de bypass no cuentan).
+2. La latencia máxima `Lmax` del proyecto se calcula al publicar el grafo.
+3. En vez de retrasar las demás pistas con líneas de retardo (más memoria y más latencia total), la pista con
+   latencia L **lee su contenido adelantado**: se reproduce desde `posición + L` (clips y eventos MIDI planificados
+   L frames antes), de modo que su salida ya procesada coincide con las demás. Es exacto, no cuesta memoria y el
+   motor ya trabaja en frames absolutos. Solo vale para contenido grabado o programado, no para la entrada en vivo.
+4. Al arrancar, hacer seek o saltar en el bucle, la pista latente necesita precargar L frames: se renderiza ese
+   tramo «en silencio» o se acepta un fundido de entrada corto (decisión de producto).
+5. Monitorización en vivo con VocalShift: la latencia de 150 ms no se puede compensar en tiempo real; hay que
+   avisar en la interfaz y ofrecer monitorizar sin el efecto.
+6. Pruebas: impulso en una pista con un efecto de prueba de latencia conocida → debe coincidir a la muestra con un
+   impulso en otra pista, en vivo y en la exportación; con bucle y con seek.
+
+Estado: implementado. Las inserciones en bypass no se publican, así que no suman latencia. En el bucle, cada pista
+latente da la vuelta en su propia posición de lectura y corta sus notas en ese punto. En el punto 4 se eligió la
+opción simple: no hay precarga, los primeros L frames tras arrancar o hacer seek son el retardo propio del efecto.
+Pruebas: `pdc_latent_track_stays_aligned_live_with_any_block_and_in_loop` (7200 muestras, bloques de 64/192/1000,
+4 vueltas de bucle) y `pdc_export_matches_live_with_latent_insert`.
+
+### Choir
+
+Sigue sin identificarse un repositorio «AI Choir Studio». El repositorio `3D` es Spatial Echo Studio. Hace falta que
+el propietario indique dónde está (o confirme que aún no existe) antes de planificarlo.

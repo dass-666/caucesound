@@ -1,0 +1,1176 @@
+{
+ "drumKits": [
+  {
+   "id": "trap",
+   "lanes": [
+    "Kick 808",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Cowbell",
+    "Tom"
+   ],
+   "name": "Trap"
+  },
+  {
+   "id": "reggaeton",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Timbal Hi",
+    "Timbal Lo",
+    "Shaker"
+   ],
+   "name": "Reggaetón"
+  },
+  {
+   "id": "hiphop",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Shaker",
+    "Tom"
+   ],
+   "name": "Hip-hop"
+  },
+  {
+   "id": "electronic",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Cowbell",
+    "Tom"
+   ],
+   "name": "Electrónica"
+  },
+  {
+   "id": "cauce_dembow",
+   "lanes": [
+    "Kick",
+    "Snare + Rim",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Timbal",
+    "Conga",
+    "Güira"
+   ],
+   "name": "Cauce Dembow"
+  },
+  {
+   "id": "cauce_trap",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Snap",
+    "Crash"
+   ],
+   "name": "Cauce Trap"
+  },
+  {
+   "id": "cauce_boombap",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Snap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Shaker",
+    "Crash"
+   ],
+   "name": "Cauce Boom Bap"
+  },
+  {
+   "id": "cauce_pop",
+   "lanes": [
+    "Kick",
+    "Snare + Clap",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Perc",
+    "Tambourine",
+    "Crash"
+   ],
+   "name": "Cauce Pop"
+  }
+ ],
+ "drumParams": [
+  {
+   "default": 0.0,
+   "id": "kit",
+   "max": 7.0,
+   "min": 0.0,
+   "name": "Kit"
+  },
+  {
+   "default": -3.0,
+   "id": "volumeDb",
+   "max": 6.0,
+   "min": -40.0,
+   "name": "Volume (dB)"
+  },
+  {
+   "default": 0.0,
+   "id": "vol0",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 0"
+  },
+  {
+   "default": 0.0,
+   "id": "pan0",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 0"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch0",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 0"
+  },
+  {
+   "default": 1.0,
+   "id": "decay0",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 0"
+  },
+  {
+   "default": 0.0,
+   "id": "mute0",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 0"
+  },
+  {
+   "default": 0.0,
+   "id": "solo0",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 0"
+  },
+  {
+   "default": 0.0,
+   "id": "vol1",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 1"
+  },
+  {
+   "default": 0.0,
+   "id": "pan1",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 1"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch1",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 1"
+  },
+  {
+   "default": 1.0,
+   "id": "decay1",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 1"
+  },
+  {
+   "default": 0.0,
+   "id": "mute1",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 1"
+  },
+  {
+   "default": 0.0,
+   "id": "solo1",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 1"
+  },
+  {
+   "default": 0.0,
+   "id": "vol2",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 2"
+  },
+  {
+   "default": 0.0,
+   "id": "pan2",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 2"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch2",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 2"
+  },
+  {
+   "default": 1.0,
+   "id": "decay2",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 2"
+  },
+  {
+   "default": 0.0,
+   "id": "mute2",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 2"
+  },
+  {
+   "default": 0.0,
+   "id": "solo2",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 2"
+  },
+  {
+   "default": 0.0,
+   "id": "vol3",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 3"
+  },
+  {
+   "default": 0.0,
+   "id": "pan3",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 3"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch3",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 3"
+  },
+  {
+   "default": 1.0,
+   "id": "decay3",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 3"
+  },
+  {
+   "default": 0.0,
+   "id": "mute3",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 3"
+  },
+  {
+   "default": 0.0,
+   "id": "solo3",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 3"
+  },
+  {
+   "default": 0.0,
+   "id": "vol4",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 4"
+  },
+  {
+   "default": 0.0,
+   "id": "pan4",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 4"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch4",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 4"
+  },
+  {
+   "default": 1.0,
+   "id": "decay4",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 4"
+  },
+  {
+   "default": 0.0,
+   "id": "mute4",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 4"
+  },
+  {
+   "default": 0.0,
+   "id": "solo4",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 4"
+  },
+  {
+   "default": 0.0,
+   "id": "vol5",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 5"
+  },
+  {
+   "default": 0.0,
+   "id": "pan5",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 5"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch5",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 5"
+  },
+  {
+   "default": 1.0,
+   "id": "decay5",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 5"
+  },
+  {
+   "default": 0.0,
+   "id": "mute5",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 5"
+  },
+  {
+   "default": 0.0,
+   "id": "solo5",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 5"
+  },
+  {
+   "default": 0.0,
+   "id": "vol6",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 6"
+  },
+  {
+   "default": 0.0,
+   "id": "pan6",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 6"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch6",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 6"
+  },
+  {
+   "default": 1.0,
+   "id": "decay6",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 6"
+  },
+  {
+   "default": 0.0,
+   "id": "mute6",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 6"
+  },
+  {
+   "default": 0.0,
+   "id": "solo6",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 6"
+  },
+  {
+   "default": 0.0,
+   "id": "vol7",
+   "max": 6.0,
+   "min": -60.0,
+   "name": "Volume 7"
+  },
+  {
+   "default": 0.0,
+   "id": "pan7",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Pan 7"
+  },
+  {
+   "default": 0.0,
+   "id": "pitch7",
+   "max": 12.0,
+   "min": -12.0,
+   "name": "Pitch 7"
+  },
+  {
+   "default": 1.0,
+   "id": "decay7",
+   "max": 1.0,
+   "min": 0.10000000149011612,
+   "name": "Decay 7"
+  },
+  {
+   "default": 0.0,
+   "id": "mute7",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mute 7"
+  },
+  {
+   "default": 0.0,
+   "id": "solo7",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Solo 7"
+  }
+ ],
+ "effects": [
+  {
+   "category": "tools",
+   "description": "Sube o baja el nivel dentro de la cadena, sin color.",
+   "descriptionEn": "Raises or lowers the level inside the chain, uncoloured.",
+   "latencySamples": 0,
+   "name": "Ganancia",
+   "nameEn": "Gain",
+   "params": [
+    {
+     "default": 0.0,
+     "id": "gainDb",
+     "max": 12.0,
+     "min": -60.0,
+     "name": "Gain"
+    }
+   ],
+   "type": "cs.gain"
+  },
+  {
+   "category": "eq",
+   "description": "Paso bajo o paso alto con resonancia. Quita graves de una voz o apaga los agudos.",
+   "descriptionEn": "Low-pass or high-pass with resonance. Removes lows from a voice or darkens the highs.",
+   "latencySamples": 0,
+   "name": "Filtro",
+   "nameEn": "Filter",
+   "params": [
+    {
+     "default": 0.0,
+     "id": "mode",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mode (0 LP, 1 HP)"
+    },
+    {
+     "default": 20000.0,
+     "id": "cutoffHz",
+     "max": 20000.0,
+     "min": 20.0,
+     "name": "Cutoff"
+    },
+    {
+     "default": 0.10000000149011612,
+     "id": "resonance",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Resonance"
+    }
+   ],
+   "type": "cs.filter"
+  },
+  {
+   "category": "eq",
+   "description": "Graves, medios (con frecuencia) y agudos. Para limpiar o dar brillo.",
+   "descriptionEn": "Lows, mids (with frequency) and highs. To clean up or add brightness.",
+   "latencySamples": 0,
+   "name": "EQ de 3 bandas",
+   "nameEn": "3-band EQ",
+   "params": [
+    {
+     "default": 0.0,
+     "id": "lowDb",
+     "max": 15.0,
+     "min": -15.0,
+     "name": "Low"
+    },
+    {
+     "default": 0.0,
+     "id": "midDb",
+     "max": 15.0,
+     "min": -15.0,
+     "name": "Mid"
+    },
+    {
+     "default": 1000.0,
+     "id": "midHz",
+     "max": 5000.0,
+     "min": 200.0,
+     "name": "Mid freq"
+    },
+    {
+     "default": 0.0,
+     "id": "highDb",
+     "max": 15.0,
+     "min": -15.0,
+     "name": "High"
+    }
+   ],
+   "type": "cs.eq"
+  },
+  {
+   "category": "distortion",
+   "description": "Calor y armónicos; con más drive, distorsión. Hace que el 808 se oiga en móviles.",
+   "descriptionEn": "Warmth and harmonics; more drive gives distortion. Helps the 808 come through on phones.",
+   "latencySamples": 0,
+   "name": "Saturación",
+   "nameEn": "Saturation",
+   "params": [
+    {
+     "default": 0.30000001192092896,
+     "id": "drive",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Drive"
+    },
+    {
+     "default": 1.0,
+     "id": "mix",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mix"
+    },
+    {
+     "default": 0.0,
+     "id": "outputDb",
+     "max": 6.0,
+     "min": -24.0,
+     "name": "Output"
+    }
+   ],
+   "type": "cs.saturation"
+  },
+  {
+   "category": "dynamics",
+   "description": "Iguala el volumen: sube lo suave y controla los picos.",
+   "descriptionEn": "Evens out the level: lifts quiet parts and controls peaks.",
+   "latencySamples": 0,
+   "name": "Compresor",
+   "nameEn": "Compressor",
+   "params": [
+    {
+     "default": -18.0,
+     "id": "thresholdDb",
+     "max": 0.0,
+     "min": -48.0,
+     "name": "Threshold"
+    },
+    {
+     "default": 4.0,
+     "id": "ratio",
+     "max": 20.0,
+     "min": 1.0,
+     "name": "Ratio"
+    },
+    {
+     "default": 10.0,
+     "id": "attackMs",
+     "max": 100.0,
+     "min": 0.10000000149011612,
+     "name": "Attack"
+    },
+    {
+     "default": 120.0,
+     "id": "releaseMs",
+     "max": 1000.0,
+     "min": 10.0,
+     "name": "Release"
+    },
+    {
+     "default": 0.0,
+     "id": "makeupDb",
+     "max": 24.0,
+     "min": 0.0,
+     "name": "Makeup"
+    }
+   ],
+   "type": "cs.compressor"
+  },
+  {
+   "category": "delay",
+   "description": "Repeticiones (eco), con opción ping-pong entre izquierda y derecha.",
+   "descriptionEn": "Echo repeats, with an optional left-right ping-pong.",
+   "latencySamples": 0,
+   "name": "Delay",
+   "nameEn": "Delay",
+   "params": [
+    {
+     "default": 375.0,
+     "id": "timeMs",
+     "max": 2000.0,
+     "min": 10.0,
+     "name": "Time"
+    },
+    {
+     "default": 0.3499999940395355,
+     "id": "feedback",
+     "max": 0.8999999761581421,
+     "min": 0.0,
+     "name": "Feedback"
+    },
+    {
+     "default": 0.25,
+     "id": "mix",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mix"
+    },
+    {
+     "default": 6000.0,
+     "id": "toneHz",
+     "max": 16000.0,
+     "min": 500.0,
+     "name": "Tone"
+    },
+    {
+     "default": 0.0,
+     "id": "pingPong",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Ping-pong"
+    }
+   ],
+   "type": "cs.delay"
+  },
+  {
+   "category": "reverb",
+   "description": "Espacio y profundidad: coloca el sonido en una sala.",
+   "descriptionEn": "Space and depth: places the sound in a room.",
+   "latencySamples": 0,
+   "name": "Reverb",
+   "nameEn": "Reverb",
+   "params": [
+    {
+     "default": 0.6000000238418579,
+     "id": "size",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Size"
+    },
+    {
+     "default": 0.4000000059604645,
+     "id": "damping",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Damping"
+    },
+    {
+     "default": 0.25,
+     "id": "mix",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Mix"
+    },
+    {
+     "default": 1.0,
+     "id": "width",
+     "max": 1.0,
+     "min": 0.0,
+     "name": "Width"
+    }
+   ],
+   "type": "cs.reverb"
+  }
+ ],
+ "fxChains": [
+  {
+   "description": "Voz delante y con brillo: quita graves, comprime fuerte, un poco de calor, eco corto y sala pequeña.",
+   "descriptionEn": "Upfront, bright vocal: low cut, firm compression, a little warmth, short echo and a small room.",
+   "id": "vocal_urban",
+   "name": "Voz urbana",
+   "nameEn": "Urban vocal",
+   "steps": [
+    "cs.filter",
+    "cs.eq",
+    "cs.compressor",
+    "cs.saturation",
+    "cs.delay",
+    "cs.reverb"
+   ],
+   "suits": "vocal"
+  },
+  {
+   "description": "Natural: corte de graves suave, compresión moderada y una sala discreta.",
+   "descriptionEn": "Natural: gentle low cut, moderate compression and a discreet room.",
+   "id": "vocal_clean",
+   "name": "Voz limpia",
+   "nameEn": "Clean vocal",
+   "steps": [
+    "cs.filter",
+    "cs.eq",
+    "cs.compressor",
+    "cs.reverb"
+   ],
+   "suits": "vocal"
+  },
+  {
+   "description": "Detrás de la principal: sin graves, más oscura, eco ping-pong y más sala.",
+   "descriptionEn": "Behind the lead: no lows, darker, ping-pong echo and more room.",
+   "id": "vocal_double",
+   "name": "Segunda voz",
+   "nameEn": "Backing vocal",
+   "steps": [
+    "cs.filter",
+    "cs.eq",
+    "cs.compressor",
+    "cs.delay",
+    "cs.reverb"
+   ],
+   "suits": "vocal"
+  },
+  {
+   "description": "Saturación para que el 808 se oiga en altavoces pequeños y compresión lenta que conserva el golpe.",
+   "descriptionEn": "Saturation so the 808 is heard on small speakers and slow compression that keeps the punch.",
+   "id": "trap_808",
+   "name": "Trap 808",
+   "nameEn": "Trap 808",
+   "steps": [
+    "cs.saturation",
+    "cs.compressor",
+    "cs.filter"
+   ],
+   "suits": "bass"
+  },
+  {
+   "description": "Más pegada: realce de graves y agudos, medios despejados, compresión con ataque lento y un toque de calor.",
+   "descriptionEn": "More punch: low and high lift, cleared mids, slow-attack compression and a touch of warmth.",
+   "id": "drums_punch",
+   "name": "Batería",
+   "nameEn": "Drums",
+   "steps": [
+    "cs.eq",
+    "cs.compressor",
+    "cs.saturation"
+   ],
+   "suits": "drums"
+  },
+  {
+   "description": "Melodía amplia y lejana: sin graves que choquen con el 808, eco ping-pong y sala grande.",
+   "descriptionEn": "Wide, distant melody: no lows clashing with the 808, ping-pong echo and a large room.",
+   "id": "melody_space",
+   "name": "Melodía espacial",
+   "nameEn": "Spacious melody",
+   "steps": [
+    "cs.filter",
+    "cs.delay",
+    "cs.reverb"
+   ],
+   "suits": "melody"
+  }
+ ],
+ "ok": true,
+ "plugins": [
+  {
+   "appliesTo": "song",
+   "cancellable": false,
+   "category": "generator",
+   "id": "solo.ai",
+   "kind": "offline",
+   "latencySamples": 0,
+   "name": "Solo AI",
+   "output": "midi",
+   "realtime": false,
+   "version": "solo-ai-studio@fe8445b",
+   "wantsMidi": false,
+   "wantsTransport": true
+  },
+  {
+   "appliesTo": "audioClip",
+   "cancellable": true,
+   "category": "effect",
+   "id": "vocalshift",
+   "kind": "offline",
+   "latencyMs": 150,
+   "maxSeconds": 600.0,
+   "name": "VocalShift",
+   "output": "audio",
+   "presets": 12,
+   "realtime": false,
+   "version": "vocalshift-ai-studio@10e679c",
+   "wantsMidi": false,
+   "wantsTransport": true
+  }
+ ],
+ "ppq": 960,
+ "synthParams": [
+  {
+   "default": 2.0,
+   "id": "osc1Wave",
+   "max": 3.0,
+   "min": 0.0,
+   "name": "Osc 1"
+  },
+  {
+   "default": 2.0,
+   "id": "osc2Wave",
+   "max": 3.0,
+   "min": 0.0,
+   "name": "Osc 2"
+  },
+  {
+   "default": 0.0,
+   "id": "osc2Mix",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Osc 2 mix"
+  },
+  {
+   "default": 0.0,
+   "id": "osc2Detune",
+   "max": 100.0,
+   "min": -100.0,
+   "name": "Detune (cents)"
+  },
+  {
+   "default": 0.0,
+   "id": "osc2Octave",
+   "max": 2.0,
+   "min": -2.0,
+   "name": "Osc 2 octave"
+  },
+  {
+   "default": 0.0,
+   "id": "octave",
+   "max": 3.0,
+   "min": -3.0,
+   "name": "Octave"
+  },
+  {
+   "default": 5.0,
+   "id": "attackMs",
+   "max": 5000.0,
+   "min": 0.5,
+   "name": "Attack (ms)"
+  },
+  {
+   "default": 300.0,
+   "id": "decayMs",
+   "max": 5000.0,
+   "min": 1.0,
+   "name": "Decay (ms)"
+  },
+  {
+   "default": 0.699999988079071,
+   "id": "sustain",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Sustain"
+  },
+  {
+   "default": 250.0,
+   "id": "releaseMs",
+   "max": 8000.0,
+   "min": 1.0,
+   "name": "Release (ms)"
+  },
+  {
+   "default": 8000.0,
+   "id": "cutoffHz",
+   "max": 18000.0,
+   "min": 40.0,
+   "name": "Cutoff (Hz)"
+  },
+  {
+   "default": 0.10000000149011612,
+   "id": "resonance",
+   "max": 0.949999988079071,
+   "min": 0.0,
+   "name": "Resonance"
+  },
+  {
+   "default": 0.0,
+   "id": "filterEnv",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Filter env"
+  },
+  {
+   "default": 300.0,
+   "id": "filterDecayMs",
+   "max": 5000.0,
+   "min": 1.0,
+   "name": "Filter decay (ms)"
+  },
+  {
+   "default": 0.0,
+   "id": "drive",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Drive"
+  },
+  {
+   "default": -6.0,
+   "id": "volumeDb",
+   "max": 6.0,
+   "min": -40.0,
+   "name": "Volume (dB)"
+  },
+  {
+   "default": 0.0,
+   "id": "mono",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Mono"
+  },
+  {
+   "default": 0.0,
+   "id": "glideMs",
+   "max": 1000.0,
+   "min": 0.0,
+   "name": "Glide (ms)"
+  },
+  {
+   "default": 8.0,
+   "id": "polyphony",
+   "max": 16.0,
+   "min": 1.0,
+   "name": "Voices"
+  },
+  {
+   "default": 0.0,
+   "id": "pitchEnvSt",
+   "max": 24.0,
+   "min": 0.0,
+   "name": "Pitch env (st)"
+  },
+  {
+   "default": 60.0,
+   "id": "pitchDecayMs",
+   "max": 500.0,
+   "min": 5.0,
+   "name": "Pitch decay (ms)"
+  },
+  {
+   "default": 0.0,
+   "id": "velToFilter",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Velocity > filter"
+  },
+  {
+   "default": 0.0,
+   "id": "noiseMix",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Noise"
+  },
+  {
+   "default": 40.0,
+   "id": "noiseDecayMs",
+   "max": 5000.0,
+   "min": 1.0,
+   "name": "Noise decay (ms)"
+  },
+  {
+   "default": 0.0,
+   "id": "width",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Width"
+  }
+ ],
+ "synthPresets": [
+  {
+   "category": "bass",
+   "id": "sub_bass",
+   "name": "Sub Bass"
+  },
+  {
+   "category": "bass",
+   "id": "bass_808",
+   "name": "808 Bass"
+  },
+  {
+   "category": "bass",
+   "id": "synth_bass",
+   "name": "Synth Bass"
+  },
+  {
+   "category": "lead",
+   "id": "lead",
+   "name": "Lead"
+  },
+  {
+   "category": "lead",
+   "id": "pluck",
+   "name": "Pluck"
+  },
+  {
+   "category": "keys",
+   "id": "soft_keys",
+   "name": "Soft Keys"
+  },
+  {
+   "category": "pad",
+   "id": "pad",
+   "name": "Pad"
+  },
+  {
+   "category": "bass",
+   "id": "cauce_808",
+   "name": "Cauce 808"
+  },
+  {
+   "category": "bass",
+   "id": "dembow_bass",
+   "name": "Dembow Bass"
+  },
+  {
+   "category": "bass",
+   "id": "cauce_sub",
+   "name": "Warm Sub"
+  },
+  {
+   "category": "keys",
+   "id": "urban_pluck",
+   "name": "Urban Pluck"
+  },
+  {
+   "category": "lead",
+   "id": "dark_bell",
+   "name": "Dark Bell"
+  },
+  {
+   "category": "keys",
+   "id": "warm_keys",
+   "name": "Warm Keys"
+  },
+  {
+   "category": "pad",
+   "id": "air_pad",
+   "name": "Air Pad"
+  },
+  {
+   "category": "keys",
+   "id": "bright_pluck",
+   "name": "Bright Pluck"
+  },
+  {
+   "category": "lead",
+   "id": "bright_lead",
+   "name": "Bright Lead"
+  },
+  {
+   "category": "lead",
+   "id": "electro_arp",
+   "name": "Electro Arp"
+  }
+ ],
+ "templates": [
+  {
+   "bpm": 140.0,
+   "id": "trap",
+   "kit": "cauce_trap",
+   "tracks": [
+    "Drums",
+    "808",
+    "Melodía",
+    "Pad",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 95.0,
+   "id": "reggaeton",
+   "kit": "cauce_dembow",
+   "tracks": [
+    "Drums",
+    "Bajo",
+    "Keys",
+    "Melodía",
+    "Pad",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 88.0,
+   "id": "hiphop",
+   "kit": "cauce_boombap",
+   "tracks": [
+    "Drums",
+    "Bajo",
+    "Keys",
+    "Melodía",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 108.0,
+   "id": "pop",
+   "kit": "cauce_pop",
+   "tracks": [
+    "Drums",
+    "Bajo",
+    "Keys",
+    "Melodía",
+    "Pad",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 124.0,
+   "id": "electronic",
+   "kit": "cauce_pop",
+   "tracks": [
+    "Drums",
+    "Bajo",
+    "Stabs",
+    "Arp",
+    "Pad",
+    "Voz",
+    "Reverb"
+   ]
+  }
+ ]
+}

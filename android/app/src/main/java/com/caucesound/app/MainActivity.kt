@@ -12,8 +12,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.caucesound.app.ui.CauceTheme
-import com.caucesound.app.ui.EditorScreen
-import com.caucesound.app.ui.ProjectsScreen
+import com.caucesound.app.ui.HomeActions
+import com.caucesound.app.ui.HomeScreen
+import com.caucesound.app.ui.StudioScreen
 
 class MainActivity : ComponentActivity() {
     private val vm: DawViewModel by viewModels()
@@ -30,14 +31,46 @@ class MainActivity : ComponentActivity() {
         else { afterPermission = action; micPermission.launch(Manifest.permission.RECORD_AUDIO) }
     }
 
+    // Selector del sistema (Storage Access Framework): sin permisos de almacenamiento; el usuario elige dónde.
+    private var exportFolder: String? = null
+    private val exportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val folder = exportFolder
+        exportFolder = null
+        if (uri != null && folder != null) vm.exportProjectArchive(folder, uri)
+    }
+    private val importPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importProjectArchive(uri)
+    }
+
+    private val homeActions = object : HomeActions {
+        override fun open(folder: String) = vm.openProject(folder)
+        override fun create(name: String, template: String) =
+            vm.createProject(name, template) { i -> getString(R.string.default_track_name) + " " + i }
+        override fun quickIdea(name: String) =
+            vm.createQuickIdea(name, getString(R.string.quick_idea_track)) { withMicPermission { vm.record() } }
+        override fun rename(folder: String, name: String) = vm.renameProject(folder, name)
+        override fun duplicate(folder: String, name: String) = vm.duplicateProject(folder, name)
+        override fun delete(folder: String) = vm.deleteProject(folder)
+        override fun exportArchive(folder: String, name: String) {
+            exportFolder = folder
+            exportPicker.launch(name.replace(Regex("[^\\p{L}\\p{N} _-]"), "_").trim().ifEmpty { "proyecto" } + ".caucesound")
+        }
+        override fun importArchive() = importPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             CauceTheme {
                 val state by vm.state.collectAsState()
-                if (state == null) ProjectsScreen(vm)
-                else EditorScreen(vm, state!!, requestMic = ::withMicPermission)
+                val s = state
+                if (s == null) {
+                    val projects by vm.projects.collectAsState()
+                    val catalog by vm.catalog.collectAsState()
+                    val message by vm.messages.collectAsState()
+                    HomeScreen(projects, catalog.templates, message, vm::consumeMessage, homeActions)
+                } else StudioScreen(vm, s, requestMic = ::withMicPermission)
             }
         }
     }

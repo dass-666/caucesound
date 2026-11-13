@@ -2,13 +2,21 @@
 // Modelo del proyecto (hilo de control). No contiene audio, solo referencias a archivos dentro de la carpeta
 // del proyecto. Se serializa a JSON versionado; la carga valida todo antes de aceptar el archivo.
 #include "cs/AudioData.h"
+#include "cs/Midi.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
 namespace cs
 {
-constexpr int kProjectFormatVersion = 1;
+// v1: fase 1 (solo audio). v2: pistas de instrumento, patrones, clips MIDI, bucle y plantilla.
+// v3 (0.7, Channel Rack): TrackModel::laneRoutes (pieza de batería en su propio canal del mezclador). Un proyecto v2
+// se abre sin cambios (sin rutas: todo suena como antes) y antes del primer guardado en v3 se copia el original a
+// project.v2.json. Una app 0.6 no abre un v3 (lo rechaza como «versión más nueva») en vez de perder las rutas en silencio.
+// Un proyecto v1 se lee sin cambios (los campos nuevos toman su valor por defecto) y, antes del primer guardado
+// en v2, Session copia el original a project.v1.json (ver Session::openProject).
+constexpr int kProjectFormatVersion = 3;
 
 struct SourceRef
 {
@@ -33,17 +41,49 @@ struct ClipModel
     Frame length = 0;
     Frame fadeIn = 0, fadeOut = 0;
     float gainDb = 0.0f;
+    // Procesado no destructivo por un plugin offline (VocalShift, misión 0.5). Si procPlugin no está vacío, el clip
+    // tiene dos versiones: A = original (origSourceId, origOffset, origLength) y B = procesada (procSourceId desde 0,
+    // procLength, que incluye la cola de reverb). sourceId/sourceOffset/length son siempre la versión que suena.
+    // El audio original nunca se modifica ni se borra. Recortar o dividir el clip «acepta» la versión que suena.
+    std::string procPlugin;   // "vocalshift"
+    std::string procVersion;  // versión del motor con la que se generó
+    std::string procParams;   // JSON de parámetros (para reproducir o seguir ajustando)
+    std::string origSourceId, procSourceId;
+    Frame origOffset = 0, origLength = 0, procLength = 0;
+    // procLevelDb = nivel RMS de B respecto a A, medido al procesar. Es solo una medida: no cambia cómo suena ni
+    // cómo se exporta el clip. La escucha a volumen igualado es un estado temporal de la sesión, no del proyecto
+    // (Session::listenMatchClip): en la 0.5 vivía aquí y se colaba en el guardado y en la exportación.
+    float procLevelDb = 0.0f;
+    bool processed() const { return ! procPlugin.empty(); }
+    bool playingOriginal() const { return processed() && sourceId == origSourceId; }
+    void clearProcess() { procPlugin.clear(); procVersion.clear(); procParams.clear(); origSourceId.clear(); procSourceId.clear(); origOffset = origLength = procLength = 0; procLevelDb = 0.0f; }
+};
+
+struct InstrumentModel
+{
+    std::string type;   // "" (pista de audio), "cs.synth" o "cs.drums"
+    std::string state;  // JSON del instrumento (parámetros)
+    std::string preset; // último preset cargado (informativo)
 };
 
 struct TrackModel
 {
     std::string id, name;
+    std::string kind = "audio"; // "audio" | "synth" | "drums" | "bus" (retorno de efectos: entrada = envíos)
     float volumeDb = 0.0f; // -inf se guarda como -144
     float pan = 0.0f;
     bool mute = false, solo = false, armed = false;
     uint32_t color = 0xFF4FC3F7;
     std::vector<ClipModel> clips;
     std::vector<InsertModel> inserts;
+    std::map<std::string, float> sends; // id de pista bus -> nivel lineal 0..1 (post-fader). Solo pistas no bus
+    // Solo pistas de batería (v3): carril (0..7) -> id del bus que es su canal propio. Un bus recibe como mucho un carril.
+    std::map<int, std::string> laneRoutes;
+    InstrumentModel instrument;
+    std::vector<DrumPattern> patterns;     // solo pistas de batería
+    std::vector<MidiClipModel> midiClips;  // pistas de instrumento
+    const DrumPattern* findPattern (const std::string& id) const;
+    DrumPattern* findPattern (const std::string& id);
 };
 
 struct ProjectModel
@@ -57,6 +97,11 @@ struct ProjectModel
     float masterDb = 0.0f;
     Frame recordLatencyOffset = 0; // compensación aplicada a grabaciones nuevas (frames)
     int64_t createdAt = 0, modifiedAt = 0; // epoch ms
+    std::string templateId;                // plantilla con la que se creó ("trap", "reggaeton"...), informativo
+    std::string harmony;                   // tonalidad/tempo/acordes confirmados por el usuario tras analizar un audio (JSON; ver SessionSolo.cpp)
+    std::string music;                     // plan musical del compositor (JSON: género, tonalidad, semillas, papeles); ver Composer.h
+    bool loopEnabled = false;
+    Tick loopStart = 0, loopEnd = 16 * kPpq; // 4 compases de 4/4
     std::vector<TrackModel> tracks;
     std::vector<SourceRef> sources;
 
@@ -64,7 +109,9 @@ struct ProjectModel
     TrackModel* findTrack (const std::string& id);
     const TrackModel* findTrack (const std::string& id) const;
     ClipModel* findClip (const std::string& id, TrackModel** owner = nullptr);
-    Frame contentEnd() const; // final del último clip
+    MidiClipModel* findMidiClip (const std::string& id, TrackModel** owner = nullptr);
+    Frame contentEnd() const; // final del último clip (audio o MIDI), en frames
+    Frame ticksToFrames (Tick t) const { return cs::ticksToFrames (t, bpm, sampleRate); }
 };
 
 std::string toJson (const ProjectModel& p, bool pretty = true);
