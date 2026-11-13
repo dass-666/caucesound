@@ -31,7 +31,7 @@ Mismas categorías que en la 0.6. «Render JVM» son las capturas de `capturas-0
 | ARM64 | Solo compilación (arm64-v8a dentro del APK) |
 | Android JVM y Robolectric | **78/78** |
 | Lint | 0 errores, 37 avisos y 9 sugerencias (no ocultados) |
-| CI (GitHub Actions) | Trabajo `android` en verde desde `28e541a`. Trabajo `core` (Release + ASan) en rojo en `28e541a` y `f6f4ccb` por el mismo fallo de `solo_ai_profiles…` que vimos con ASan aquí (salto de D en el caso 4); corregido en el commit siguiente. CI_FINAL |
+| CI (GitHub Actions) | Trabajo `android` en verde desde `28e541a`. Trabajo `core` (Release + ASan) en rojo en `28e541a` y `f6f4ccb` por el mismo fallo de `solo_ai_profiles…` que vimos con ASan aquí (salto de D en el caso 4); corregido en el commit siguiente. **En `551b40e`: `core` y `android` en verde** (push y pull_request). |
 | APK `caucesound-0.7.0-rack-mixer-preview.apk` | versionCode 9, versionName `0.7.0-rack-mixer-preview`, `com.caucesound.app.preview`, arm64-v8a y x86_64, certificado `56b4de46571e04c4e7ee2add76fbbfb2205f81b4ce91ef913a17efff5f61ab2e` (el mismo que la 0.6, comprobado con `apksigner`). SHA-256 `a7456d7dc21f4b347ceae2f368596feac624b816bfa12b820da750748ffd42a8` |
 
 Límites conocidos de la 0.7:
