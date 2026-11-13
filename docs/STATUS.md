@@ -4,6 +4,46 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.7 «Channel Rack & Mixer Pro» (2026-11-13, rama `claude/project-thread-03ida9`, PR #3)
+
+Mismas categorías que en la 0.6. «Render JVM» son las capturas de `capturas-0.7.0/` (40-46 son de esta misión).
+
+| Entrega | Implementado | Probado | Compilado | Audio real | Render JVM | Físico |
+|---|---|---|---|---|---|---|
+| Solo AI: causa de «A-D suenan iguales» | Informe en SOLO_AI_ALTERNATIVES.md | `solo_ai_alternatives_reach_the_track…` (comandos de la app, A→B→C→D→A, audio en vivo) | — | MIDI y WAV de la 0.6 y la 0.7 en `muestras-0.7/` | — | Pendiente |
+| Solo AI: perfiles A Sencilla, B Emotiva, C Rítmica, D Experimental (adaptador; núcleo intacto) | Sí | `solo_ai_profiles_have_measurable_identity…` (6 casos), `solo_ai_switching_while_playing…` | Sí | Envolvente entre alternativas 9,6-16,1 dB (0.6: 6,7-9,8). Solapamiento máx. 0,17 | `24`, `29` | Pendiente (**juicio de oído**) |
+| Solo AI: «Escuchar sola», silenciar la melodía de la plantilla, textos | Sí | Comando de selección A→B→C→D→A en la JVM (`solo_pick_sequence…`) | Sí | — | Sí | Pendiente |
+| Mixer Pro: rack de inserciones (añadir, controles, On/Off, subir/bajar, quitar), selector por categorías con descripción, VocalShift solo como «Procesar clip» | Sí | `mixer_slot_order_changes_processing…` (orden distinto: diferencia 0,168; bypass = sin efecto, exacto), `mixer_slot_edits_while_playing…`, 5 pruebas de interfaz | Sí | — | `44`, `45`, `05b` | Pendiente |
+| Cadenas: Voz urbana, Voz limpia, Segunda voz, Trap 808, Batería, Melodía espacial | Sí | `mixer_chain_preset_applies_order_and_params_undoes_whole_and_survives_reopen` | Sí | — | `46` | Pendiente |
+| Cadena «Master ligero» | **No**: el master no tiene inserciones en el motor | — | — | — | — | — |
+| Channel Rack: pasos (16/32, páginas de 8 en vertical), intensidad, swing, patrones, filas melódicas → Piano Roll, canal del Mixer de cada fila | Sí | 5 pruebas de interfaz (`channel_rack_*`, `melodic_rows_*`, `drum_piece_*`) | Sí | Usa los comandos de la batería ya probados | `40`-`43` | Pendiente |
+| Pieza de batería en su propio canal del Mixer (formato v3) | Sí | `channel_rack_drum_piece_on_own_channel_is_real_routing`: sin tocar nada, diferencia 0; fader, mute, solo e inserciones afectan solo a la pieza; vivo = exportación (0) | Sí | Prueba nula de stems: 0,00e+00 | `41` | Pendiente |
+| Migración v2 → v3 | Sí | `channel_rack_v2_project_opens_unchanged_and_keeps_its_original` | Sí | — | — | Pendiente |
+| Navegación Arreglo · Rack · Piano roll · Mixer · Sonido | Sí | `bottom_navigation_…` | Sí | — | Sí | Pendiente |
+| VocalShift: refinamiento | **No cambiado**. No había voz humana con licencia para comparar (Wikimedia bloqueado); cambiar el DSP sin escuchar habría sido especular. Los controles de volumen, panorámica, retardo, espacio y A/B igualado ya existían | — | — | — | — | — |
+| Identidad visual Dark Rose / Neon Violet para VocalShift | **No** | — | — | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **139/139** |
+| ASan + UBSan | **139/139** prueba por prueba; 136 en la primera pasada. Las 3 restantes, explicadas y repetidas: `daw_export_with_drum_piece…` chocó con una ejecución mía simultánea en la misma carpeta temporal (repetida sola: correcta); `fuzz_command_api…` con 300 iteraciones solo falla su recuento mínimo, sin informe del sanitizador (repetida con 1500: correcta, 0 respuestas inválidas); `solo_ai_profiles…` destapó un defecto real (ver SOLO_AI_ALTERNATIVES.md §6), corregido y repetidas las 11 pruebas `solo_ai`: correctas. Sin informes de ASan ni UBSan |
+| TSan | **139/139** prueba por prueba, sin avisos de carrera; misma salvedad del fuzz (repetido con 1500 iteraciones: correcto). Tras la corrección de Solo AI se repitieron las 11 pruebas `solo_ai`: correctas |
+| ARM64 | Solo compilación (arm64-v8a dentro del APK) |
+| Android JVM y Robolectric | **78/78** |
+| Lint | 0 errores, 37 avisos y 9 sugerencias (no ocultados) |
+| CI (GitHub Actions) | Trabajo `android` en verde desde `28e541a`. Trabajo `core` (Release + ASan) en rojo en `28e541a` y `f6f4ccb` por el mismo fallo de `solo_ai_profiles…` que vimos con ASan aquí (salto de D en el caso 4); corregido en el commit siguiente. CI_FINAL |
+| APK `caucesound-0.7.0-rack-mixer-preview.apk` | versionCode 9, versionName `0.7.0-rack-mixer-preview`, `com.caucesound.app.preview`, arm64-v8a y x86_64, certificado `56b4de46571e04c4e7ee2add76fbbfb2205f81b4ce91ef913a17efff5f61ab2e` (el mismo que la 0.6, comprobado con `apksigner`). SHA-256 `a7456d7dc21f4b347ceae2f368596feac624b816bfa12b820da750748ffd42a8` |
+
+Límites conocidos de la 0.7:
+
+1. Nada probado en un teléfono desde la 0.3.0.
+2. Los proyectos guardados con la 0.7 no se abren en la 0.6 (formato v3). Queda la copia `project.v2.json`.
+3. Sin inserciones en el master y sin efectos de modulación (chorus, flanger): la categoría no se muestra porque no hay ninguno real.
+4. El *soft-clip* de la batería no actúa sobre una pieza enrutada a su canal.
+5. Detector de tonalidad de Solo AI poco fiable (sin cambios).
+6. En horizontal, el Rack muestra pocas filas a la vez por la altura (411 dp): se desplaza.
+7. El Mixer no se desplaza solo hasta la tira elegida al llegar desde el Rack; el rack de efectos sí muestra ese canal.
+
 # Misión 0.6 «Professional Production» (2026-11-12, rama `claude/project-thread-hxmmji`)
 
 Categorías: **Implementado** (código en la rama), **Probado** (prueba automática en Linux x86-64), **Compilado**

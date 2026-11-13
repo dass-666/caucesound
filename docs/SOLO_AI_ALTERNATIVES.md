@@ -87,10 +87,10 @@ Se probaron 6 peticiones distintas (estribillo, solo, interludio; fácil, emotiv
 |---|---|
 | A-B | 16,1 dB |
 | A-C | 13,6 dB |
-| A-D | 13,8 dB |
+| A-D | 13,9 dB |
 | B-C | 9,6 dB |
 | B-D | 9,9 dB |
-| C-D | 10,0 dB |
+| C-D | 9,9 dB |
 | A frente a A, tras pasar por B, C y D | 0,38 dB |
 
 - En la 0.6, la distancia entre alternativas iba de 6,7 a 9,8 dB.
@@ -110,7 +110,24 @@ Se probaron 6 peticiones distintas (estribillo, solo, interludio; fácil, emotiv
 - **Textos:** describen el carácter de cada alternativa. El texto antiguo decía que «salen del mismo motivo».
 - **Nivel:** la pista de Solo AI entra 3 dB por encima de la melodía de la plantilla, con un máximo de 0 dB.
 
-## 6. Lo que no se ha resuelto
+## 6. Hallazgo de los sanitizadores: la misma semilla no da las mismas notas en todas las compilaciones
+
+**Qué se vio (hechos):**
+
+- La compilación con ASan dio notas distintas a la Release en 2 de los 6 casos de la prueba, con la misma semilla. TSan y Release coinciden.
+- Valgrind no encontró lecturas de memoria sin inicializar en esa prueba.
+- En uno de esos casos, D salía con saltos más cortos que A (3,7 frente a 3,8 semitonos). La identidad de D no estaba garantizada.
+
+**Corrección (hecho):** D añade saltos de octava en notas débiles hasta un salto medio de unos 5 semitonos. Respeta los límites de una décima entre notas vecinas y el registro 57-88. Con eso, la prueba pasa en Release y en ASan; D queda entre 4,8 y 6,0 semitonos en los 6 casos.
+
+**Causa de la diferencia (inferencia, sin verificar):** no se ha encontrado. Lo más probable es una diferencia de redondeo en coma flotante entre compilaciones, dentro del núcleo o del adaptador.
+
+**Consecuencias:**
+
+- **Sin efecto:** los proyectos guardados no cambian, porque guardan las notas, no la semilla.
+- **Puede pasar:** la misma petición, con la misma semilla, puede dar otra melodía en el teléfono (arm64) que en Linux. La prueba de igualdad entre plataformas no existe y está sin hacer.
+
+## 7. Lo que no se ha resuelto
 
 - **Detector de tonalidad:** sigue siendo poco fiable. Acertó exactamente 1 de 15 canciones propias y hubo 1 error con confianza 0,68. No se ha cambiado. La app lo presenta como estimación y mantiene la corrección manual. Es un fallo del núcleo original; se documenta, no se toca.
 - **Teléfono:** **sin verificar.** La escucha en el teléfono decide si ahora «suenan distintas» lo suficiente. Las mediciones no sustituyen el oído.

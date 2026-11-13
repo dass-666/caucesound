@@ -268,6 +268,23 @@ std::vector<MidiNote> experimental (const std::vector<MidiNote>& in, const Melod
     }
     for (size_t i = 0; i < out.size(); ++i) out[i].velocity = 80 + (int) ((i * 37) % 41); // dinámica irregular
     placeRegister (out, 72, 57, 88);
+    // Garantía de identidad (0.7): si el material del núcleo era muy plano, los saltos de arriba se quedan cortos y D
+    // sonaría como A. Se añaden saltos de octava en notas débiles hasta un salto medio de 5 semitonos, sin pasar de una
+    // décima con las vecinas ni salir del registro [57, 88].
+    auto meanLeap = [&] { double s = 0; for (size_t i = 1; i < out.size(); ++i) s += std::abs (out[i].key - out[i - 1].key); return out.size() > 1 ? s / (double) (out.size() - 1) : 0.0; };
+    auto fits = [&] (size_t i, int k) {
+        if (k < 57 || k > 88) return false;
+        if (i > 0 && std::abs (k - out[i - 1].key) > 15) return false;
+        if (i + 1 < out.size() && std::abs (k - out[i + 1].key) > 15) return false;
+        return true;
+    };
+    for (size_t i = 1; i + 1 < out.size() && meanLeap() < 5.0; i += 2)
+    {
+        if (strongBeat (out[i].start)) continue;
+        const int before = std::abs (out[i].key - out[i - 1].key) + std::abs (out[i + 1].key - out[i].key);
+        for (int k : { out[i].key + 12, out[i].key - 12 })
+            if (fits (i, k) && std::abs (k - out[i - 1].key) + std::abs (out[i + 1].key - k) > before) { out[i].key = k; break; }
+    }
     return out;
 }
 } // namespace
