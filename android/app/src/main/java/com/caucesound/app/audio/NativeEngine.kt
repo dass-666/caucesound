@@ -15,6 +15,7 @@ object NativeEngine {
     external fun audioEnsure(): Boolean
     external fun audioStop()
     external fun setInputEnabled(on: Boolean): Boolean
+    external fun setEchoCancel(on: Boolean): Boolean
     external fun audioStatus(): String
     external fun command(json: String): String
     external fun position(): Long

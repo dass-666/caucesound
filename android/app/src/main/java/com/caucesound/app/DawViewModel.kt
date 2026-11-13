@@ -324,6 +324,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         viewModelScope.launch {
             val s = _state.value ?: return@launch
             val armed = s.tracks.firstOrNull { it.armed } ?: run { toast(str(R.string.msg_arm_track)); return@launch }
+            applyRecordModeNow() // perfil del micrófono y atenuación antes de abrir la entrada
             if (!withContext(control) { NativeEngine.setInputEnabled(true) }) { toast(str(R.string.msg_mic_failed)); return@launch }
             guard.requestFocus()
             val r = call(Cmd.startRecording(armed.id, _countInBars.value))
@@ -520,6 +521,30 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val _countInBars = MutableStateFlow(prefs.getInt("countInBars", 1).coerceIn(0, 2))
     val countInBars: StateFlow<Int> = _countInBars
     fun setCountInBars(bars: Int) { _countInBars.value = bars.coerceIn(0, 2); prefs.edit().putInt("countInBars", _countInBars.value).apply() }
+
+    // 0.8 — Modo de grabación (preferencia del dispositivo, no del proyecto).
+    //  Estudio (audífonos): micrófono sin procesar (VoicePerformance), sin atenuar nada.
+    //  Bocinas: mientras se graba, la salida en vivo baja duckDb (no los faders ni la exportación), la monitorización
+    //  se apaga (evita acoples) y, si se pide, el teléfono aplica su cancelación de eco (VoiceCommunication).
+    private val _speakerMode = MutableStateFlow(prefs.getBoolean("speakerMode", false))
+    val speakerMode: StateFlow<Boolean> = _speakerMode
+    private val _echoCancel = MutableStateFlow(prefs.getBoolean("echoCancel", false))
+    val echoCancel: StateFlow<Boolean> = _echoCancel
+    private val _duckDb = MutableStateFlow(prefs.getFloat("duckDb", -10f).coerceIn(-24f, 0f))
+    val duckDb: StateFlow<Float> = _duckDb
+    fun setSpeakerMode(on: Boolean) {
+        _speakerMode.value = on
+        prefs.edit().putBoolean("speakerMode", on).apply()
+        if (on && _monitoring.value) setMonitoring(false)
+        applyRecordMode()
+    }
+    fun setEchoCancel(on: Boolean) { _echoCancel.value = on; prefs.edit().putBoolean("echoCancel", on).apply(); applyRecordMode() }
+    fun setDuckDb(db: Float) { _duckDb.value = db.coerceIn(-24f, 0f); prefs.edit().putFloat("duckDb", _duckDb.value).apply(); applyRecordMode() }
+    private suspend fun applyRecordModeNow() {
+        withContext(control) { NativeEngine.setEchoCancel(_speakerMode.value && _echoCancel.value) }
+        call(Cmd.setRecordDuck(if (_speakerMode.value) _duckDb.value.toDouble() else 0.0))
+    }
+    private fun applyRecordMode() { viewModelScope.launch { applyRecordModeNow() } }
     override fun toggleFavoritePreset(presetId: String) {
         val next = _favoritePresets.value.let { if (presetId in it) it - presetId else it + presetId }
         _favoritePresets.value = next

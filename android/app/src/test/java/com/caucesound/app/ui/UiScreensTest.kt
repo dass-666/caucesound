@@ -75,6 +75,8 @@ class UiScreensTest {
         override fun setSendLive(trackId: String, busId: String, level: Float) { calls += "send:$trackId:$busId" }
         override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
         override fun setVolumeLive(id: String, db: Float) { calls += "vol:$id" }
+        override fun setLoop(on: Boolean, startTick: Long, endTick: Long) { calls += "loop:$on" }
+        override fun seek(frame: Long) { calls += "seek:$frame" }
         override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
         override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
         var vocal: com.caucesound.app.data.VocalParams? = null
@@ -254,7 +256,7 @@ class UiScreensTest {
         compose.onNodeWithTag("solo_vary").performScrollTo().performClick()
         compose.onNodeWithTag("solo_listen").performScrollTo().performClick()
         compose.onNodeWithTag("solo_open_piano").performScrollTo().performClick()
-        assertEquals(listOf("pick:2", "vary", "play", "selectClip:${track.midiClips.first().id}", "panel:PIANO"), rec.calls)
+        assertEquals(listOf("pick:2", "vary", "play", "selectClip:${track.midiClips.first().id}", "panel:PIANO"), rec.calls.filterNot { it.startsWith("seek:") })
         // Controles creativos 0.6: cada botón envía su transformación real.
         rec.calls.clear()
         for (tag in listOf("solo_simpler", "solo_intense", "solo_soft", "solo_octave_up", "solo_octave_down", "solo_new_ending")) compose.onNodeWithTag(tag).performScrollTo().performClick()
@@ -307,6 +309,33 @@ class UiScreensTest {
         compose.onNodeWithText(tr("Original", "Original")).performClick()
         assertEquals(listOf("previewListen:false"), rec.calls)
         shot("25_vocalshift_preview")
+    }
+
+    /** 0.8 — «Ajustar escuchando»: bucle en la región, reproducción y recálculo automático tras mover un control. */
+    @Test fun vocalshift_adjust_while_listening_loops_and_rerenders_after_each_change() {
+        val rec = Recorder()
+        val clip = stateBeat.tracks.first { it.name == "Voz" }.clips.first()
+        compose.setContent { Themed { VocalShiftPanel(stateBeat, clip.id, ui(), emptyMap(), rec) } }
+        compose.onNodeWithTag("vocal_continuous_toggle").performScrollTo().performClick()
+        assertEquals(listOf("loop:true", "seek:${clip.start}", "play"), rec.calls.take(3))
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(500) // la pausa de 250 ms antes de recalcular
+        assertTrue(rec.calls.toString(), rec.calls.any { it.startsWith("preview:0:") })
+        // Cambiar los ajustes (aquí, otro preset): tras la pausa corta se pide otra prueba, sin pulsar nada más.
+        rec.calls.clear()
+        val other = presets.first { it.id != "urban_spatial" }
+        compose.onNodeWithTag("vocal_preset_${other.id}").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(1000)
+        assertEquals(1, rec.calls.count { it.startsWith("preview:") }) // un cambio = una sola prueba
+        assertEquals(other.params, rec.vocal)
+        compose.onNodeWithTag("vocal_continuous_status").assertExists()
+        shot("48_vocalshift_continuous")
+        // Apagar: se restaura el bucle anterior y se deja de escuchar la prueba.
+        rec.calls.clear()
+        compose.onNodeWithTag("vocal_continuous_toggle").performScrollTo().performClick()
+        assertTrue(rec.calls.contains("previewListen:false"))
+        assertTrue(rec.calls.any { it.startsWith("loop:") })
     }
 
     @Test fun vocalshift_preview_shows_real_progress_and_can_be_cancelled() {

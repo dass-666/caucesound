@@ -27,6 +27,10 @@ public:
     // iniciado), lo cierra y lo reabre. Si ya funciona no hace nada (no corta el audio).
     bool ensureRunning();
     bool setInputEnabled (bool on); // requiere el permiso RECORD_AUDIO concedido
+    // 0.8 — perfil del micrófono. false (Estudio / audífonos): VoicePerformance, sin cancelación de eco, mínima
+    // latencia. true (bocinas): VoiceCommunication, que en la mayoría de teléfonos activa la cancelación de eco y la
+    // supresión de ruido del sistema. Si la entrada está abierta se reabre. No es reversible sobre una toma ya grabada.
+    bool setEchoCancel (bool on);
     bool isRunning() const { return running.load(); }
     std::string statusJson();   // latencias, frecuencia, API, burst, xruns, reaperturas
 
@@ -44,7 +48,8 @@ private:
     std::shared_ptr<oboe::AudioStream> out, in;
     std::atomic<oboe::AudioStream*> inRaw { nullptr };
     std::vector<float> inBuf;
-    std::atomic<bool> running { false }, wantInput { false };
+    std::atomic<bool> running { false }, wantInput { false }, echoCancel { false };
+    std::atomic<int> inPresetUsed { -1 };
     std::atomic<int> reopenCount { 0 }, inputShortReads { 0 }, ensureRestarts { 0 };
     std::atomic<int> lastError { 0 }; // último oboe::Result recibido en onErrorAfterClose (0 = ninguno)
     std::atomic<long> callbacks { 0 };
