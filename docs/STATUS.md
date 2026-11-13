@@ -24,12 +24,12 @@ Mismas categorías que en la 0.6 y la 0.7. «Render JVM» son las capturas de `c
 | Conjunto | Resultado |
 |---|---|
 | Motor x86-64 Release | **145/145** |
-| ASan + UBSan | __ASAN__ |
-| TSan | __TSAN__ |
+| ASan + UBSan | **145/145** prueba por prueba, sin informes de ASan ni UBSan (fuzz de comandos con 1500 iteraciones) |
+| TSan | **145/145** prueba por prueba, sin avisos de carrera |
 | ARM64 | Solo compilación (arm64-v8a dentro del APK) |
 | Android JVM y Robolectric | **87/87** |
 | Lint | 0 errores, 38 avisos y 9 sugerencias (no ocultados) |
-| CI (GitHub Actions) | __CI__ |
+| CI (GitHub Actions) | Trabajos `core` (Release + ASan) y `android` **en verde** en `e62353c` (push y pull_request del PR #4); también en `db43665` y `16ba3c9` |
 | APK `caucesound-0.8.0-studio-flow-preview.apk` | versionCode 10, `0.8.0-studio-flow-preview`, `com.caucesound.app.preview`, certificado `56b4de46571e04c4e7ee2add76fbbfb2205f81b4ce91ef913a17efff5f61ab2e` (el mismo que la 0.7.0, comprobado con `apksigner` en los dos). SHA-256 `435a6b6eae41a2608885a57e81d49123154a7523bf28cd5b8e084aa0af6fc5bb` |
 
 Límites conocidos de la 0.8:

@@ -32,11 +32,11 @@
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 139/139 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | **139/139** prueba por prueba; 136 en la primera pasada. Las 3 restantes, explicadas y repetidas: `daw_export_with_drum_piece…` chocó con una ejecución mía simultánea en la misma carpeta temporal (repetida sola: correcta); `fuzz_command_api…` con 300 iteraciones solo falla su recuento mínimo, sin informe del sanitizador (repetida con 1500: correcta, 0 respuestas inválidas); `solo_ai_profiles…` destapó un defecto real (ver SOLO_AI_ALTERNATIVES.md §6), corregido y repetidas las 11 pruebas `solo_ai`: correctas. Sin informes de ASan ni UBSan |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | **139/139** prueba por prueba, sin avisos de carrera; misma salvedad del fuzz (repetido con 1500 iteraciones: correcto). Tras la corrección de Solo AI se repitieron las 11 pruebas `solo_ai`: correctas |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 145/145 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | **145/145** prueba por prueba, sin informes de ASan ni UBSan (fuzz de comandos con 1500 iteraciones) |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | **145/145** prueba por prueba, sin avisos de carrera |
 | ARM64 | — | **No ejecutado** (sin QEMU ni compilador cruzado). Solo compilación con el NDK |
-| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 78/78 |
+| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 87/87 |
 | Lint | `./gradlew lintDebug` | 0 errores, 37 avisos |
 | Paquete para DAW | `./build/cauce verify paquete.zip` y `python3 desktop/tools/verify_daw_package.py` (dentro del ZIP descomprimido; necesita `pip install mido`) | Correcto en el ejemplo |
 
