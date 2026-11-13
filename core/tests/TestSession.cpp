@@ -551,3 +551,145 @@ TEST (command_api_drives_a_full_session)
     CHECK (nlohmann::json::parse (handleCommand (f.session, f.engine, "{{{"))["ok"] == false);
     CHECK (call ({ { "cmd", "moveClip" }, { "clipId", "x" }, { "start", "abc" } })["ok"] == false);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Grabación limpia (0.8). Pregunta de Diego: ¿el beat que se oye en la toma es una mezcla digital del master o es
+// el sonido de las bocinas que entra por el micrófono? Estas pruebas reproducen una plantilla fuerte con metrónomo y
+// monitorización mientras se graba una entrada conocida, y comprueban que el archivo es EXACTAMENTE la entrada.
+namespace
+{
+struct RecRun { std::vector<float> outL; };
+// Igual que feedInput, pero guarda la salida izquierda y permite elegir la señal de entrada.
+RecRun feedSignal (Engine& e, Frame frames, int block, Frame& counter, float (*sig) (Frame))
+{
+    RecRun r;
+    std::vector<float> in ((size_t) block), out ((size_t) block * 2);
+    Frame done = 0;
+    while (done < frames)
+    {
+        const int n = (int) std::min<Frame> (block, frames - done);
+        for (int i = 0; i < n; ++i) in[(size_t) i] = sig (counter + i);
+        e.process (in.data(), 1, out.data(), 2, n);
+        for (int i = 0; i < n; ++i) r.outL.push_back (out[(size_t) i * 2]);
+        counter += n;
+        done += n;
+        std::this_thread::sleep_for (std::chrono::microseconds (200));
+    }
+    return r;
+}
+float voiceLike (Frame i) { return 0.3f * (float) std::sin (2.0 * M_PI * 220.0 * (double) i / 48000.0) * (float) (0.6 + 0.4 * std::sin (2.0 * M_PI * 3.0 * (double) i / 48000.0)); }
+float silence (Frame) { return 0.0f; }
+double rms (const std::vector<float>& v, size_t from, size_t to)
+{
+    double a = 0;
+    for (size_t i = from; i < to; ++i) a += (double) v[i] * v[i];
+    return std::sqrt (a / (double) std::max<size_t> (1, to - from));
+}
+} // namespace
+
+TEST (recording_takes_only_the_microphone_never_the_master_mix)
+{
+    Fixture f ("rec_clean");
+    CHECK (f.session.createProject (f.dir + "/p", "R", 48000, "trap").ok);
+    const std::string voz = f.session.addTrack ("Voz").id;
+    CHECK (f.session.setTrackArmed (voz, true).ok);
+    f.engine.setMetronome (true);
+    f.engine.setMonitoring (true, 1.0f); // el peor caso: la voz también sale por la salida
+    f.engine.seek (48000 * 2);
+    std::vector<float> o (64);
+    f.engine.process (nullptr, 0, o.data(), 2, 0);
+    CHECK (f.session.startRecording ("", 1, true).ok);
+    Frame counter = 0;
+    const RecRun run = feedSignal (f.engine, 48000 * 3, 192, counter, voiceLike);
+    auto r = f.session.stopRecording();
+    CHECK_MSG (r.ok, r.error);
+    // La salida tenía el beat (si no, la prueba no demostraría nada): bastante más energía que la voz sola.
+    // Salida − voz monitorizada = lo que sonaba del proyecto (beat + metrónomo).
+    std::vector<float> beat (run.outL.size());
+    for (size_t i = 0; i < beat.size(); ++i) beat[i] = run.outL[i] - voiceLike ((Frame) i);
+    const double outE = rms (beat, 0, beat.size());
+    double voiceE = 0;
+    for (Frame i = 0; i < 48000 * 3; ++i) voiceE += (double) voiceLike (i) * voiceLike (i);
+    voiceE = std::sqrt (voiceE / (48000.0 * 3));
+    CHECK (outE > 0.05);
+    // La toma es la entrada, muestra a muestra: ni beat, ni metrónomo, ni monitorización.
+    auto m = f.session.model();
+    const ClipModel* clip = nullptr;
+    for (const auto& c : m.findTrack (voz)->clips) clip = &c;
+    CHECK (clip != nullptr);
+    if (! clip) return;
+    AudioData a;
+    std::string err;
+    CHECK (readWav (f.dir + "/p/" + m.findSource (clip->sourceId)->file, a, err));
+    long wrong = 0;
+    double maxErr = 0;
+    for (Frame i = 0; i < a.numFrames(); ++i)
+    {
+        const double d = std::fabs ((double) a.channels[0][(size_t) i] - voiceLike (i));
+        maxErr = std::max (maxErr, d);
+        if (d > 1e-6) ++wrong;
+    }
+    CHECK (a.numFrames() == 48000 * 3);
+    CHECK (wrong == 0);
+    MEASURE ("toma de 3 s con plantilla trap + metrónomo + monitorización: beat en la salida %.3f RMS, voz %.3f RMS, error máximo de la toma %.1e (0 = exacta)", outE, voiceE, maxErr);
+}
+
+TEST (speaker_mode_ducks_only_the_live_output_while_recording)
+{
+    Fixture f ("rec_duck");
+    CHECK (f.session.createProject (f.dir + "/p", "R", 48000, "trap").ok);
+    const std::string voz = f.session.addTrack ("Voz").id;
+    CHECK (f.session.setTrackArmed (voz, true).ok);
+    const std::string before = toJson (f.session.model(), false);
+    std::vector<float> o (64);
+    // Referencia: los mismos 2 s reproducidos sin grabar.
+    f.engine.seek (48000 * 4);
+    f.engine.process (nullptr, 0, o.data(), 2, 0);
+    f.engine.play();
+    Frame c0 = 0;
+    const RecRun ref = feedSignal (f.engine, 48000 * 2, 192, c0, silence);
+    f.engine.stop();
+    // Grabando con el modo bocinas a −12 dB.
+    f.engine.setRecordDuck (-12.0f);
+    f.engine.seek (48000 * 4);
+    f.engine.process (nullptr, 0, o.data(), 2, 0);
+    CHECK (f.session.startRecording ("", 1, true).ok);
+    Frame c1 = 0;
+    const RecRun ducked = feedSignal (f.engine, 48000 * 2, 192, c1, voiceLike);
+    CHECK (f.session.stopRecording().ok);
+    const size_t a0 = 4800, a1 = 96000; // tras la rampa inicial de ~20 ms
+    const double ratio = rms (ducked.outL, a0, a1) / std::max (1e-9, rms (ref.outL, a0, a1));
+    MEASURE ("modo bocinas −12 dB: la salida en vivo queda al %.3f de la referencia (esperado 0,251)", ratio);
+    CHECK (ratio > 0.22 && ratio < 0.29);
+    // Ni faders ni master cambiaron; solo se añadió la toma.
+    auto m = f.session.model();
+    ProjectModel b;
+    std::string err;
+    CHECK (fromJson (before, b, err));
+    for (const auto& t : b.tracks) { const TrackModel* now = m.findTrack (t.id); CHECK (now && now->volumeDb == t.volumeDb && now->pan == t.pan); }
+    CHECK (m.masterDb == b.masterDb);
+    // Al parar la grabación la salida vuelve a su nivel normal (sin quedarse atenuada). La toma nueva se silencia para
+    // comparar solo el beat.
+    CHECK (f.session.setTrackMute (voz, true).ok);
+    f.engine.seek (48000 * 4);
+    f.engine.process (nullptr, 0, o.data(), 2, 0);
+    f.engine.play();
+    Frame c2 = 0;
+    const RecRun after = feedSignal (f.engine, 48000 * 2, 192, c2, silence);
+    f.engine.stop();
+    const double back = rms (after.outL, a0, a1) / std::max (1e-9, rms (ref.outL, a0, a1));
+    MEASURE ("tras grabar, la salida vuelve al %.3f de la referencia", back);
+    CHECK (back > 0.9 && back < 1.15); // sin atenuar (atenuada sería ~0,25); el resto es el estado de colas de reverb y voces
+    // La toma sigue siendo exacta con el modo bocinas.
+    const ClipModel* clip = nullptr;
+    for (const auto& c : m.findTrack (voz)->clips) clip = &c;
+    CHECK (clip != nullptr);
+    if (! clip) return;
+    AudioData a;
+    CHECK (readWav (f.dir + "/p/" + m.findSource (clip->sourceId)->file, a, err));
+    long wrong = 0;
+    for (Frame i = 0; i < a.numFrames(); ++i) if (std::fabs ((double) a.channels[0][(size_t) i] - voiceLike (i)) > 1e-6) ++wrong;
+    CHECK (wrong == 0);
+    f.engine.setRecordDuck (0.0f);
+    CHECK (f.engine.recordDuck() == 1.0f);
+}

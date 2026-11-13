@@ -169,8 +169,16 @@ OpResult Session::vocalPreview (const std::string& clipId, const vocal::Params& 
     if (recorder) return OpResult::fail ("detén la grabación antes de procesar");
     const ClipModel* c = proj.findClip (clipId);
     if (! c) return OpResult::fail ("clip no encontrado");
+    // 0.8 (escucha continua): una prueba nueva sustituye a la que aún se está calculando para el mismo clip, en lugar
+    // de rechazarse. Así, al mover una perilla varias veces seguidas solo se termina el cálculo de los últimos ajustes.
+    // Un procesado completo en curso sigue bloqueando (no se cancela nunca el trabajo del usuario).
+    std::vector<std::string> stalePreviews;
     for (const auto& j : jobs.list())
-        if (j.targetId == clipId && (j.state == "queued" || j.state == "running")) return OpResult::fail ("este clip ya se está procesando");
+        if (j.targetId == clipId && (j.state == "queued" || j.state == "running"))
+        {
+            if (j.type != "vocalPreview") return OpResult::fail ("este clip ya se está procesando");
+            stalePreviews.push_back (j.id);
+        }
 
     const std::string srcId = c->processed() ? c->origSourceId : c->sourceId;
     const Frame baseOffset = c->processed() ? c->origOffset : c->sourceOffset;
@@ -197,7 +205,8 @@ OpResult Session::vocalPreview (const std::string& clipId, const vocal::Params& 
     const std::string paramsJson = params.toJson();
     const std::string key = srcId + "|" + std::to_string (baseOffset) + "|" + std::to_string (from) + "|" + std::to_string (length) + "|" + paramsJson;
     OpResult r;
-    if (preview.valid() && preview.clipId == clipId && preview.key == key) { r.id = "cached"; return r; } // nada cambió: no se repite
+    if (preview.valid() && preview.clipId == clipId && preview.key == key && stalePreviews.empty()) { r.id = "cached"; return r; } // nada cambió: no se repite
+    for (const auto& id : stalePreviews) jobs.cancel (id);
 
     // Medio segundo de pre-roll: el motor llega a la región con su estado ya asentado, como en el procesado completo.
     const Frame pre = std::min<Frame> (from, rate / 2);

@@ -258,7 +258,7 @@ object StateParser {
                 HarmonyState(it.optInt("keyRoot"), it.optBoolean("minor"), it.optString("source"), it.optJSONArray("chords")?.length() ?: 0, it.optDouble("chordsBpm", 0.0))
             },
             o.optJSONArray("missingPlugins")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
-            o.optJSONObject("vocalPreview")?.let { v -> VocalPreviewState(v.optString("clipId"), v.optLong("from"), v.optLong("length"), v.optBoolean("listening"), VocalParams.fromJson(v.optJSONObject("params"))) },
+            o.optJSONObject("vocalPreview")?.let { v -> VocalPreviewState(v.optString("clipId"), v.optLong("from"), v.optLong("length"), v.optBoolean("listening"), VocalParams.fromJson(v.optJSONObject("params")), v.optDouble("seconds", 0.0)) },
         )
     }
 

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -73,6 +74,7 @@ class UiScreensTest {
         override fun addReverbBus() { calls += "addReverbBus" }
         override fun setSendLive(trackId: String, busId: String, level: Float) { calls += "send:$trackId:$busId" }
         override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
+        override fun setVolumeLive(id: String, db: Float) { calls += "vol:$id" }
         override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
         override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
         var vocal: com.caucesound.app.data.VocalParams? = null
@@ -546,6 +548,9 @@ class UiScreensTest {
         val rec = Recorder()
         val meters = mutableStateOf(FloatArray(st.tracks.size + 1) { 0.3f })
         compose.setContent { Themed { MixerPanel(st, meters, synth.id, rec, catalog) } }
+        // 0.8: los efectos empiezan cerrados (faders a toda altura); se abren con la barra inferior.
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("insert_rack")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("rack_toggle").performClick()
         shot("05b_mixer_bus")
         // 0.7: el envío se ajusta en el rack del canal seleccionado (la perilla salió de la tira para dejar sitio al rack).
         compose.onNodeWithTag("send_${bus.id}").performScrollTo().assertExists()
@@ -554,6 +559,36 @@ class UiScreensTest {
         assertTrue(rec.calls.contains("send:${synth.id}:${bus.id}"))
         assertEquals("commit", rec.calls.last())
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Bus de reverb")).fetchSemanticsNodes().isEmpty())
+    }
+
+    /** Prueba de tareas del Mixer (0.8): abrir, localizar el fader, bajar, abrir efectos, tocar uno, volver al volumen. */
+    @Test fun mixer_task_flow_keeps_volume_reachable_while_editing_effects() {
+        val st = StateParser.state(res("state_bus.json"))!!
+        val voice = st.tracks.first { it.isSynth }
+        val rec = Recorder()
+        val selected = mutableStateOf<String?>(null)
+        val actions = object : StudioActions by rec { override fun selectTrack(id: String) { selected.value = id; rec.selectTrack(id) } }
+        val meters = mutableStateOf(FloatArray(st.tracks.size + 1) { 0.3f })
+        compose.setContent { Themed { MixerPanel(st, meters, selected.value, actions, catalog) } }
+        // 1-2. Faders visibles desde el principio, sin efectos tapándolos.
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("insert_rack")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Fader", substring = true), useUnmergedTree = true).fetchSemanticsNodes().size >= st.tracks.size)
+        // 3. Bajar el volumen con el fader de la tira.
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Fader", substring = true), useUnmergedTree = true)[st.tracks.indexOf(voice)]
+            .performTouchInput { swipeDown() }
+        assertTrue(rec.calls.contains("vol:${voice.id}"))
+        // 4. Abrir sus efectos con el botón FX de la tira: selecciona el canal y abre el rack en el mismo toque.
+        compose.onNodeWithTag("strip_fx_${voice.id}", useUnmergedTree = true).performScrollTo().performClick()
+        assertEquals(voice.id, selected.value)
+        compose.onNodeWithTag("insert_rack").assertExists()
+        shot("47_mixer_fx_with_volume")
+        // 6. El volumen del canal sigue a mano sobre los efectos.
+        rec.calls.clear()
+        compose.onNodeWithTag("fx_volume_slider").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(-12f) }
+        assertTrue(rec.calls.contains("vol:${voice.id}"))
+        // Cerrar devuelve toda la altura a los faders.
+        compose.onNodeWithTag("rack_toggle").performClick()
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("insert_rack")).fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun effects_panel_shows_engine_chain() {
