@@ -5,6 +5,7 @@ add_library(cs_core STATIC
     src/Archive.cpp
     src/Drums.cpp
     src/Effects.cpp
+    src/FxChains.cpp
     src/Engine.cpp
     src/Midi.cpp
     src/Smf.cpp
@@ -17,6 +18,7 @@ add_library(cs_core STATIC
     src/SessionMusic.cpp
     src/Composer.cpp
     src/SessionSolo.cpp
+    src/SoloProfiles.cpp
     src/SessionVocal.cpp
     src/Jobs.cpp
     src/VocalBridge.cpp

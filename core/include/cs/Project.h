@@ -11,9 +11,12 @@
 namespace cs
 {
 // v1: fase 1 (solo audio). v2: pistas de instrumento, patrones, clips MIDI, bucle y plantilla.
+// v3 (0.7, Channel Rack): TrackModel::laneRoutes (pieza de batería en su propio canal del mezclador). Un proyecto v2
+// se abre sin cambios (sin rutas: todo suena como antes) y antes del primer guardado en v3 se copia el original a
+// project.v2.json. Una app 0.6 no abre un v3 (lo rechaza como «versión más nueva») en vez de perder las rutas en silencio.
 // Un proyecto v1 se lee sin cambios (los campos nuevos toman su valor por defecto) y, antes del primer guardado
 // en v2, Session copia el original a project.v1.json (ver Session::openProject).
-constexpr int kProjectFormatVersion = 2;
+constexpr int kProjectFormatVersion = 3;
 
 struct SourceRef
 {
@@ -74,6 +77,8 @@ struct TrackModel
     std::vector<ClipModel> clips;
     std::vector<InsertModel> inserts;
     std::map<std::string, float> sends; // id de pista bus -> nivel lineal 0..1 (post-fader). Solo pistas no bus
+    // Solo pistas de batería (v3): carril (0..7) -> id del bus que es su canal propio. Un bus recibe como mucho un carril.
+    std::map<int, std::string> laneRoutes;
     InstrumentModel instrument;
     std::vector<DrumPattern> patterns;     // solo pistas de batería
     std::vector<MidiClipModel> midiClips;  // pistas de instrumento

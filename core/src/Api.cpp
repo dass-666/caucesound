@@ -1,4 +1,5 @@
 #include "cs/Api.h"
+#include "cs/FxChains.h"
 #include "cs/SoloBridge.h"
 #include "cs/Archive.h"
 
@@ -88,11 +89,29 @@ json catalog()
         return arr;
     };
     json fx = json::array();
-    for (const auto& t : effectTypes()) fx.push_back ({ { "type", t }, { "params", params (t.c_str()) } });
+    for (const auto& t : effectTypes())
+    {
+        json e { { "type", t }, { "params", params (t.c_str()) } };
+        if (const EffectInfo* i = findEffectInfo (t))
+        {
+            e["category"] = i->category; e["name"] = i->name; e["nameEn"] = i->nameEn; e["description"] = i->description; e["descriptionEn"] = i->descriptionEn;
+            if (auto p = createProcessor (t)) { p->prepare (48000, 1024); e["latencySamples"] = p->latencySamples(); }
+        }
+        fx.push_back (e);
+    }
+    // Cadenas completas (Mixer Pro): solo las que usan efectos disponibles.
+    json chains = json::array();
+    for (const auto& c : chainPresets())
+    {
+        json steps = json::array();
+        for (const auto& st : c.steps) steps.push_back (st.type);
+        chains.push_back ({ { "id", c.id }, { "name", c.name }, { "nameEn", c.nameEn }, { "description", c.description }, { "descriptionEn", c.descriptionEn },
+                            { "suits", c.suits }, { "steps", steps } });
+    }
     json tpl = json::array();
     for (const auto& t : projectTemplates()) tpl.push_back ({ { "id", t.id }, { "bpm", t.bpm }, { "kit", t.kitId }, { "tracks", t.tracks } });
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
-             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "templates", tpl },
+             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "fxChains", chains }, { "templates", tpl },
              // Plugins integrados: solo se anuncian los que están compilados (la interfaz no muestra los demás).
              { "plugins", pluginDescriptors() } };
 }
@@ -253,6 +272,8 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "removeInsert") return result (s.removeInsert (str ("insertId"))).dump();
         if (cmd == "setInsertParam") return result (s.setInsertParam (str ("insertId"), str ("param"), (float) num ("value"))).dump();
         if (cmd == "setInsertBypass") return result (s.setInsertBypass (str ("insertId"), q.value ("bypass", false))).dump();
+        if (cmd == "routeDrumLane") return result (s.routeDrumLane (str ("trackId"), (int) num ("lane"), flag ("own"))).dump();
+        if (cmd == "applyFxChain") return result (s.applyFxChain (str ("trackId"), str ("preset"), flag ("replace"))).dump();
         if (cmd == "moveInsert") return result (s.moveInsert (str ("insertId"), (int) num ("index"))).dump();
         if (cmd == "insertMeter") return json { { "ok", true }, { "grDb", s.insertMeter (str ("insertId")) } }.dump();
         if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();

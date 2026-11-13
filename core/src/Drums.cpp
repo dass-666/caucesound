@@ -507,6 +507,13 @@ public:
         }
     }
     void allNotesOff (bool hard) override { if (hard) reset(); } // los golpes terminan solos
+    int auxLanes() const override { return kDrumLanes; }
+    void setAuxOut (int lane, float* l, float* r) override
+    {
+        if (lane < 0 || lane >= kDrumLanes) return;
+        auxL[(size_t) lane] = l;
+        auxR[(size_t) lane] = l && r ? r : l;
+    }
 
     void process (float* const* io, int numChannels, int n) override
     {
@@ -526,6 +533,9 @@ public:
             const float gl = g * (pan > 0 ? 1.0f - pan : 1.0f), gr = g * (pan < 0 ? 1.0f + pan : 1.0f);
             const Buf& b = sounds->lanes[(size_t) l];
             const double size = (double) b.size();
+            // Carril con canal propio: suena en su bus (sin la protección de salida, que es de la suma de la pista).
+            float* const Lout = auxL[(size_t) l] ? auxL[(size_t) l] : L;
+            float* const Rout = auxL[(size_t) l] ? auxR[(size_t) l] : R;
             for (auto& v : laneVoices[(size_t) l])
             {
                 if (! v.active) continue;
@@ -539,8 +549,8 @@ public:
                     if (v.pos > v.fadeFrom) x *= (float) std::exp (-(v.pos - v.fadeFrom) / (v.fadeLen + 1.0));
                     if (v.release >= 0) { x *= v.release; v.release -= v.releaseStep; if (v.release <= 0) { v.active = false; break; } }
                     x *= v.gain;
-                    L[i] += x * gl;
-                    if (R != L) R[i] += x * gr;
+                    Lout[i] += x * gl;
+                    if (Rout != Lout) Rout[i] += x * gr;
                     v.pos += v.rate;
                 }
             }
@@ -595,6 +605,7 @@ private:
     std::unique_ptr<std::atomic<float>[]> values;
     std::shared_ptr<KitSounds> sounds;
     std::array<std::array<Voice, 3>, kDrumLanes> laneVoices {};
+    std::array<float*, kDrumLanes> auxL {}, auxR {};
 };
 } // namespace
 

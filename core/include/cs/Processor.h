@@ -72,6 +72,11 @@ public:
     // hard = false: pasa todas las voces a release (stop, loop, seek). hard = true: silencio inmediato.
     virtual void allNotesOff (bool hard) = 0;
     virtual int activeVoices() const { return 0; }
+    // Salidas auxiliares por carril (misión 0.7: pieza de batería en su propio canal del mezclador). Hilo de audio.
+    // Si l y r no son nulos, el siguiente process() SUMA el carril 'lane' ahí (mismos n frames) en vez de a io.
+    // El motor los fija antes de cada process() de una pista con carriles enrutados y los anula después.
+    virtual int auxLanes() const { return 0; }
+    virtual void setAuxOut (int lane, float* l, float* r) { (void) lane; (void) l; (void) r; }
 };
 
 using ProcessorPtr = std::shared_ptr<AudioProcessor>;

@@ -481,3 +481,62 @@ TEST (sha256_matches_known_vectors)
     for (int i = 0; i < 1000; ++i) h.update (chunk.data(), chunk.size()); // un millón de «a»
     CHECK (h.hex() == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 }
+
+// Channel Rack (0.7): una pieza de batería con canal propio sale en su propio stem, desaparece del stem de la
+// batería, la suma de stems sigue siendo la mezcla y, en el modo sin efectos, la pieza vuelve a su batería.
+TEST (daw_export_with_drum_piece_on_its_own_channel_keeps_the_null_test)
+{
+    Fx f ("daw_lane");
+    buildSong (f);
+    const auto model0 = f.session.model();
+    std::string drums;
+    for (const auto& t : model0.tracks) if (t.kind == "drums") { drums = t.id; break; }
+    CHECK (! drums.empty());
+    // Referencia: stem limpio de la batería antes de enrutar nada.
+    auto dryDrumStem = [&] (const std::string& zip) -> AudioData
+    {
+        const json st = f.cmd ({ { "cmd", "exportDaw" }, { "path", zip }, { "mode", "dry" }, { "bits", 32 } });
+        CHECK (waitJob (f, st.value ("jobId", std::string())).value ("state", std::string()) == "done");
+        const Package p = openPackage (zip);
+        for (const auto& s : p.manifest["stems"]) if (s.value ("trackId", std::string()) == drums) return p.wav (s.value ("file", std::string()));
+        return {};
+    };
+    const AudioData dryBefore = dryDrumStem (f.dir + "/dry0.zip");
+    const json r = f.cmd ({ { "cmd", "routeDrumLane" }, { "trackId", drums }, { "lane", 0 }, { "own", true } });
+    CHECK_MSG (r.value ("ok", false), r.dump());
+    const std::string kick = r.value ("id", std::string());
+    const auto sat = f.session.addInsert (kick, "cs.saturation");
+    CHECK (sat.ok && f.session.setInsertParam (sat.id, "drive", 0.6f).ok);
+    CHECK (f.session.setTrackVolumeDb (kick, -2.0f).ok);
+
+    const json st = f.cmd ({ { "cmd", "exportDaw" }, { "path", f.dir + "/wet.zip" }, { "mode", "wet" }, { "bits", 32 } });
+    const json done = waitJob (f, st.value ("jobId", std::string()));
+    CHECK_MSG (done.value ("state", std::string()) == "done", done.dump());
+    const Package p = openPackage (f.dir + "/wet.zip");
+    const Frame frames = p.manifest["song"].value ("frames", (Frame) 0);
+    std::vector<float> sumL ((size_t) frames, 0.0f);
+    bool sawKick = false;
+    for (const auto& s : p.manifest["stems"])
+    {
+        const AudioData a = p.wav (s.value ("file", std::string()));
+        if (s.value ("trackId", std::string()) == kick)
+        {
+            sawKick = true;
+            float pk = 0;
+            for (float v : a.channels[0]) pk = std::max (pk, std::fabs (v));
+            MEASURE ("stem del canal «%s»: pico %.3f", s.value ("name", std::string()).c_str(), pk);
+            CHECK (pk > 0.05f);
+        }
+        if (s.value ("inMix", false)) for (Frame i = 0; i < frames; ++i) sumL[(size_t) i] += a.channels[0][(size_t) i];
+    }
+    CHECK (sawKick);
+    const AudioData mix = p.wav (p.manifest["mix"].value ("file", std::string()));
+    const float master = dbToGain (-3.0f);
+    double worst = 0;
+    for (Frame i = 0; i < frames; ++i) worst = std::max (worst, (double) std::fabs (sumL[(size_t) i] * master - mix.channels[0][(size_t) i]));
+    MEASURE ("prueba de nulo con el bombo en su canal: diferencia máxima %.2e", worst);
+    CHECK (worst < 2e-5);
+    // Sin efectos: el bombo vuelve a la batería y el stem es idéntico al de antes de enrutar.
+    const AudioData dryAfter = dryDrumStem (f.dir + "/dry1.zip");
+    CHECK (dryAfter.channels == dryBefore.channels);
+}

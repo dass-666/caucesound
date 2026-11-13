@@ -250,7 +250,14 @@ TrackRT Session::makeTrackRT (const TrackModel& t, int slot, bool offline, Rende
 {
     TrackRT tr;
     tr.slot = slot;
-    if (t.kind == "bus") tr.busIndex = busIndexOf (t.id);
+    if (t.kind == "bus")
+    {
+        tr.busIndex = busIndexOf (t.id);
+        for (const auto& o : proj.tracks)
+            for (const auto& r : o.laneRoutes) tr.laneChannel = tr.laneChannel || r.second == t.id;
+    }
+    for (const auto& [lane, busId] : t.laneRoutes)
+        if (lane >= 0 && lane < kMaxAuxLanes) tr.laneBus[lane] = busIndexOf (busId);
     for (const auto& c : t.clips)
     {
         // Escucha previa de VocalShift: original + región de prueba procesada. Solo en vivo y solo si el clip sigue
@@ -687,7 +694,12 @@ OpResult Session::removeTrack (const std::string& id)
     if (recorder) return OpResult::fail ("no se puede borrar una pista durante la grabación");
     pushUndo();
     proj.tracks.erase (it);
-    for (auto& t : proj.tracks) t.sends.erase (id); // envíos hacia un bus borrado
+    for (auto& t : proj.tracks)
+    {
+        t.sends.erase (id); // envíos hacia un bus borrado
+        // Canal propio de una pieza de batería borrado: la pieza vuelve a sonar por su pista de batería.
+        for (auto r = t.laneRoutes.begin(); r != t.laneRoutes.end();) r = r->second == id ? t.laneRoutes.erase (r) : std::next (r);
+    }
     return finishEditLocked();
 }
 

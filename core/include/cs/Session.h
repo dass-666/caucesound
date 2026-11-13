@@ -144,7 +144,7 @@ public:
     OpResult soloRequest (int startBar, int bars, int keyRoot, bool minor, solo::MelodyRequest& out) const;
     // replaceTrackId: si se da, sustituye las notas de esa pista de Solo AI (para escuchar otra alternativa) en vez
     // de crear otra pista. Nunca sustituye una pista que no sea de Solo AI ni una bloqueada.
-    // Volumen inicial de una pista de Solo AI: el de la melodía de la canción si la hay (misma presencia en la
+    // Volumen inicial de una pista de Solo AI: el de la melodía de la canción + 3 dB si la hay (0.7; antes igual, la
     // mezcla), o -3 dB. No toca la mezcla de las demás pistas.
     float soloVolumeDbLocked() const;
     // Controles creativos sobre una melodía de Solo AI ya creada (misión 0.6). Transforman sus notas, que siguen siendo
@@ -195,6 +195,17 @@ public:
     OpResult setInsertBypass (const std::string& insertId, bool bypass);
     OpResult moveInsert (const std::string& insertId, int newIndex);
     float insertMeter (const std::string& insertId) const; // reducción de ganancia del compresor (dB), si aplica
+    // Mixer Pro (0.7): aplica una cadena completa (FxChains.h) con su orden y parámetros. replace = true sustituye la
+    // cadena actual; false la añade al final. Un solo paso de deshacer (la cadena anterior vuelve entera). Falla sin
+    // tocar nada si se pasaría de 8 efectos o si la pista es un bus y algún efecto tiene latencia. r.id = nº de efectos.
+    OpResult applyFxChain (const std::string& trackId, const std::string& presetId, bool replace);
+
+    // --- Channel Rack (0.7) ---------------------------------------------------------------------------------------
+    // Pieza de batería en su propio canal del mezclador: own = true crea un canal (bus) con el nombre de la pieza y
+    // dirige ahí ese carril (antes del fader y las inserciones de la batería), con sus propias ranuras, fader, pan,
+    // mute y solo. own = false lo devuelve a la pista de batería y borra ese canal (con sus efectos). Un paso de
+    // deshacer. r.id = id del canal creado.
+    OpResult routeDrumLane (const std::string& trackId, int lane, bool own);
 
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);

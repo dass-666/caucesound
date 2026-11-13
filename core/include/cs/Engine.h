@@ -21,7 +21,8 @@
 namespace cs
 {
 constexpr int kMaxTracks = 32;
-constexpr int kMaxBuses = 4; // buses de efectos (envíos), p. ej. una reverb compartida
+constexpr int kMaxBuses = 8; // buses de efectos (envíos) y canales propios de piezas de batería (0.7: antes 4)
+constexpr int kMaxAuxLanes = 8; // carriles de un instrumento que pueden ir a su propio canal (Cauce Drums: 8)
 
 struct ClipRT
 {
@@ -48,6 +49,13 @@ struct TrackRT
     // true: la pista no suena directamente, solo alimenta sus envíos (post-fader). Lo usa la exportación de retornos
     // de bus por separado; en la reproducción normal siempre es false.
     bool sendsOnly = false;
+    // Channel Rack (0.7): carril del instrumento -> índice de bus que lo recibe como canal propio (-1 = sale por la
+    // pista). El carril entra en ese bus antes del fader y las inserciones de la pista de batería (como un canal
+    // del mezclador). Ignorado si la pista tiene latencia (PDC): el canal propio no está compensado.
+    int laneBus[kMaxAuxLanes] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+    bool hasLaneRoutes() const { for (int b : laneBus) if (b >= 0) return true; return false; }
+    // true: bus que es el canal propio de un carril; participa en el solo como una pista normal.
+    bool laneChannel = false;
 };
 uint64_t hashEvents (const std::vector<SchedEvent>& ev);
 
@@ -145,7 +153,8 @@ public:
 
 private:
     void renderBlock (const RenderGraph* g, Frame pos, bool rolling, float* L, float* R, int n);
-    void renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n);
+    // busOffset: posición de tl dentro del bloque (para dirigir los carriles con canal propio a su bus).
+    void renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n, int busOffset = 0);
     void notesOff (const RenderGraph* g, bool hard);
     void addSends (const TrackRT& t, const float* l, const float* r, int n, bool smooth);
     void loopNotesOff (const RenderGraph* g);

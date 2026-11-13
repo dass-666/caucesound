@@ -1,6 +1,7 @@
 // Session: instrumentos, patrones de batería, clips MIDI, bucle y plantillas de género (fase 1.2).
 #include "cs/Composer.h"
 #include "cs/Instruments.h"
+#include "cs/FxChains.h"
 #include "cs/Session.h"
 
 #include <nlohmann/json.hpp>
@@ -84,6 +85,116 @@ OpResult Session::addInsert (const std::string& trackId, const std::string& type
     finishEditLocked();
     OpResult r;
     r.id = ins.id;
+    return r;
+}
+
+OpResult Session::applyFxChain (const std::string& trackId, const std::string& presetId, bool replace)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    const TrackModel* t0 = proj.findTrack (trackId);
+    if (! t0) return OpResult::fail ("pista no encontrada");
+    const ChainPreset* preset = findChainPreset (presetId);
+    if (! preset) return OpResult::fail ("cadena desconocida: " + presetId);
+    const size_t total = (replace ? 0 : t0->inserts.size()) + preset->steps.size();
+    if (total > 8) return OpResult::fail ("no caben: la pista tendría " + std::to_string (total) + " efectos (máximo 8). Usa «Reemplazar» o quita alguno");
+    // Todo se prepara antes de tocar el proyecto: si un efecto falla, no queda una cadena a medias.
+    std::vector<InsertModel> added;
+    for (const auto& st : preset->steps)
+    {
+        ProcessorPtr fx = createProcessor (st.type);
+        if (! fx) return OpResult::fail ("efecto no disponible: " + st.type);
+        fx->prepare (proj.sampleRate, 4096);
+        if (t0->kind == "bus" && fx->latencySamples() > 0) return OpResult::fail ("la cadena tiene un efecto con latencia y no se puede usar en un bus");
+        const auto ps = fx->parameters();
+        for (const auto& kv : st.params)
+        {
+            std::string id = kv.first;
+            float v = kv.second;
+            if (id == "timeBeats") { id = "timeMs"; v = (float) (60000.0 / proj.bpm * kv.second); }
+            const int idx = parameterIndex (*fx, id);
+            if (idx < 0) return OpResult::fail ("parámetro desconocido en la cadena: " + id);
+            fx->setParameter (idx, std::clamp (v, ps[(size_t) idx].minValue, ps[(size_t) idx].maxValue));
+        }
+        InsertModel ins;
+        ins.id = newId ("fx");
+        ins.type = st.type;
+        ins.state = fx->saveState();
+        added.push_back (ins);
+    }
+    pushUndo();
+    TrackModel* t = proj.findTrack (trackId);
+    if (replace)
+    {
+        for (const auto& i : t->inserts) insertInstances.erase (i.id);
+        t->inserts.clear();
+    }
+    for (const auto& i : added) t->inserts.push_back (i);
+    finishEditLocked();
+    OpResult r;
+    r.id = std::to_string (t->inserts.size());
+    return r;
+}
+
+OpResult Session::routeDrumLane (const std::string& trackId, int lane, bool own)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    if (recorder) return OpResult::fail ("no se puede cambiar el enrutado durante la grabación");
+    const TrackModel* t0 = proj.findTrack (trackId);
+    if (! t0 || t0->kind != "drums") return OpResult::fail ("no es una pista de batería");
+    if (lane < 0 || lane >= kDrumLanes) return OpResult::fail ("pieza no válida");
+    auto existing = t0->laneRoutes.find (lane);
+    if (! own)
+    {
+        if (existing == t0->laneRoutes.end()) return {};
+        const std::string busId = existing->second;
+        pushUndo();
+        proj.findTrack (trackId)->laneRoutes.erase (lane);
+        const TrackModel* b = proj.findTrack (busId);
+        if (b && b->kind == "bus")
+        {
+            for (const auto& i : b->inserts) insertInstances.erase (i.id);
+            proj.tracks.erase (std::remove_if (proj.tracks.begin(), proj.tracks.end(), [&] (const TrackModel& x) { return x.id == busId; }), proj.tracks.end());
+            for (auto& x : proj.tracks) x.sends.erase (busId);
+        }
+        return finishEditLocked();
+    }
+    if (existing != t0->laneRoutes.end()) { OpResult r; r.id = existing->second; return r; }
+    int buses = 0;
+    for (const auto& x : proj.tracks) buses += x.kind == "bus";
+    if (buses >= kMaxBuses) return OpResult::fail ("no quedan canales libres (máximo " + std::to_string (kMaxBuses) + " entre buses y piezas con canal propio)");
+    if (proj.tracks.size() >= (size_t) kMaxTracks) return OpResult::fail ("límite de pistas alcanzado");
+    // Nombre de la pieza según el kit de la pista.
+    std::string name = "Pieza " + std::to_string (lane + 1);
+    {
+        const json st = json::parse (t0->instrument.state, nullptr, false);
+        const int kit = st.is_object() ? (int) std::lround (st.value ("kit", 0.0)) : 0;
+        const auto& kits = drumKits();
+        if (kit >= 0 && kit < (int) kits.size() && lane < (int) kits[(size_t) kit].laneNames.size()) name = kits[(size_t) kit].laneNames[(size_t) lane];
+    }
+    pushUndo();
+    TrackModel b;
+    b.id = newId ("trk");
+    b.kind = "bus";
+    b.name = name;
+    b.color = proj.findTrack (trackId)->color;
+    // Justo después de la batería y de los canales de sus otras piezas: el mezclador queda agrupado.
+    auto pos = std::find_if (proj.tracks.begin(), proj.tracks.end(), [&] (const TrackModel& x) { return x.id == trackId; });
+    auto after = std::next (pos);
+    while (after != proj.tracks.end() && after->kind == "bus")
+    {
+        bool mine = false;
+        for (const auto& r : pos->laneRoutes) mine = mine || r.second == after->id;
+        if (! mine) break;
+        ++after;
+    }
+    const std::string busId = b.id;
+    proj.tracks.insert (after, b);
+    proj.findTrack (trackId)->laneRoutes[lane] = busId;
+    finishEditLocked();
+    OpResult r;
+    r.id = busId;
     return r;
 }
 

@@ -170,10 +170,23 @@ void Engine::drainLive (const RenderGraph* g)
     }
 }
 
-void Engine::renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n)
+void Engine::renderInstrument (const TrackRT& t, Frame position, bool rolling, float* tl, float* tr, int n, int busOffset)
 {
     Instrument& inst = *t.instrument;
     int cursor = 0;
+    // Carriles con canal propio (Channel Rack): cada process() escribe esos carriles en la entrada de su bus, en la
+    // misma posición del bloque. Sin enrutar (o con latencia en la pista) todo sale por la pista, como siempre.
+    const bool routed = t.latency == 0 && t.hasLaneRoutes() && inst.auxLanes() > 0;
+    auto aim = [&] (int at)
+    {
+        if (! routed) return;
+        for (int l = 0; l < kMaxAuxLanes && l < inst.auxLanes(); ++l)
+        {
+            const int b = t.laneBus[l];
+            if (b >= 0 && b < kMaxBuses) inst.setAuxOut (l, busL.data() + (size_t) b * (size_t) maxBlock + busOffset + at, busR.data() + (size_t) b * (size_t) maxBlock + busOffset + at);
+            else inst.setAuxOut (l, nullptr, nullptr);
+        }
+    };
     if (rolling && ! t.events.empty())
     {
         const Frame blockEnd = position + n;
@@ -185,6 +198,7 @@ void Engine::renderInstrument (const TrackRT& t, Frame position, bool rolling, f
             if (off > cursor)
             {
                 float* io[2] = { tl + cursor, tr + cursor };
+                aim (cursor);
                 inst.process (io, 2, off - cursor);
                 cursor = off;
             }
@@ -196,8 +210,10 @@ void Engine::renderInstrument (const TrackRT& t, Frame position, bool rolling, f
     if (cursor < n)
     {
         float* io[2] = { tl + cursor, tr + cursor };
+        aim (cursor);
         inst.process (io, 2, n - cursor);
     }
+    if (routed) for (int l = 0; l < kMaxAuxLanes && l < inst.auxLanes(); ++l) inst.setAuxOut (l, nullptr, nullptr);
 }
 
 void Engine::startRecording (SpscRing<float>* ring, int channels)
@@ -314,7 +330,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
     if (! wasRolling) { snapSmoothersToTargets(); wasRolling = true; }
 
     bool anySolo = false;
-    for (const auto& t : g->tracks) anySolo |= t.busIndex < 0 && params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
+    for (const auto& t : g->tracks) anySolo |= (t.busIndex < 0 || t.laneChannel) && params[(size_t) t.slot].solo.load (std::memory_order_relaxed);
     for (int b = 0; b < kMaxBuses; ++b)
     {
         std::fill_n (busL.data() + (size_t) b * (size_t) maxBlock, n, 0.0f);
@@ -366,7 +382,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
                 }
                 any = true;
             }
-            if (t.instrument) { renderInstrument (t, from, true, tl + offset, tr + offset, count); any = true; }
+            if (t.instrument) { renderInstrument (t, from, true, tl + offset, tr + offset, count, offset); any = true; }
         };
         if (t.busIndex >= 0) {}
         else if (t.latency == 0 || ! blockLooping || position >= blockLoopEnd)
@@ -397,7 +413,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         TrackParams& p = params[(size_t) t.slot];
         // Los buses no se silencian por el solo de otra pista (si no, el solo quitaría la reverb compartida).
         const bool audible = ! p.mute.load (std::memory_order_relaxed)
-                             && (t.busIndex >= 0 || ! anySolo || p.solo.load (std::memory_order_relaxed));
+                             && ((t.busIndex >= 0 && ! t.laneChannel) || ! anySolo || p.solo.load (std::memory_order_relaxed));
         const float gn = audible ? p.gain.load (std::memory_order_relaxed) : 0.0f;
         const float pan = std::clamp (p.pan.load (std::memory_order_relaxed), -1.0f, 1.0f);
         const float targetL = gn * (pan > 0 ? 1.0f - pan : 1.0f);

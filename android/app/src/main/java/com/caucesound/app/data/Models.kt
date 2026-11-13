@@ -74,6 +74,8 @@ data class TrackState(
     val inserts: List<InsertState> = emptyList(),
     /** Envíos post-fader: id del bus → nivel 0..1. */
     val sends: Map<String, Float> = emptyMap(),
+    /** Channel Rack (0.7, solo baterías): carril → id del canal (bus) propio de esa pieza. */
+    val laneRoutes: Map<Int, String> = emptyMap(),
 ) {
     val isAudio: Boolean get() = kind == "audio"
     val isBus: Boolean get() = kind == "bus"
@@ -237,6 +239,8 @@ object StateParser {
                 t.optLong("color", 0xFF4FC3F7), clips, t.optString("kind", "audio"), inst?.optString("type") ?: "", params,
                 inst?.optString("preset") ?: "", patterns, midi.sortedBy { it.start }, inserts,
                 t.optJSONObject("sends")?.let { js -> js.keys().asSequence().associateWith { js.optDouble(it, 0.0).toFloat() } }
+                    ?: emptyMap(),
+                t.optJSONObject("laneRoutes")?.let { lr -> lr.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to lr.optString(k) } }.toMap() }
                     ?: emptyMap(),
             )
         }

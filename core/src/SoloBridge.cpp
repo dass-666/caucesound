@@ -59,11 +59,12 @@ Prepared prepare (const MelodyRequest& req)
     return p;
 }
 
-MelodyResult toResult (const ::solo::MelodyProposal& p, const Prepared& pr)
+MelodyResult toResult (const ::solo::MelodyProposal& p, const Prepared& pr, const MelodyRequest& req, int profile, bool variation)
 {
     MelodyResult r;
-    r.name = p.name;
-    r.description = p.description;
+    r.name = profileName (profile);
+    if (variation) r.name += " · variación";
+    r.description = profileDescription (profile);
     r.similarity = p.similarityToIdentity;
     for (const auto& n : p.sequence.notes)
     {
@@ -75,7 +76,8 @@ MelodyResult toResult (const ::solo::MelodyProposal& p, const Prepared& pr)
         m.length = (Tick) std::max<int64_t> (1, n.lengthTicks);
         r.notes.push_back (m);
     }
-    const auto fit = ::solo::harmonicFit (p.sequence, pr.prog, pr.key);
+    r.notes = applyProfile (r.notes, profile, req);
+    const auto fit = measureProfile (r.notes, req);
     r.inScale = fit.inScale;
     r.strongChordTones = fit.strongChordTones;
     r.ok = ! r.notes.empty();
@@ -100,9 +102,7 @@ MelodyResult generateMelody (const MelodyRequest& req)
             // Variación relacionada de la propuesta elegida (la lógica es de Solo AI: MelodyExplorer::vary).
             const auto v = ::solo::MelodyExplorer::vary (pr.ctx, pr.brief, id, p, 1, req.variation, {});
             if (v.empty() || v.front().sequence.notes.empty()) { r.error = "Solo AI no pudo variar esta melodía"; return r; }
-            const std::string base = p.name;
             p = v.front();
-            if (p.name.empty()) p.name = base + " · variación";
         }
         if (req.endingSeed != 0)
         {
@@ -111,7 +111,7 @@ MelodyResult generateMelody (const MelodyRequest& req)
             p.sequence = ::solo::MelodyExplorer::regenerateRegion (pr.ctx, p, from, bars - 1, req.endingSeed, {});
             if (p.sequence.notes.empty()) { r.error = "Solo AI no pudo cambiar la frase final"; return r; }
         }
-        r = toResult (p, pr);
+        r = toResult (p, pr, req, req.proposal, req.variation != 0);
     }
     catch (const std::exception& e) { r.ok = false; r.error = std::string ("Solo AI: ") + e.what(); }
     r.millis = std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count();
@@ -127,8 +127,12 @@ Family proposeFamily (const MelodyRequest& req)
     {
         const Prepared pr = prepare (req);
         const auto fam = ::solo::MelodyExplorer::propose (pr.ctx, pr.brief);
-        for (const auto& p : fam.proposals) f.proposals.push_back (toResult (p, pr));
-        f.diversity = fam.diversity;
+        for (size_t i = 0; i < fam.proposals.size(); ++i) f.proposals.push_back (toResult (fam.proposals[i], pr, req, (int) i, false));
+        // Diversidad medida sobre lo que de verdad entra en la pista: 1 - solapamiento medio de notas entre pares.
+        double ov = 0; int pairs = 0;
+        for (size_t i = 0; i < f.proposals.size(); ++i)
+            for (size_t j = i + 1; j < f.proposals.size(); ++j) { ov += onsetOverlap (f.proposals[i].notes, f.proposals[j].notes); ++pairs; }
+        f.diversity = pairs > 0 ? 1.0 - ov / pairs : 0.0;
         f.ok = f.proposals.size() == 4;
         for (const auto& p : f.proposals) f.ok = f.ok && p.ok;
         if (! f.ok) f.error = "Solo AI no devolvió las cuatro propuestas";

@@ -56,6 +56,22 @@ MelodyResult generateMelody (const MelodyRequest& req);
 struct Family { bool ok = false; std::string error; std::vector<MelodyResult> proposals; double diversity = 0; };
 Family proposeFamily (const MelodyRequest& req);
 
+// --- Perfiles A-D (misión 0.7, SoloProfiles.cpp; código del adaptador, no del núcleo de Solo AI) -----------------
+// El núcleo devuelve cuatro propuestas del mismo motivo que, en la mezcla, se oyen casi iguales. Cada perfil aplica un
+// algoritmo real sobre la propuesta del núcleo (A repite un gancho corto, B liga frases con un arco y resuelve, C
+// sincopa y acorta en registro grave, D invierte el contorno con saltos de octava y tresillos) y termina con un paso
+// armónico común: notas en la escala y notas del acorde en los tiempos fuertes. Determinista.
+const char* profileName (int profile);
+const char* profileDescription (int profile);
+std::vector<MidiNote> applyProfile (const std::vector<MidiNote>& notes, int profile, const MelodyRequest& req);
+struct ProfileMetrics
+{
+    int notes = 0, lowKey = 0, highKey = 0;
+    double notesPerBar = 0, meanLengthBeats = 0, meanLeap = 0, meanPitch = 0, syncopation = 0, inScale = 0, strongChordTones = 0;
+};
+ProfileMetrics measureProfile (const std::vector<MidiNote>& notes, const MelodyRequest& req);
+double onsetOverlap (const std::vector<MidiNote>& a, const std::vector<MidiNote>& b); // 0..1 (1 = mismas notas)
+
 // Análisis de un audio importado (BeatAnalyzer de Solo AI): tempo, tonalidad y acordes ESTIMADOS, cada uno con su
 // confianza 0..1. No cambia nada del proyecto: la interfaz muestra el resultado y el usuario confirma o corrige.
 struct Analysis

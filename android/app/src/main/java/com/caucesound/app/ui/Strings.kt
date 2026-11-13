@@ -11,3 +11,5 @@ object Genre {
         else -> tr("Proyecto vacío", "Empty project")
     }
 }
+
+fun isEnglish(): Boolean = Locale.getDefault().language != "es"

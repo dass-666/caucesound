@@ -52,6 +52,10 @@ object Cmd {
         solo("soloMelody", r, "proposal" to proposal, "variation" to variation, "replaceTrackId" to trackId, "endingSeed" to endingSeed, "endingBars" to 2)
     /** op: simpler, intense, soft, octaveUp, octaveDown. */
     fun soloTransform(trackId: String, op: String) = c("soloTransform", "trackId" to trackId, "op" to op)
+    /** Mixer Pro: cadena completa. replace = true sustituye la cadena actual (con deshacer); false la añade al final. */
+    fun applyFxChain(trackId: String, preset: String, replace: Boolean) = c("applyFxChain", "trackId" to trackId, "preset" to preset, "replace" to replace)
+    /** Channel Rack: pieza de batería a su propio canal del mezclador (own = true) o de vuelta a la batería. */
+    fun routeDrumLane(trackId: String, lane: Int, own: Boolean) = c("routeDrumLane", "trackId" to trackId, "lane" to lane, "own" to own)
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =

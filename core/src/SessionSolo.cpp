@@ -87,7 +87,9 @@ float Session::soloVolumeDbLocked() const
         for (const auto& t : proj.tracks)
         {
             auto it = plan.roles.find (t.id);
-            if (it != plan.roles.end() && it->second == "melody") return std::clamp (t.volumeDb, -12.0f, 0.0f);
+            // 0.7: +3 dB sobre la melodía de la plantilla. Con el mismo nivel, la línea de Solo AI quedaba ~15 dB por
+            // debajo de la mezcla (medido en solo_ai_alternatives_reach_…) y las cuatro alternativas se confundían.
+            if (it != plan.roles.end() && it->second == "melody") return std::clamp (t.volumeDb + 3.0f, -9.0f, 0.0f);
         }
     return -3.0f;
 }

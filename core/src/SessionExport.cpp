@@ -190,7 +190,12 @@ OpResult Session::exportDaw (const std::string& outPath, const DawExportOptions&
         TrackRT tr = makeTrackRT (t, 0, true, *sp.graph);
         ParamSnap p;
         if (opt.wet) { p.gain = dbToGain (t.volumeDb); p.pan = t.pan; }
-        else tr.inserts.clear();
+        else
+        {
+            tr.inserts.clear();
+            // Pistas limpias: las piezas con canal propio vuelven a su batería (no hay retornos de bus en este modo).
+            for (int& b : tr.laneBus) b = -1;
+        }
         sp.graph->tracks.push_back (std::move (tr));
         sp.params.push_back (p);
         const bool audible = ! t.mute && (! anySolo || t.solo);
@@ -222,7 +227,9 @@ OpResult Session::exportDaw (const std::string& outPath, const DawExportOptions&
             {
                 if (t.kind == "bus") continue;
                 auto it = t.sends.find (bus.id);
-                if (it == t.sends.end() || it->second <= 0) continue;
+                bool laneSource = false;
+                for (const auto& r : t.laneRoutes) laneSource = laneSource || r.second == bus.id;
+                if (! laneSource && (it == t.sends.end() || it->second <= 0)) continue;
                 TrackRT tr = makeTrackRT (t, slot++, true, *sp.graph);
                 tr.sendsOnly = true; // solo alimenta el bus: su señal directa ya está en su propio stem
                 sp.graph->tracks.push_back (std::move (tr));

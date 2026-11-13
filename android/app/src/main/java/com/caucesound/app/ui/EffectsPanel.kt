@@ -48,7 +48,7 @@ fun effectName(type: String): String = when (type) {
     else -> type
 }
 
-private fun effectColor(type: String): Color = when (type) {
+internal fun effectColor(type: String): Color = when (type) {
     "cs.filter", "cs.eq" -> Palette.Blue
     "cs.saturation", "cs.compressor" -> Palette.Solo
     "cs.delay", "cs.reverb" -> Palette.Violet
@@ -95,12 +95,8 @@ fun EffectsPanel(state: ProjectState, track: TrackState, catalog: Catalog, actio
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InsertCard(ins: InsertState, index: Int, count: Int, catalog: Catalog, actions: StudioActions) {
-    val info = catalog.effect(ins.type)
-    // Valores locales mientras se gira la perilla (el estado del motor se refresca al soltar).
-    val local = remember(ins) { mutableStateMapOf<String, Float>() }
     SectionCard("${index + 1}. ${effectName(ins.type)}") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PillToggle(if (ins.bypass) "Bypass" else "On", !ins.bypass, { actions.setInsertBypass(ins.id, !ins.bypass) }, color = effectColor(ins.type), height = 36.dp)
@@ -109,7 +105,19 @@ private fun InsertCard(ins: InsertState, index: Int, count: Int, catalog: Catalo
             IconButton(onClick = { actions.moveInsert(ins.id, index + 1) }, enabled = index < count - 1) { Icon(Icons.Default.KeyboardArrowDown, tr("Bajar", "Move down")) }
             IconButton(onClick = { actions.removeInsert(ins.id) }) { Icon(Icons.Default.Delete, tr("Quitar", "Remove"), tint = Palette.Record) }
         }
-        if (info == null) { Text(tr("Efecto no disponible en esta versión.", "Effect not available in this version."), color = Palette.TextDim); return@SectionCard }
+        InsertControls(ins, catalog, actions, effectColor(ins.type))
+    }
+}
+
+/** Perillas reales de una inserción (las que publica el motor). Se usa en Cauce FX y en las ranuras del Mixer Pro. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun InsertControls(ins: InsertState, catalog: Catalog, actions: StudioActions, color: Color = effectColor(ins.type)) {
+    val info = catalog.effect(ins.type)
+    // Valores locales mientras se gira la perilla (el estado del motor se refresca al soltar).
+    val local = remember(ins) { mutableStateMapOf<String, Float>() }
+    Column {
+        if (info == null) { Text(tr("Efecto no disponible en esta versión: se conserva en el proyecto sin sonar.", "Effect not available in this version: kept in the project, silent."), color = Palette.TextDim); return@Column }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             info.params.forEach { p ->
                 val v = local[p.id] ?: ins.params[p.id] ?: p.default
@@ -119,13 +127,13 @@ private fun InsertCard(ins: InsertState, index: Int, count: Int, catalog: Catalo
                         PillToggle(formatParam(p.id, v, p), v >= 0.5f, {
                             val nv = if (v >= 0.5f) 0f else 1f
                             local[p.id] = nv; actions.setInsertParam(ins.id, p.id, nv); actions.commitMixer()
-                        }, color = effectColor(ins.type), height = 40.dp)
+                        }, color = color, height = 40.dp)
                         Text(p.name.substringBefore(" ("), fontSize = 11.sp, color = Palette.TextDim)
                     }
                 } else {
                     val log = p.id.endsWith("Hz") || (p.id.endsWith("Ms") && p.max / p.min.coerceAtLeast(0.01f) > 50)
                     Knob(p.name, v, p.min, p.max, p.default, { local[p.id] = it; actions.setInsertParam(ins.id, p.id, it) }, onEnd = actions::commitMixer,
-                        log = log, color = effectColor(ins.type), format = { formatParam(p.id, it, p) })
+                        log = log, color = color, format = { formatParam(p.id, it, p) })
                 }
             }
         }

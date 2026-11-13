@@ -135,6 +135,12 @@ std::string toJson (const ProjectModel& p, bool pretty)
             jt["inserts"].push_back ({ { "id", i.id }, { "type", i.type }, { "state", i.state }, { "bypass", i.bypass } });
         jt["kind"] = t.kind;
         if (! t.sends.empty()) jt["sends"] = t.sends;
+        if (! t.laneRoutes.empty())
+        {
+            json lr = json::object();
+            for (const auto& [lane, bus] : t.laneRoutes) lr[std::to_string (lane)] = bus;
+            jt["laneRoutes"] = lr;
+        }
         if (! t.instrument.type.empty())
             jt["instrument"] = { { "type", t.instrument.type }, { "state", t.instrument.state }, { "preset", t.instrument.preset } };
         jt["patterns"] = json::array();
@@ -253,6 +259,13 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
             t.kind = jt.value ("kind", std::string ("audio"));
             if (jt.contains ("sends") && jt["sends"].is_object())
                 for (const auto& [busId, level] : jt["sends"].items()) t.sends[busId] = level.get<float>();
+            if (jt.contains ("laneRoutes") && jt["laneRoutes"].is_object())
+                for (const auto& [lane, bus] : jt["laneRoutes"].items())
+                {
+                    const int l = std::atoi (lane.c_str());
+                    if (lane != std::to_string (l)) throw std::runtime_error ("carril no válido en laneRoutes");
+                    t.laneRoutes[l] = bus.get<std::string>();
+                }
             if (jt.contains ("instrument") && jt["instrument"].is_object())
             {
                 t.instrument.type = jt["instrument"].at ("type").get<std::string>();
@@ -308,8 +321,9 @@ std::string validate (const ProjectModel& p)
     {
         int buses = 0;
         for (const auto& t : p.tracks) buses += t.kind == "bus";
-        if (buses > 4) return "demasiados buses";
+        if (buses > 8) return "demasiados buses"; // kMaxBuses (0.7: 8; antes 4)
     }
+    std::set<std::string> routedBuses;
     if (p.sampleRate < 8000 || p.sampleRate > 192000) return "frecuencia de muestreo fuera de rango";
     if (! std::isfinite (p.bpm) || p.bpm < 20 || p.bpm > 400) return "tempo fuera de rango (20-400 BPM)";
     if (p.beatsPerBar < 1 || p.beatsPerBar > 16) return "compás no válido";
@@ -354,6 +368,14 @@ std::string validate (const ProjectModel& p)
             const TrackModel* b = p.findTrack (busId);
             if (! b || b->kind != "bus") return "envío a un bus inexistente";
             if (! std::isfinite (level) || level < 0 || level > 1) return "nivel de envío no válido";
+        }
+        if (! t.laneRoutes.empty() && t.kind != "drums") return "solo una batería puede enviar piezas a su propio canal";
+        for (const auto& [lane, busId] : t.laneRoutes)
+        {
+            const TrackModel* b = p.findTrack (busId);
+            if (lane < 0 || lane >= 8) return "carril de batería no válido";
+            if (! b || b->kind != "bus") return "canal propio de una pieza que no es un bus";
+            if (! routedBuses.insert (busId).second) return "un canal recibe dos piezas de batería";
         }
         if (t.kind == "synth" && t.instrument.type != "cs.synth") return "pista de sintetizador sin instrumento";
         if (t.kind == "drums" && t.instrument.type != "cs.drums") return "pista de batería sin instrumento";
