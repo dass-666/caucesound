@@ -187,3 +187,22 @@ primero existe como producto. De los otros dos hay diseño y el programa `cauce`
 - **Plantillas**: los valores de mezcla (volúmenes, inserciones) se guardan en el proyecto al crearlo. Cambiar una
   plantilla solo afecta a canciones nuevas: es lo que mantiene intactas las canciones de versiones anteriores.
 - **Idea rápida**: no es un modo aparte. Es un proyecto vacío con una pista de audio armada que empieza a grabar.
+
+## 9. Channel Rack y Mixer Pro (misión 0.7)
+
+- **Mixer Pro, sin motor nuevo.** El rack de inserciones usa el `InsertModel` que ya existía (máximo 8 por pista, orden = orden de proceso).
+  - El catálogo (`effects` del comando `catalog`) añade categoría, nombre y descripción en los dos idiomas, y `latencySamples`.
+  - Las cadenas (`core/src/FxChains.cpp`, comando `applyFxChain`) son listas de pasos con parámetros.
+  - Se validan **antes** de tocar nada: los tipos deben existir, caber en las 8 ranuras y no llevar efectos con latencia en un bus.
+  - Se aplican como **un solo** paso de deshacer. `replace` sustituye la cadena; si no, se añade al final.
+  - El delay acepta `timeBeats`, que se convierte a ms con el BPM del proyecto.
+- **El master no tiene inserciones en el motor.** Por eso no existe la cadena «Master ligero». Añadirlas exige un `InsertChain` en el grafo de salida y su PDC; no se hizo.
+- **Channel Rack, sin segundo secuenciador.** La pantalla (`ChannelRackPanel.kt`) edita los mismos patrones de Cauce Drums con los mismos comandos (`setPatternStep`, `setPatternLength`, `setSwing`, `addPattern`).
+  - Las filas melódicas abren el Piano Roll existente y crean clips con `addMidiClip`.
+- **Pieza de batería en canal propio** (`routeDrumLane`):
+  - Crea un bus normal y guarda `laneRoutes[pieza] = busId` en la pista de batería (formato v3, ver FORMAT_V3.md).
+  - En el hilo de audio, `Instrument::setAuxOut` apunta la pieza al buffer de entrada de ese bus durante el `process` del bloque. El puntero se fija antes y se limpia después, sin reservar memoria.
+  - El bus se procesa en la segunda pasada, como un bus de envío, y aporta fader, mute/solo, medidor e inserciones.
+  - Limitación: solo con la batería sin latencia de inserciones (`latency == 0`). En otro caso la pieza se queda en la batería para no desalinearse.
+  - El *soft-clip* de la batería solo actúa sobre la suma principal.
+- **Navegación del estudio:** Arreglo · Rack · Piano roll · Mixer · Sonido. La rejilla completa de batería se abre desde el Rack, y Atrás vuelve al Rack.
