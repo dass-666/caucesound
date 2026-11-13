@@ -85,12 +85,26 @@ std::string newId (const char* prefix)
     return s;
 }
 
+int requiredProjectVersion (const ProjectModel& p)
+{
+    for (const auto& t : p.tracks)
+    {
+        if (t.instrument.type == "cs.sampler") return 4;
+        if (t.instrument.type == "cs.drums" && t.instrument.state.find ("\"sampleKit\"") != std::string::npos)
+        {
+            const json st = json::parse (t.instrument.state, nullptr, false);
+            if (st.is_object() && st.contains ("sampleKit") && st["sampleKit"].is_string() && ! st["sampleKit"].get<std::string>().empty()) return 4;
+        }
+    }
+    return kProjectFormatVersion;
+}
+
 // --- JSON --------------------------------------------------------------------------------------------------------
 std::string toJson (const ProjectModel& p, bool pretty)
 {
     json j;
     j["format"] = "caucesound-project";
-    j["version"] = p.version;
+    j["version"] = std::max (p.version, requiredProjectVersion (p));
     j["id"] = p.id;
     j["name"] = p.name;
     j["sampleRate"] = p.sampleRate;
@@ -175,7 +189,7 @@ bool fromJson (const std::string& text, ProjectModel& out, std::string& error)
         if (j.value ("format", std::string()) != "caucesound-project") { error = "no es un proyecto de CAUCESOUND"; return false; }
         ProjectModel p;
         p.version = j.at ("version").get<int>();
-        if (p.version > kProjectFormatVersion) { error = "proyecto creado con una versión más nueva de la app"; return false; }
+        if (p.version > kProjectFormatVersionMax) { error = "proyecto creado con una versión más nueva de la app"; return false; }
         if (p.version < 1) { error = "versión de proyecto no válida"; return false; }
         p.id = j.at ("id").get<std::string>();
         p.name = j.at ("name").get<std::string>();
@@ -377,7 +391,7 @@ std::string validate (const ProjectModel& p)
             if (! b || b->kind != "bus") return "canal propio de una pieza que no es un bus";
             if (! routedBuses.insert (busId).second) return "un canal recibe dos piezas de batería";
         }
-        if (t.kind == "synth" && t.instrument.type != "cs.synth") return "pista de sintetizador sin instrumento";
+        if (t.kind == "synth" && t.instrument.type != "cs.synth" && t.instrument.type != "cs.sampler") return "pista de sintetizador sin instrumento";
         if (t.kind == "drums" && t.instrument.type != "cs.drums") return "pista de batería sin instrumento";
         if (t.patterns.size() > 64) return "demasiados patrones";
         for (const auto& pt : t.patterns)

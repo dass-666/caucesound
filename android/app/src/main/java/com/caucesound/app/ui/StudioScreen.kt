@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
@@ -149,7 +150,13 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
             meters.value = NativeEngine.meters(state.tracks.size)
         }
     }
-    BackHandler { when (panel) { Panel.ARRANGE -> vm.closeProject(); Panel.FX -> vm.openPanel(Panel.MIXER); Panel.DRUMS -> vm.openPanel(Panel.RACK); else -> vm.openPanel(Panel.ARRANGE) } }
+    BackHandler { when (panel) {
+        Panel.ARRANGE -> vm.closeProject(); Panel.FX -> vm.openPanel(Panel.MIXER); Panel.DRUMS -> vm.openPanel(Panel.RACK)
+        Panel.SOUNDS -> { vm.stopSoundPreview(); vm.openPanel(if (state.tracks.firstOrNull { it.id == selectedTrack }?.isDrums == true) Panel.RACK else Panel.SYNTH) }
+        else -> vm.openPanel(Panel.ARRANGE)
+    } }
+    val sounds by vm.sounds.collectAsState()
+    val packImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.importPack(uri) }
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val t = importTrack
@@ -176,7 +183,12 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
         onRecord = { requestMic { vm.record() } },
         favorites = vm.favoritePresets.collectAsState().value, countIn = countIn, plugins = vm.plugins.collectAsState().value,
+        sounds = sounds, onImportPack = { packImporter.launch(arrayOf("application/zip", "application/octet-stream")) },
+        autoMixRevertable = vm.autoMixRevertable.collectAsState().value,
     )
+    sounds.removeAsk?.let { ask -> RemovePackDialog(ask, onDismiss = vm::dismissRemovePack, onConfirm = vm::confirmRemovePack) }
+    val autoMix by vm.autoMix.collectAsState()
+    if (autoMix.open) AutoMixDialog(autoMix, onApply = vm::autoMixApply, onDismiss = vm::dismissAutoMix)
 
     // Exportación para DAW: progreso real, cancelar visible y final claro. No se cierra tocando fuera mientras trabaja.
     pluginUi.export?.let { e ->
@@ -220,6 +232,7 @@ fun StudioLayout(
     busy: Boolean, position: LongState, playing: Boolean, meters: androidx.compose.runtime.State<FloatArray>, actions: StudioActions,
     snackbar: SnackbarHostState, onDialog: (String) -> Unit, onSettings: () -> Unit, onImport: (String) -> Unit, onRecord: () -> Unit,
     favorites: Set<String> = emptySet(), countIn: LongState? = null, plugins: com.caucesound.app.data.PluginUi = com.caucesound.app.data.PluginUi(),
+    sounds: com.caucesound.app.data.SoundUi = com.caucesound.app.data.SoundUi(), onImportPack: () -> Unit = {}, autoMixRevertable: Boolean = false,
 ) {
     var drumClipboard by remember { mutableStateOf<List<List<Int>>?>(null) }
     // Horizontal (poca altura): barra superior y transporte en una sola fila y navegación compacta, para dejar
@@ -232,6 +245,7 @@ fun StudioLayout(
             onLoop = { actions.setLoop(!state.loopEnabled, state.loopStart, state.loopEnd) }, onLoopEdit = { onDialog("loop") }, modifier = m,
         )
     }
+    androidx.compose.runtime.CompositionLocalProvider(com.caucesound.app.data.LocalSounds provides sounds) {
     Scaffold(containerColor = Palette.Background, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { StudioNav(panel, actions::openPanel, compact) }) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             // --- Barra superior (+ transporte en horizontal) ---
@@ -251,6 +265,10 @@ fun StudioLayout(
                 if (state.music != null || catalog.hasPlugin("solo.ai")) ToolButton(Icons.Default.AutoAwesome, if (state.music != null) tr("Variaciones", "Variations") else "Solo AI",
                     { actions.openPanel(if (panel == creative) Panel.ARRANGE else creative) },
                     active = panel == Panel.VARY || panel == Panel.SOLO, tint = Palette.Text, modifier = Modifier.testTag("open_variations"))
+                if (panel == Panel.MIXER) {
+                    ToolButton(Icons.Default.AutoFixHigh, tr("AutoMix: sugerir volúmenes", "AutoMix: suggest levels"), actions::autoMixSuggest, tint = Palette.Cyan, modifier = Modifier.testTag("automix"))
+                    if (autoMixRevertable) ToolButton(Icons.Default.Restore, tr("Revertir AutoMix", "Revert AutoMix"), actions::autoMixRevert, tint = Palette.Warn, modifier = Modifier.testTag("automix_revert"))
+                }
                 ToolButton(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo), actions::undo, enabled = state.canUndo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.redo), actions::redo, enabled = state.canRedo && !state.recording, tint = Palette.Text)
                 ToolButton(Icons.Default.Save, stringResource(R.string.save), actions::saveNow, tint = if (state.dirty) Palette.Text else Palette.TextDim)
@@ -261,6 +279,7 @@ fun StudioLayout(
             if (!compact) transport(Modifier.fillMaxWidth().background(Palette.Background))
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
+            if (state.missingInstruments.isNotEmpty() && panel == Panel.ARRANGE) Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) { MissingSoundsBanner(state.missingInstruments) }
             // --- Panel activo ---
             val track = state.tracks.firstOrNull { it.id == selectedTrack }
             AnimatedContent(panel, Modifier.weight(1f).fillMaxWidth(), transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(100)) }, label = "panel") { p ->
@@ -296,8 +315,10 @@ fun StudioLayout(
                         val t = track?.takeIf { it.isSynth } ?: state.tracks.firstOrNull { it.isSynth }
                         if (t == null) EmptyPanel(tr("No hay pistas de sintetizador.", "No synth tracks."), tr("Añadir Cauce Synth", "Add Cauce Synth")) {
                             actions.addTrack("Synth", "synth")
-                        } else SynthPanel(state, t, catalog, actions, favorites)
+                        } else if (t.isSampler) SamplerPanel(state, t, catalog, sounds, actions)
+                        else SynthPanel(state, t, catalog, actions, favorites)
                     }
+                    Panel.SOUNDS -> SoundBrowserPanel(state, track?.takeIf { it.isDrums || it.isSynth }, sounds, actions, onImportPack)
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions, catalog)
                     Panel.RACK -> ChannelRackPanel(state, catalog, position, playing, actions)
                     Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"))
@@ -315,6 +336,7 @@ fun StudioLayout(
             }
         }
     }
+}
 }
 
 /** Navegación inferior propia: misma apariencia en vertical y horizontal; la pestaña activa se marca en violeta. */

@@ -23,12 +23,25 @@ add_library(cs_core STATIC
     src/Jobs.cpp
     src/VocalBridge.cpp
     src/Synth.cpp
+    src/Sampler.cpp
+    src/SamplerInstrument.cpp
+    src/Packs.cpp
+    src/SessionSampler.cpp
+    src/SessionAutoMix.cpp
     src/Wav.cpp
 )
 target_include_directories(cs_core PUBLIC include ${CMAKE_CURRENT_LIST_DIR}/../third_party)
 target_compile_features(cs_core PUBLIC cxx_std_17)
 find_package(Threads REQUIRED)
 target_link_libraries(cs_core PUBLIC Threads::Threads)
+# zlib (opcional): importar paquetes de sonidos en ZIP con compresión deflate. Android (NDK) y Linux la traen.
+find_package(ZLIB QUIET)
+if (ZLIB_FOUND)
+    target_link_libraries(cs_core PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(cs_core PRIVATE CS_HAVE_ZLIB=1)
+else()
+    message(STATUS "CAUCESOUND: sin zlib; los paquetes ZIP deben ir sin compresión")
+endif()
 if (MSVC)
     target_compile_options(cs_core PRIVATE /W4)
 else()

@@ -124,6 +124,19 @@ interface StudioActions {
     fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {}
 
     fun openPanel(panel: Panel) {}
+
+    // --- Sonidos Cauce (misión 0.9) ---
+    /** Escucha previa de un instrumento de paquete en una voz aparte (no toca el proyecto). */
+    fun previewSound(key: String) {}
+    fun stopSoundPreview() {}
+    /** Carga el sonido en la pista (Cauce Sampler o kit de muestras). key vacío en una batería = kit sintetizado. Con deshacer. */
+    fun loadSound(trackId: String, key: String) {}
+    fun toggleFavoriteSound(key: String) {}
+    /** Pide confirmación (con los proyectos que lo usan) antes de borrar un paquete importado. */
+    fun askRemovePack(packId: String) {}
+    /** AutoMix (0.9, reglas): pide sugerencias de faders (no cambia nada) / devuelve la mezcla anterior. */
+    fun autoMixSuggest() {}
+    fun autoMixRevert() {}
 }
 
-enum class Panel { ARRANGE, RACK, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO }
+enum class Panel { ARRANGE, RACK, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO, SOUNDS }

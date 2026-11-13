@@ -170,7 +170,7 @@ void Session::syncInstancesLocked()
         auto it = instrumentInstances.find (t.id);
         if (it != instrumentInstances.end() && it->second && ! t.instrument.state.empty() && it->second->saveState() != t.instrument.state)
         {
-            if (t.instrument.type == "cs.drums") instrumentInstances.erase (it);
+            if (t.instrument.type == "cs.drums" || t.instrument.type == "cs.sampler") instrumentInstances.erase (it);
             else it->second->loadState (t.instrument.state);
         }
         for (const auto& ins : t.inserts)
@@ -371,10 +371,30 @@ void Session::rebuildGraph()
     g->contentEnd = proj.contentEnd();
     int slot = 0;
     for (const auto& t : proj.tracks) g->tracks.push_back (makeTrackRT (t, slot++, false, *g));
+    // Voz de prueba del navegador de sonidos (0.9): una pista más, solo en vivo (la exportación no la ve).
+    const int pslot = slot;
+    if (previewInstrument && pslot < kMaxTracks)
+    {
+        TrackRT pr;
+        pr.slot = pslot;
+        pr.instrument = previewInstrument;
+        g->tracks.push_back (std::move (pr));
+    }
     // Instancias de pistas borradas: fuera de la caché (el grafo anterior las mantiene vivas mientras haga falta).
     for (auto it = instrumentInstances.begin(); it != instrumentInstances.end();)
         it = proj.findTrack (it->first) ? std::next (it) : instrumentInstances.erase (it);
     applyMixerParams();
+    if (previewInstrument && pslot < kMaxTracks)
+    {
+        bool anySolo = false;
+        for (const auto& t : proj.tracks) anySolo |= t.solo;
+        TrackParams& pp = engine.trackParams (pslot);
+        pp.gain.store (dbToGain (-3.0f));
+        pp.pan.store (0.0f);
+        pp.mute.store (false);
+        pp.solo.store (anySolo); // con un solo activo, la escucha previa sigue sonando
+        for (auto& snd : pp.send) snd.store (0.0f);
+    }
     engine.publish (std::move (g));
 }
 
@@ -547,7 +567,19 @@ OpResult Session::save()
     std::lock_guard<std::recursive_mutex> l (mtx);
     if (! open) return OpResult::fail ("no hay proyecto abierto");
     std::string err;
-    if (! atomicWriteFile (dir + "/" + kProjectFile, toJson (proj), err, true)) return OpResult::fail (err);
+    // Primer guardado en v4 (0.9) de un proyecto v3: el original se conserva como project.v3.json (como en v1/v2).
+    const std::string text = toJson (proj);
+    if (requiredProjectVersion (proj) > kProjectFormatVersion)
+    {
+        const std::string legacy = dir + "/project.v" + std::to_string (kProjectFormatVersion) + ".json";
+        std::string old;
+        if (! fileExists (legacy) && readFile (dir + "/" + kProjectFile, old))
+        {
+            const json oj = json::parse (old, nullptr, false);
+            if (oj.is_object() && oj.value ("version", 0) <= kProjectFormatVersion) atomicWriteFile (legacy, old, err, false);
+        }
+    }
+    if (! atomicWriteFile (dir + "/" + kProjectFile, text, err, true)) return OpResult::fail (err);
     dirty = false;
     return {};
 }
@@ -574,6 +606,9 @@ void Session::close()
     pool.clear();
     insertInstances.clear();
     instrumentInstances.clear();
+    previewInstrument.reset();
+    previewKey.clear();
+    autoMixBefore.clear();
     undoStack.clear();
     redoStack.clear();
     proj = ProjectModel();
@@ -622,6 +657,22 @@ std::string Session::stateJson() const
             if (pool.find (c.sourceId) == pool.end()) missing.push_back (c.id);
     j["missingClips"] = missing;
     j["missingPlugins"] = missingPlugins();
+    j["missingInstruments"] = missingInstruments();
+    {
+        // Estado de carga de los instrumentos de muestras (0.9): nombre, memoria, muestras que faltan, error.
+        json samplers = json::object();
+        for (const auto& t : proj.tracks)
+        {
+            auto it = instrumentInstances.find (t.id);
+            if (it == instrumentInstances.end() || ! it->second) continue;
+            const SamplerStatus st = samplerStatus (it->second.get());
+            if (st.key.empty()) continue;
+            samplers[t.id] = { { "key", st.key }, { "name", st.name }, { "loaded", st.loaded }, { "bytes", st.bytes }, { "regions", st.regions },
+                               { "missingSamples", st.missingSamples }, { "error", st.error } };
+        }
+        j["samplers"] = samplers;
+        if (previewInstrument) j["preview"] = { { "key", previewKey }, { "slot", (int) proj.tracks.size() < kMaxTracks ? (int) proj.tracks.size() : -1 } };
+    }
     j["listenMatchClip"] = listenMatchClip; // estado de escucha, no del proyecto
     if (preview.valid())
         j["vocalPreview"] = { { "clipId", preview.clipId }, { "from", preview.from }, { "length", preview.length }, { "listening", listenPreview },

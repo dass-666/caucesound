@@ -76,13 +76,19 @@ data class TrackState(
     val sends: Map<String, Float> = emptyMap(),
     /** Channel Rack (0.7, solo baterías): carril → id del canal (bus) propio de esa pieza. */
     val laneRoutes: Map<Int, String> = emptyMap(),
+    /** 0.9: instrumento de paquete ("<paquete>:<instrumento>") de un Cauce Sampler o kit de muestras de una batería. */
+    val soundKey: String = "",
 ) {
+    val isSampler: Boolean get() = instrumentType == "cs.sampler"
     val isAudio: Boolean get() = kind == "audio"
     val isBus: Boolean get() = kind == "bus"
     val isDrums: Boolean get() = kind == "drums"
     val isSynth: Boolean get() = kind == "synth"
     fun pattern(id: String): PatternState? = patterns.firstOrNull { it.id == id }
 }
+
+/** Estado de carga de un instrumento de muestras (comando "state" → "samplers"). */
+data class SamplerState(val key: String, val name: String, val loaded: Boolean, val bytes: Long, val regions: Int, val missingSamples: Int, val error: String)
 
 data class SourceState(val id: String, val frames: Long, val channels: Int, val origin: String)
 
@@ -112,6 +118,10 @@ data class ProjectState(
     /** Plugins que usa el proyecto y esta versión no tiene: se avisa y sus datos se conservan. */
     val missingPlugins: List<String> = emptyList(),
     val vocalPreview: VocalPreviewState? = null,
+    /** 0.9: instrumentos de paquetes que usa el proyecto y no están instalados (pista muda, datos conservados). */
+    val missingInstruments: List<String> = emptyList(),
+    /** 0.9: estado de carga de cada Cauce Sampler / kit de muestras, por id de pista. */
+    val samplers: Map<String, SamplerState> = emptyMap(),
 ) {
     fun clip(id: String): Pair<TrackState, ClipState>? {
         for (t in tracks) for (c in t.clips) if (c.id == id) return t to c
@@ -201,8 +211,12 @@ object StateParser {
             }.sortedBy { it.start }
             val inst = t.optJSONObject("instrument")
             val params = mutableMapOf<String, Float>()
+            var soundKey = ""
             inst?.optString("state")?.takeIf { it.isNotEmpty() }?.let { st ->
-                runCatching { JSONObject(st) }.getOrNull()?.let { o -> for (k in o.keys()) o.optDouble(k).takeIf { !it.isNaN() }?.let { params[k] = it.toFloat() } }
+                runCatching { JSONObject(st) }.getOrNull()?.let { o ->
+                    for (k in o.keys()) o.optDouble(k).takeIf { !it.isNaN() }?.let { params[k] = it.toFloat() }
+                    soundKey = o.optString(if (inst.optString("type") == "cs.sampler") "instrument" else "sampleKit")
+                }
             }
             val patterns = mutableListOf<PatternState>()
             t.optJSONArray("patterns")?.let { pa ->
@@ -242,6 +256,7 @@ object StateParser {
                     ?: emptyMap(),
                 t.optJSONObject("laneRoutes")?.let { lr -> lr.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to lr.optString(k) } }.toMap() }
                     ?: emptyMap(),
+                soundKey,
             )
         }
         return ProjectState(
@@ -259,6 +274,10 @@ object StateParser {
             },
             o.optJSONArray("missingPlugins")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
             o.optJSONObject("vocalPreview")?.let { v -> VocalPreviewState(v.optString("clipId"), v.optLong("from"), v.optLong("length"), v.optBoolean("listening"), VocalParams.fromJson(v.optJSONObject("params")), v.optDouble("seconds", 0.0)) },
+            o.optJSONArray("missingInstruments")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+            o.optJSONObject("samplers")?.let { sm -> sm.keys().asSequence().associateWith { k -> sm.getJSONObject(k).let { x ->
+                SamplerState(x.optString("key"), x.optString("name"), x.optBoolean("loaded"), x.optLong("bytes"), x.optInt("regions"), x.optInt("missingSamples"), x.optString("error"))
+            } } } ?: emptyMap(),
         )
     }
 

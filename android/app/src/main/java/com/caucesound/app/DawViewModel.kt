@@ -88,6 +88,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         startAudio()
         refreshProjects()
         viewModelScope.launch {
+            setupPacks()
             _catalog.value = withContext(control) { runCatching { Catalog.parse(NativeEngine.command(Cmd.catalog())) }.getOrDefault(Catalog.EMPTY) }
             if (_catalog.value.hasPlugin("vocalshift")) {
                 val presets = withContext(control) { runCatching { com.caucesound.app.data.PluginParser.vocalPresets(NativeEngine.command(Cmd.vocalPresets())) }.getOrDefault(emptyList()) }
@@ -274,6 +275,8 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
 
     override fun closeProject() {
         autosave?.cancel()
+        _autoMixRevertable.value = false
+        _autoMix.value = com.caucesound.app.data.AutoMixUi()
         clearPluginUi() // el motor cancela los trabajos del proyecto al cerrarlo; aquí se deja de consultarlos
         viewModelScope.launch {
             call(Cmd.closeProject()) // guarda si hay cambios, detiene grabación/transporte y vuelve la posición a 0
@@ -554,6 +557,135 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     }
 
     /** Directo al motor (sin pasar por el hilo de control): la latencia de los pads es la del búfer de audio. */
+
+    // --- AutoMix (0.9, prototipo por reglas) -------------------------------------------------------------------
+    private val _autoMix = MutableStateFlow(com.caucesound.app.data.AutoMixUi())
+    val autoMix: StateFlow<com.caucesound.app.data.AutoMixUi> = _autoMix.asStateFlow()
+    override fun autoMixSuggest() {
+        _autoMix.value = _autoMix.value.copy(open = true, analyzing = true)
+        viewModelScope.launch { _autoMix.value = com.caucesound.app.data.AutoMixParser.parse(withContext(control) { NativeEngine.command(Cmd.autoMixSuggest()) }) }
+    }
+    fun autoMixApply() {
+        val ch = _autoMix.value.suggestions.filter { it.change }
+        _autoMix.value = com.caucesound.app.data.AutoMixUi()
+        if (ch.isNotEmpty()) edit(Cmd.autoMixApply(ch)) { toast(tr("AutoMix aplicado. Puedes revertirlo desde el Mixer.", "AutoMix applied. You can revert it from the Mixer.")); _autoMixRevertable.value = true }
+    }
+    private val _autoMixRevertable = MutableStateFlow(false)
+    val autoMixRevertable: StateFlow<Boolean> = _autoMixRevertable.asStateFlow()
+    override fun autoMixRevert() = edit(Cmd.autoMixRevert()) { _autoMixRevertable.value = false; toast(tr("Mezcla anterior recuperada", "Previous mix restored")) }
+    fun dismissAutoMix() { _autoMix.value = com.caucesound.app.data.AutoMixUi() }
+
+    // --- Sonidos Cauce (misión 0.9) ------------------------------------------------------------------------------
+    private val packsDir = File(app.filesDir, "packs")
+    private val _sounds = MutableStateFlow(com.caucesound.app.data.SoundUi(favorites = prefs.getStringSet("favoriteSounds", emptySet())!!.toSet()))
+    val sounds: StateFlow<com.caucesound.app.data.SoundUi> = _sounds.asStateFlow()
+    private var previewJob: Job? = null
+
+    /** Copia los paquetes de fábrica (si cambiaron) y registra las carpetas en el motor. Antes de abrir proyectos. */
+    private suspend fun setupPacks() {
+        val app = getApplication<Application>()
+        val factory = File(packsDir, "factory")
+        val user = File(packsDir, "user").apply { mkdirs() }
+        withContext(Dispatchers.IO) { runCatching { com.caucesound.app.audio.FactoryPacks.install(app.assets, factory) } }
+        val json = withContext(control) { NativeEngine.command(Cmd.configurePacks(factory.absolutePath, user.absolutePath)) }
+        _sounds.value = _sounds.value.copy(packs = com.caucesound.app.data.PackParser.packs(json))
+    }
+
+    private suspend fun refreshPacks() {
+        val json = withContext(control) { NativeEngine.command(Cmd.packs()) }
+        _sounds.value = _sounds.value.copy(packs = com.caucesound.app.data.PackParser.packs(json))
+    }
+
+    override fun previewSound(key: String) {
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch {
+            val r = call(Cmd.previewInstrument(key))
+            val slot = r.raw.optInt("slot", -1)
+            if (!r.ok || slot < 0) { toast(r.error ?: tr("No se pudo escuchar", "Could not preview")); return@launch }
+            _sounds.value = _sounds.value.copy(previewing = key)
+            val info = _sounds.value.instrument(key)
+            try {
+                // Frase corta y fija para comparar sonidos en igualdad: kit = bombo/charles/caja; melódico = arpegio.
+                val steps: List<Pair<List<Int>, Int>> = if (info?.isDrumKit == true)
+                    listOf(listOf(36, 42) to 100, listOf(42) to 70, listOf(38, 42) to 110, listOf(42) to 70, listOf(36, 42) to 100, listOf(36) to 85, listOf(38, 42) to 115, listOf(46) to 80)
+                else {
+                    val k = (info?.previewKey ?: 60).coerceIn(12, 108)
+                    if (info?.mono == true) listOf(listOf(k) to 100, listOf(k) to 70, listOf(k + 7) to 95, listOf(k + 12) to 110, listOf(k + 10) to 90, listOf(k + 7) to 80, listOf(k + 3) to 95, listOf(k) to 115)
+                    else listOf(listOf(k, k + 4, k + 7) to 95, listOf(k + 12) to 80, listOf(k - 3, k + 4, k + 9) to 90, listOf(k + 7) to 75, listOf(k - 7, k, k + 5) to 100, listOf(k + 9) to 80, listOf(k - 5, k + 2, k + 7) to 110)
+                }
+                for ((keys, vel) in steps) {
+                    keys.forEach { liveNote(slot, it, vel, true) }
+                    delay(if (info?.isDrumKit == true) 180 else 330)
+                    keys.forEach { liveNote(slot, it, 0, false) }
+                }
+                delay(900)
+            } finally {
+                if (_sounds.value.previewing == key) _sounds.value = _sounds.value.copy(previewing = null)
+            }
+        }
+    }
+
+    override fun stopSoundPreview() {
+        previewJob?.cancel()
+        viewModelScope.launch { call(Cmd.previewInstrument("")); _sounds.value = _sounds.value.copy(previewing = null) }
+    }
+
+    override fun loadSound(trackId: String, key: String) {
+        val t = _state.value?.tracks?.firstOrNull { it.id == trackId } ?: return
+        val cmd = if (t.isDrums) Cmd.setDrumSampleKit(trackId, key) else Cmd.setSamplerInstrument(trackId, key)
+        edit(cmd) { toast(if (key.isEmpty()) tr("Kit sintetizado restaurado", "Synth kit restored") else tr("Sonido cargado: ", "Sound loaded: ") + (_sounds.value.instrument(key)?.name ?: key)) }
+    }
+
+    override fun toggleFavoriteSound(key: String) {
+        val next = _sounds.value.favorites.let { if (key in it) it - key else it + key }
+        _sounds.value = _sounds.value.copy(favorites = next)
+        prefs.edit().putStringSet("favoriteSounds", next).apply()
+    }
+
+    override fun askRemovePack(packId: String) {
+        val p = _sounds.value.packs.firstOrNull { it.id == packId } ?: return
+        viewModelScope.launch {
+            val used = com.caucesound.app.data.PackParser.usage(withContext(control) { NativeEngine.command(Cmd.packUsage(projectsRoot.absolutePath, packId)) })
+            _sounds.value = _sounds.value.copy(removeAsk = p to used)
+        }
+    }
+
+    fun dismissRemovePack() { _sounds.value = _sounds.value.copy(removeAsk = null) }
+
+    fun confirmRemovePack() {
+        val p = _sounds.value.removeAsk?.first ?: return
+        _sounds.value = _sounds.value.copy(removeAsk = null)
+        viewModelScope.launch {
+            val r = call(Cmd.removePack(p.id))
+            toast(if (r.ok) tr("Paquete borrado", "Pack deleted") else (r.error ?: ""))
+            refreshPacks()
+            refresh()
+        }
+    }
+
+    fun importPack(source: android.net.Uri) {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            _sounds.value = _sounds.value.copy(importing = true)
+            val tmp = File(app.cacheDir, "pack_${System.currentTimeMillis()}.zip")
+            try {
+                val copied = withContext(Dispatchers.IO) {
+                    runCatching { app.contentResolver.openInputStream(source)!!.use { inp -> tmp.outputStream().use { inp.copyTo(it, 1 shl 16) } } }.isSuccess
+                }
+                if (!copied) { toast(tr("No se pudo leer el archivo", "Could not read the file")); return@launch }
+                var res = com.caucesound.app.data.PackParser.import(withContext(control) { NativeEngine.command(Cmd.importPack(tmp.absolutePath, false)) })
+                // Misma versión o anterior ya instalada: se ofrece sustituirla solo si es una versión nueva (el motor lo decide).
+                if (!res.ok && res.error?.contains("ya está instalad") == true) res = com.caucesound.app.data.PackParser.import(withContext(control) { NativeEngine.command(Cmd.importPack(tmp.absolutePath, true)) })
+                toast(if (res.ok) tr("Paquete instalado: ", "Pack installed: ") + "${res.packId} ${res.version}" else tr("No se instaló: ", "Not installed: ") + (res.error ?: ""))
+                refreshPacks()
+                refresh() // un proyecto con sonidos que faltaban los recupera al reabrir
+            } finally {
+                withContext(Dispatchers.IO) { tmp.delete() }
+                _sounds.value = _sounds.value.copy(importing = false)
+            }
+        }
+    }
+
     override fun liveNote(slot: Int, key: Int, velocity: Int, on: Boolean) {
         NativeEngine.liveMidi(slot, if (on) 0x90 else 0x80, key, if (on) velocity.coerceIn(1, 127) else 0)
     }

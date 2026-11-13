@@ -4,6 +4,8 @@
 // Las métricas son objetivas (niveles, espectro, dinámica, repetición); NO dicen si algo «suena bien».
 #include <algorithm>
 #include "cs/Api.h"
+#include "cs/Packs.h"
+#include "cs/Composer.h"
 #include "cs/Session.h"
 #include "cs/Wav.h"
 
@@ -143,6 +145,42 @@ int main (int argc, char** argv)
         std::printf ("%s\n", analyze (a, std::atof (argv[3])).dump (2).c_str());
         return 0;
     }
+    if (argc >= 4 && std::string (argv[1]) == "--fixtures09")
+    {
+        // Fixtures 0.9 para la JVM: paquetes reales instalados, proyecto con kit de muestras y bajo de paquete, y el
+        // mismo proyecto abierto sin el paquete del bajo (sonido que falta).
+        namespace fs = std::filesystem;
+        const std::string out = fs::absolute (argv[2]).string(), packs = fs::absolute (argv[3]).string();
+        Engine e; e.prepare (48000, 1024);
+        Session s (e);
+        auto cmd = [&] (const json& q) { return json::parse (handleCommand (s, e, q.dump())); };
+        const json lib = cmd ({ { "cmd", "configurePacks" }, { "factoryDir", packs }, { "userDir", "" } });
+        std::ofstream (out + "/packs.json") << lib.dump (1);
+        const std::string dir = fs::temp_directory_path().string() + "/cs_fixture09";
+        fs::remove_all (dir);
+        if (! s.createProject (dir, "Signature", 48000, "boombap").ok) return 1;
+        MusicPlan plan;
+        MusicPlan::fromJson (s.model().music, plan);
+        for (const auto& [tid, role] : plan.roles)
+        {
+            if (role == "drums") s.setDrumSampleKit (tid, "cauce.signature.drums:raw-boombap");
+            if (role == "bass") s.setSamplerInstrument (tid, "cauce.bass.electric:electric-bass");
+        }
+        s.save();
+        std::ofstream (out + "/state_sampler.json") << json::parse (s.stateJson()).dump (1);
+        s.close();
+        // Sin el paquete del bajo: copia de la biblioteca sin cauce.bass.electric.
+        const std::string partial = fs::temp_directory_path().string() + "/cs_fixture09_packs";
+        fs::remove_all (partial);
+        fs::create_directories (partial);
+        for (const auto& d : fs::directory_iterator (packs))
+            if (d.is_directory() && d.path().filename() != "cauce.bass.electric") fs::create_directory_symlink (d.path(), partial + "/" + d.path().filename().string());
+        packLibrary().configure (partial, "");
+        if (! s.openProject (dir).ok) return 1;
+        std::ofstream (out + "/state_missing_sound.json") << json::parse (s.stateJson()).dump (1);
+        s.close();
+        return 0;
+    }
     if (argc >= 3 && std::string (argv[1]) == "--catalog")
     {
         Engine e; e.prepare (48000, 1024);
@@ -245,6 +283,134 @@ int main (int argc, char** argv)
         std::printf ("%s\n", analyze (a, s.model().bpm).dump (2).c_str());
         s.close();
         std::filesystem::remove_all (dir);
+        return 0;
+    }
+    if (argc >= 2 && std::string (argv[1]) == "--automix")
+    {
+        // Calibración de AutoMix: nivel de cada papel respecto a la batería en las plantillas tal cual (balance 0.6).
+        for (const auto& t : projectTemplates())
+        {
+            Engine e; e.prepare (48000, 1024);
+            Session s (e);
+            const std::string dir = std::filesystem::temp_directory_path().string() + "/cs_automix_" + t.id;
+            std::filesystem::remove_all (dir);
+            if (! s.createProject (dir, t.id, 48000, t.id).ok) return 1;
+            float ref = -120;
+            const auto sug = s.autoMixSuggest (16);
+            for (const auto& x : sug) if (x.role == "drums") ref = std::max (ref, x.measuredDb);
+            std::printf ("%-11s", t.id.c_str());
+            for (const auto& x : sug) std::printf (" %s=%+.1f", x.role.c_str(), x.measuredDb - ref);
+            std::printf ("\n");
+            s.close();
+            std::filesystem::remove_all (dir);
+        }
+        return 0;
+    }
+    if (argc >= 4 && std::string (argv[1]) == "--compare09")
+    {
+        // Misión 0.9: cs_render --compare09 <salida> <carpeta de paquetes> [carpeta muestras-0.8]
+        // Por estilo: original, Variar (777), Regenerar (777) y un segundo Regenerar (778), con la diferencia de pasos de
+        // la batería (patrón A) entre original y regeneraciones. Luego, el MISMO MIDI con distintos sonidos: kits de
+        // muestras en la batería y bajos/piano de los paquetes en sus pistas. Si se da la carpeta de la 0.8, se compara
+        // el original muestra a muestra con el WAV de la 0.8 (debe ser idéntico: las plantillas no cambian).
+        namespace fs = std::filesystem;
+        const std::string out = fs::absolute (argv[2]).string();
+        fs::create_directories (out);
+        packLibrary().configure (fs::absolute (argv[3]).string(), "");
+        const std::string old08 = argc > 4 ? fs::absolute (argv[4]).string() : "";
+        json all = json::object();
+        // model() devuelve una copia: no guardar punteros a sus pistas.
+        auto drumTrackId = [] (const Session& s) -> std::string { for (const auto& t : s.model().tracks) if (t.kind == "drums") return t.id; return {}; };
+        auto mainPattern = [] (const Session& s) -> std::vector<std::vector<int>> {
+            const ProjectModel m = s.model();
+            // Todos los patrones de la batería, uno tras otro (cada estilo nombra y ordena los suyos de otra forma).
+            std::vector<std::vector<int>> lanes;
+            for (const auto& t : m.tracks)
+                if (t.kind == "drums")
+                    for (const auto& pt : t.patterns)
+                        for (size_t l = 0; l < pt.lanes.size(); ++l) { if (lanes.size() <= l) lanes.resize (l + 1); lanes[l].insert (lanes[l].end(), pt.lanes[l].begin(), pt.lanes[l].end()); }
+            return lanes;
+        };
+        auto stepDiff = [] (const std::vector<std::vector<int>>& a, const std::vector<std::vector<int>>& b) {
+            int diff = 0, total = 0;
+            for (size_t l = 0; l < std::min (a.size(), b.size()); ++l)
+                for (size_t st = 0; st < std::min (a[l].size(), b[l].size()); ++st)
+                {
+                    const bool x = a[l][st] > 0, y = b[l][st] > 0;
+                    if (x || y) { ++total; if (x != y) ++diff; }
+                }
+            return total ? std::round (1000.0 * diff / total) / 10 : 0.0;
+        };
+        for (const auto& t : projectTemplates())
+        {
+            Engine e; e.prepare (48000, 1024);
+            Session s (e);
+            const std::string dir = out + "/_proj_" + t.id;
+            fs::remove_all (dir);
+            if (! s.createProject (dir, t.id, 48000, t.id).ok) return 1;
+            auto take = [&] (const std::string& tag) -> bool
+            {
+                const std::string wav = out + "/" + t.id + "_" + tag + ".wav";
+                long clipped = 0;
+                if (! s.exportMix (wav, 16, 0, &clipped).ok) return false;
+                AudioData a; std::string err; readWav (wav, a, err);
+                json m = analyze (a, s.model().bpm);
+                m["exportClippedSamples"] = clipped;
+                all[t.id][tag] = m;
+                std::printf ("%s %s: pico %.1f dB, RMS %.1f dB, recortes %ld\n", t.id.c_str(), tag.c_str(), (double) m["peakDb"], (double) m["rmsDb"], clipped);
+                return true;
+            };
+            if (! take ("1_original")) return 1;
+            if (! old08.empty())
+            {
+                AudioData a, b; std::string err;
+                const bool ok = readWav (out + "/" + t.id + "_1_original.wav", a, err) && readWav (old08 + "/" + t.id + "_1_original.wav", b, err);
+                long differing = 0;
+                if (ok && a.numFrames() == b.numFrames() && a.numChannels() == b.numChannels())
+                    for (int c = 0; c < a.numChannels(); ++c) for (size_t i = 0; i < a.channels[(size_t) c].size(); ++i) differing += a.channels[(size_t) c][i] != b.channels[(size_t) c][i];
+                else differing = -1;
+                all[t.id]["vs08_differingSamples"] = differing;
+                std::printf ("%s: original 0.9 frente a 0.8: %ld muestras distintas\n", t.id.c_str(), differing);
+            }
+            const auto orig = mainPattern (s);
+            if (! s.mutatePart ("all", 777).ok || ! take ("2_variar")) return 1;
+            if (! s.undo().ok || ! s.regenerateBeat (777).ok || ! take ("3_regenerar")) return 1;
+            const auto regen1 = mainPattern (s);
+            if (! s.undo().ok || ! s.regenerateBeat (778).ok || ! take ("4_regenerar_otra")) return 1;
+            const auto regen2 = mainPattern (s);
+            all[t.id]["drumStepDiffPct"] = { { "regenerar_vs_original", stepDiff (orig, regen1) }, { "regenerar_otra_vs_original", stepDiff (orig, regen2) },
+                                             { "regenerar_vs_regenerar_otra", stepDiff (regen1, regen2) } };
+            if (! s.undo().ok) return 1;
+            // Mismo MIDI, otros sonidos.
+            if (const std::string id = drumTrackId (s); ! id.empty())
+            {
+                for (const char* kit : { "raw-boombap", "dark-trap", "latin-pulse" })
+                {
+                    const auto r = s.setDrumSampleKit (id, std::string ("cauce.signature.drums:") + kit);
+                    if (! r.ok) { std::fprintf (stderr, "%s: %s\n", kit, r.error.c_str()); continue; }
+                    if (! take (std::string ("5_kit_") + kit)) return 1;
+                }
+                s.setDrumSampleKit (id, "");
+            }
+            MusicPlan plan;
+            if (MusicPlan::fromJson (s.model().music, plan))
+                for (const auto& [tid, role] : plan.roles)
+                {
+                    std::vector<std::string> keys;
+                    if (role == "bass") keys = { "cauce.bass.lab:808-lab", "cauce.bass.electric:electric-bass" };
+                    else if (role == "chords") keys = { "cauce.keys.grand:grand-piano" };
+                    for (const auto& k : keys)
+                    {
+                        const auto r = s.setSamplerInstrument (tid, k);
+                        if (! r.ok) { std::printf ("%s %s: %s (se omite)\n", t.id.c_str(), k.c_str(), r.error.c_str()); continue; }
+                        if (! take ("6_" + role + "_" + k.substr (k.find (':') + 1))) return 1;
+                        s.undo();
+                    }
+                }
+            s.close();
+            fs::remove_all (dir);
+        }
+        std::ofstream (out + "/metricas.json") << all.dump (2);
         return 0;
     }
     if (argc >= 3 && std::string (argv[1]) == "--compare")

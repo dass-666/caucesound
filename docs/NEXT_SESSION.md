@@ -1,21 +1,28 @@
-# Para retomar el trabajo (actualizado 2026-11-13, fin de la misión 0.8 «Studio Flow»)
+# Para retomar el trabajo (actualizado 2026-11-13, fin de la misión 0.9 «Signature Sounds»)
 
 ## Estado
 
-- **Rama de trabajo**: `claude/project-thread-nhte0l`, basada en la 0.7 (`claude/project-thread-03ida9`, PR #3). PR borrador contra la rama de la 0.7. **Nada fusionado** (PR #1, #2, #3 y el de la 0.8): requiere autorización de Diego.
-- **APK de prueba**: `/mnt/project-files/caucesound/caucesound-0.8.0-studio-flow-preview.apk`, versionCode 10, `0.8.0-studio-flow-preview`, misma firma Preview (certificado comprobado con `apksigner` contra la 0.7.0). **No** probada en teléfono.
-- **Clave de prueba**: `/mnt/project-files/caucesound/signing/`. **No regenerar.** `CAUCE_SIGNING=/mnt/project-files/caucesound/signing/keystore.properties ./gradlew assemblePreview`.
-- **Capturas**: `/mnt/project-files/caucesound/capturas-0.8.0/` (renders JVM en inglés, no de teléfono; 47 y 48 nuevas, 05 y 12 cambiadas). **Muestras**: `/mnt/project-files/caucesound/muestras-0.8/` (original / variar / regenerar por estilo, con LEEME).
-- **Validación física**: ninguna desde la 0.3.0 salvo lo que Diego probó de la 0.6.0. Guía nueva: **SAMSUNG_ACCEPTANCE_0.8.md** (8 pruebas).
-- **Formato de proyecto**: versión 3 sin cambios. El plan musical puede llevar `variants` (solo si se usó «Variar»); las versiones anteriores lo ignoran.
+- **Rama de trabajo**: `claude/project-thread-y494z5`, basada en la 0.8 (`claude/project-thread-nhte0l`, PR #4). PR #6 borrador contra la rama de la 0.8. **Nada fusionado** (PR #1 a #6): requiere autorización de Diego. El PR #5 (0.8.1, interfaz de VocalShift, versionCode 11) va en paralelo; la 0.9 no toca esa pantalla.
+- **APK de prueba**: `/mnt/project-files/caucesound/caucesound-0.9.0-signature-sounds-preview.apk`, versionCode 12, `0.9.0-signature-sounds-preview`, misma firma Preview. **No** probada en teléfono.
+- **Clave de prueba**: `/mnt/project-files/caucesound/signing/`. **No regenerar.** `CAUCE_SIGNING=/mnt/project-files/caucesound/signing/keystore.properties CAUCE_PACKS=<carpeta con packs/> ./gradlew assemblePreview`.
+- **Paquetes de sonidos**: `/mnt/project-files/caucesound/paquetes-0.9/` (4 ZIP + SHA256SUMS.txt). Se reconstruyen con `cauce_packs` (`desktop/tools/packbuilder`) a partir de VCSL y Karoryfer en los commits de SOUND_LICENSES_0.9.md. El piano (42,6 MB) no va en el APK: se importa.
+- **Muestras**: `/mnt/project-files/caucesound/muestras-0.9/` (LEEME.md y metricas.json). **Capturas**: `/mnt/project-files/caucesound/capturas-0.9.0/` (renders JVM en inglés).
+- **Validación física**: ninguna desde la 0.3.0 salvo lo que Diego probó de la 0.6.0. Guía nueva: **SAMSUNG_ACCEPTANCE_0.9.md** (24 pruebas).
+- **Formato de proyecto**: v4 solo cuando se usa un sonido de paquete o kit de muestras; si no, v3 igual que la 0.8.
 - **Submódulos** sin cambios: `solo-ai-studio@fe8445b`, `vocalshift-ai-studio@10e679c`, `signalsmith-stretch@88061fd`, `signalsmith-linear@7bb1c8f`.
-- **Fuera de alcance por decisión de Diego**: FrostBitten Studio (no investigar, no DigitalOcean, no Cauce Service).
+- **Fuera de alcance por decisión de Diego**: FrostBitten Studio y el DAW web de Ronaldo (no investigar, no DigitalOcean, no Cauce Service). Preguntas preparadas en CAUCESOUND_INTEROPERABILIDAD_FUTURA.md.
 
 ## Qué leer
 
 | Documento | Para qué |
 |---|---|
 | STATUS.md | Qué está implementado, probado, compilado y qué no |
+| SAMSUNG_ACCEPTANCE_0.9.md | Las 24 pruebas de la 0.9 que solo puede hacer Diego |
+| CAUCE_SAMPLER.md | Auditoría del sonido, arquitectura del sampler, memoria y rendimiento |
+| CAUCE_PACK_FORMAT.md | Formato de paquete, manifiesto, importación segura |
+| SOUND_LICENSES_0.9.md / SOUND_TAXONOMY.md | Procedencia y licencias; familias, estilos y nombres |
+| AUTOMIX.md | Reglas del AutoMix y cómo se calibraron |
+| CAUCESOUND_INTEROPERABILIDAD_FUTURA.md | Qué sirve ya para el DAW web y qué preguntar |
 | SAMSUNG_ACCEPTANCE_0.8.md | Las ocho pruebas de la 0.8 que solo puede hacer Diego |
 | muestras-0.8/LEEME.md (carpeta del proyecto) | Qué escuchar en los WAV de Variar y Regenerar, con mediciones |
 | SAMSUNG_ACCEPTANCE_0.7.md | Las cinco pruebas de la 0.7 que solo puede hacer Diego |
