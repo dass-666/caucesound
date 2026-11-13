@@ -4,6 +4,46 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.9 «Signature Sounds» (2026-11-13, rama `claude/project-thread-y494z5`, PR #6 borrador)
+
+Mismas categorías que en la 0.8. «Render JVM» son las capturas de `capturas-0.9.0/` (90-95).
+
+| Entrega | Implementado | Probado | Compilado | Audio real | Render JVM | Físico |
+|---|---|---|---|---|---|---|
+| Auditoría del sonido artificial (fase A) | Informe en CAUCE_SAMPLER.md §1 | — | — | — | — | — |
+| Cauce Sampler (SFZ, capas de fuerza, round robin, choke, sustain, robo de voces sin clics, int16, Hermite) | Sí, motor propio (sfizz está archivado) | 16 pruebas en `TestSampler.cpp`: sin reservas en el hilo de audio, independencia de bloque, rutas maliciosas, WAV dañados, presupuesto de memoria, concurrencia | Sí | WAV en `muestras-0.9/` | — | Pendiente |
+| Paquetes Cauce (manifiesto + SHA-256) e importación segura de ZIP | Sí (`CAUCE_PACK_FORMAT.md`) | Zip-slip, ZIP corrupto, hash erróneo, versión, borrado protegido si se usa | Sí | — | `92` | Pendiente |
+| Kits Raw Boom Bap, Dark Trap, Latin Pulse; 808 Lab y Deep Sub; Cauce Electric Bass (CC0); Cauce Grand Piano (CC0, opcional) | Sí | Los 4 ZIP importan y verifican con el motor; afinación del bajo ±0,2 semitonos | En el APK salvo el piano | `_5_kit_*`, `_6_*` | `90`, `93`, `95` | Pendiente (**juicio de oído**) |
+| Explorador de sonidos: categorías, estilos, búsqueda sin acentos, favoritos, escuchar, cargar, importar, borrar, aviso de sonidos que faltan | Sí | `SoundBrowserTest` (10) + `sampler_json_api_packs_browser_flow` | Sí | — | `90`-`94` | Pendiente |
+| Proyecto v4 solo si se usa un sonido 0.9 (copia `project.v3.json`), Deshacer de cambio de instrumento/kit | Sí | `sampler_project_integration_v4_only_when_used_and_undo` | Sí | — | — | Pendiente |
+| Regenerar en Electrónica con más familias de groove (breakbeat, medio tiempo) | Sí | Golpes distintos 30-35 % (antes casi iguales) | Sí | `electronic_3/4_*` | — | Pendiente |
+| AutoMix por reglas, reversible (no es IA) | Sí (`AUTOMIX.md`) | `automix_rules_suggest_reversibly`: plantilla sin tocar = sin cambios; acordes +9 dB = propone bajarlos; Revertir restaura | Sí | — | — | Pendiente |
+| Humanización de tiempo controlable | **No** | — | — | — | — | — |
+| Hip-hop oscuro con más presencia en altavoz de móvil | **Solo vía kit Dark Trap** (+5 dB sobre 150 Hz); la plantilla no se tocó para conservar el balance 0.6 | Métrica en `muestras-0.9/metricas.json` | — | Sí | — | Pendiente |
+| Plantillas existentes | Sin cambios: render idéntico muestra a muestra al de la 0.8 en los 8 estilos | `cs_render --compare09` | Sí | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **161/161** |
+| ASan + UBSan | **161/161** (suite completa, salida 0, sin informes) |
+| TSan | **161/161**, sin avisos de carrera. En la suite completa falló 1 (`daw_export_with_drum_piece…`) porque la suite Release se ejecutaba a la vez y ambas escribían en `/tmp/cs_test_daw_lane`; repetida sola bajo TSan: correcta (diferencia de nulo 0) |
+| ARM64 | Solo compilación (arm64-v8a dentro del APK) |
+| Android JVM y Robolectric (`testDebugUnitTest`) | **97/97** |
+| Lint | 0 errores, 37 avisos |
+| CI (GitHub Actions) | `core` y `android` **en verde** en `eede838` (push y pull_request del PR #6) |
+| APK `caucesound-0.9.0-signature-sounds-preview.apk` | versionCode 12, `0.9.0-signature-sounds-preview`, `com.caucesound.app.preview`, certificado `56b4de46571e04c4e7ee2add76fbbfb2205f81b4ce91ef913a17efff5f61ab2e` (el mismo). 37,1 MB (0.8: 20,2 MB) por los sonidos. SHA-256 `8bcd70cf321b0c173db0d31a1408651e63cc17f55c7a444c8756c4e29cec55f6` |
+
+Límites conocidos de la 0.9:
+
+1. Nada probado en un teléfono: rendimiento del sampler en ARM (en x86: 10,4 ms de CPU por segundo con 32 voces),
+   tiempo del primer arranque (copia 16 MB), memoria con piano + bajo + kit.
+2. El piano está recortado a 1,4-3 s por nota para que el paquete pese 42 MB: las notas largas se apagan antes.
+3. Sin guitarras ni cuerdas reales (no se encontró licencia clara para acústica; VSCO 2 CE queda para la 1.0).
+4. Licencia de los sonidos sintetizados por CAUCESOUND (`LicenseRef-CauceSound-Content`) provisional.
+5. `testPreviewUnitTest` no es un conjunto válido (la variante preview no incluye el manifiesto de pruebas de Compose):
+   el conjunto de referencia es `testDebugUnitTest`.
+6. Los proyectos guardados en v4 no se abren en la 0.8 (los v3 siguen siendo v3).
+
 # Misión 0.8 «Studio Flow» (2026-11-13, rama `claude/project-thread-nhte0l`)
 
 Mismas categorías que en la 0.6 y la 0.7. «Render JVM» son las capturas de `capturas-0.8.0/`.
