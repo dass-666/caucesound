@@ -23,6 +23,9 @@ option(CS_BUILD_DESKTOP "Compilar la herramienta de escritorio cauce" ON)
 if (CS_BUILD_DESKTOP)
     add_executable(cauce desktop/cli/main.cpp)
     target_link_libraries(cauce PRIVATE cs_core)
+    # Constructor reproducible de los paquetes Cauce Signature Sounds (misión 0.9).
+    add_executable(cauce_packs desktop/tools/packbuilder/PackBuilder.cpp)
+    target_link_libraries(cauce_packs PRIVATE cs_core)
 endif()
 
 if (CS_BUILD_TESTS)

@@ -881,6 +881,50 @@
   }
  ],
  "ppq": 960,
+ "samplerParams": [
+  {
+   "default": 0.0,
+   "id": "volumeDb",
+   "max": 6.0,
+   "min": -40.0,
+   "name": "Volume (dB)"
+  },
+  {
+   "default": 0.0,
+   "id": "transpose",
+   "max": 24.0,
+   "min": -24.0,
+   "name": "Transpose (st)"
+  },
+  {
+   "default": 1.0,
+   "id": "release",
+   "max": 4.0,
+   "min": 0.25,
+   "name": "Release"
+  },
+  {
+   "default": 1.0,
+   "id": "velSens",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Velocity"
+  },
+  {
+   "default": 0.0,
+   "id": "drive",
+   "max": 1.0,
+   "min": 0.0,
+   "name": "Drive"
+  },
+  {
+   "default": 0.0,
+   "id": "tone",
+   "max": 1.0,
+   "min": -1.0,
+   "name": "Tone"
+  }
+ ],
  "synthParams": [
   {
    "default": 2.0,

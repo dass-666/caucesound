@@ -6,6 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+
 namespace cs
 {
 using nlohmann::json;
@@ -142,6 +144,22 @@ std::vector<std::string> Session::missingInstruments() const
         auto it = instrumentInstances.find (t.id);
         const bool loaded = it != instrumentInstances.end() && it->second && samplerStatus (it->second.get()).loaded;
         if (! loaded && std::find (out.begin(), out.end(), key) == out.end()) out.push_back (key);
+    }
+    return out;
+}
+std::vector<std::string> Session::usedPackInstruments() const
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    std::vector<std::string> out;
+    if (! open) return out;
+    for (const auto& t : proj.tracks)
+    {
+        const json st = json::parse (t.instrument.state.empty() ? std::string ("{}") : t.instrument.state, nullptr, false);
+        if (! st.is_object()) continue;
+        std::string key;
+        if (t.instrument.type == "cs.sampler") key = st.value ("instrument", std::string());
+        else if (t.instrument.type == "cs.drums") key = st.value ("sampleKit", std::string());
+        if (! key.empty() && std::find (out.begin(), out.end(), key) == out.end()) out.push_back (key);
     }
     return out;
 }

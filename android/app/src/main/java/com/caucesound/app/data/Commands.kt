@@ -119,4 +119,21 @@ object Cmd {
     fun exportDaw(path: String, wet: Boolean, bits: Int = 24) = c("exportDaw", "path" to path, "mode" to if (wet) "wet" else "dry", "bits" to bits)
     fun exportMidi(path: String) = c("exportMidi", "path" to path)
     fun export(path: String, bits: Int) = c("export", "path" to path, "bits" to bits, "tail" to SAMPLE_RATE / 2)
+    // --- Cauce Packs y Cauce Sampler (misión 0.9) ---
+    fun packs() = c("packs")
+    fun configurePacks(factoryDir: String, userDir: String) = c("configurePacks", "factoryDir" to factoryDir, "userDir" to userDir)
+    fun importPack(path: String, replace: Boolean) = c("importPack", "path" to path, "replace" to replace)
+    fun packUsage(root: String, packId: String) = c("packUsage", "root" to root, "packId" to packId)
+    fun removePack(packId: String) = c("removePack", "packId" to packId)
+    fun verifyPack(packId: String) = c("verifyPack", "packId" to packId)
+    fun setSamplerInstrument(trackId: String, key: String) = c("setSamplerInstrument", "trackId" to trackId, "key" to key)
+    /** key vacío = volver al kit sintetizado de Cauce Drums. */
+    fun setDrumSampleKit(trackId: String, key: String) = c("setDrumSampleKit", "trackId" to trackId, "key" to key)
+    /** Escucha previa en una voz aparte (no toca el proyecto). key vacío la apaga. */
+    fun previewInstrument(key: String) = c("previewInstrument", "key" to key)
+    fun autoMixSuggest() = c("autoMixSuggest")
+    fun autoMixApply(changes: List<AutoMixSuggestion>) = c("autoMixApply", "changes" to JSONArray().apply {
+        changes.forEach { put(JSONObject().put("trackId", it.trackId).put("volumeDb", it.suggestedVolumeDb.toDouble()).put("pan", it.suggestedPan.toDouble())) }
+    })
+    fun autoMixRevert() = c("autoMixRevert")
 }

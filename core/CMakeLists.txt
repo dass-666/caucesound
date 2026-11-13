@@ -27,6 +27,7 @@ add_library(cs_core STATIC
     src/SamplerInstrument.cpp
     src/Packs.cpp
     src/SessionSampler.cpp
+    src/SessionAutoMix.cpp
     src/Wav.cpp
 )
 target_include_directories(cs_core PUBLIC include ${CMAKE_CURRENT_LIST_DIR}/../third_party)

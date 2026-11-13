@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,6 +72,8 @@ fun SynthPanel(state: ProjectState, track: TrackState, catalog: Catalog, actions
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val current = catalog.synthPresets.firstOrNull { it.id == track.preset }
             PanelHeader("Cauce Synth", track.name + " · " + (current?.name ?: tr("Ajustes propios", "Custom"))) {
+                ToolButton(Icons.Default.LibraryMusic, tr("Sonidos Cauce (instrumentos reales)", "Cauce Sounds (sampled instruments)"), { actions.selectTrack(track.id); actions.openPanel(Panel.SOUNDS) },
+                    tint = Palette.Cyan, modifier = Modifier.testTag("open_sounds"))
                 if (current != null) {
                     val fav = current.id in favorites
                     ToolButton(if (fav) Icons.Default.Star else Icons.Default.StarBorder, if (fav) tr("Quitar de favoritos", "Remove from favorites") else tr("Añadir a favoritos", "Add to favorites"),
@@ -139,10 +143,55 @@ fun SynthPanel(state: ProjectState, track: TrackState, catalog: Catalog, actions
     }
 }
 
+/**
+ * Cauce Sampler (0.9): instrumento de un paquete en una pista de instrumento. Ajustes del sampler (volumen,
+ * transposición, release, fuerza, drive, tono), estado de carga y acceso al explorador. Volver a Cauce Synth = elegir
+ * un preset (con deshacer).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SamplerPanel(state: ProjectState, track: TrackState, catalog: Catalog, sounds: com.caucesound.app.data.SoundUi, actions: StudioActions) {
+    val slot = state.trackIndex(track.id)
+    val info = sounds.instrument(track.soundKey)
+    val status = state.samplers[track.id]
+    fun v(id: String) = track.params[id] ?: catalog.samplerParam(id)?.default ?: 0f
+    @Composable
+    fun K(id: String, label: String, color: Color = Palette.Cyan, format: (Float) -> String) {
+        val p = catalog.samplerParam(id) ?: return
+        Knob(label, v(id), p.min, p.max, p.default, { actions.setParam(track.id, id, it) }, onEnd = actions::commitMixer, color = color, format = format)
+    }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            PanelHeader(info?.name ?: status?.name?.takeIf { it.isNotEmpty() } ?: track.soundKey, track.name + " · Cauce Sampler" + (info?.let { " · " + it.packName } ?: "")) {
+                ToolButton(Icons.Default.LibraryMusic, tr("Cambiar sonido", "Change sound"), { actions.selectTrack(track.id); actions.openPanel(Panel.SOUNDS) }, tint = Palette.Cyan, modifier = Modifier.testTag("open_sounds"))
+            }
+            if (status != null && !status.loaded) MissingSoundsBanner(listOf(track.soundKey))
+            else if (status != null && status.missingSamples > 0) Text(tr("Faltan ${status.missingSamples} muestras de este instrumento: algunas notas no suenan.", "${status.missingSamples} samples missing: some notes are silent."), color = Palette.Warn, fontSize = 12.sp)
+            if (info?.description?.isNotEmpty() == true) Text(info.description, color = Palette.TextDim, fontSize = 12.sp)
+            SectionCard(tr("Sonido", "Sound")) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    K("volumeDb", tr("Volumen", "Volume")) { dbLabel(it) + " dB" }
+                    K("transpose", tr("Transp.", "Transpose")) { "%+d st".format(it.roundToInt()) }
+                    K("release", "Release") { "×%.2f".format(it) }
+                    K("velSens", tr("Fuerza", "Velocity")) { "${(it * 100).roundToInt()}%" }
+                    K("tone", tr("Tono", "Tone"), Palette.Violet) { if (kotlin.math.abs(it) < 0.02f) "0" else "%+.0f%%".format(it * 100) }
+                    K("drive", "Drive", Palette.Violet) { "${(it * 100).roundToInt()}%" }
+                }
+            }
+            if (status?.loaded == true) Text(tr("En memoria: %.1f MB · %d zonas".format(status.bytes / 1048576.0, status.regions), "In memory: %.1f MB · %d zones".format(status.bytes / 1048576.0, status.regions)),
+                color = Palette.TextFaint, fontSize = 11.sp)
+            val back = catalog.synthPresets.firstOrNull()
+            if (back != null) CauceButton(tr("Volver a Cauce Synth (${back.name})", "Back to Cauce Synth (${back.name})"), { actions.loadPreset(track.id, back.id) }, kind = ButtonKind.Ghost, height = 40.dp)
+        }
+        // El teclado empieza en la zona útil del instrumento (un bajo en C2, no en C4).
+        PianoKeyboard(slot, actions, Modifier.fillMaxWidth().height(132.dp), startOctave = (info?.previewKey ?: 60) / 12 - 1)
+    }
+}
+
 /** Teclado de dos octavas con multitáctil: cada dedo es una nota (Note On al tocar, Note Off al soltar). */
 @Composable
-fun PianoKeyboard(slot: Int, actions: StudioActions, modifier: Modifier = Modifier) {
-    var baseOctave by remember { mutableIntStateOf(4) }
+fun PianoKeyboard(slot: Int, actions: StudioActions, modifier: Modifier = Modifier, startOctave: Int = 4) {
+    var baseOctave by remember(startOctave) { mutableIntStateOf(startOctave.coerceIn(0, 8)) }
     val held = remember { mutableStateMapOf<PointerId, Int>() }
     val act by rememberUpdatedState(actions)
     Column(modifier) {

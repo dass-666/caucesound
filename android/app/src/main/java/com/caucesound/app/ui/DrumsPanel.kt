@@ -93,8 +93,15 @@ fun DrumsPanel(
 ) {
     val slot = state.trackIndex(track.id)
     val kitIndex = (track.params["kit"] ?: 0f).toInt().coerceIn(0, (catalog.drumKits.size - 1).coerceAtLeast(0))
-    val kit = catalog.drumKits.getOrNull(kitIndex)
-    val laneNames = kit?.lanes ?: listOf("Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Perc 1", "Perc 2", "Perc 3")
+    val synthKit = catalog.drumKits.getOrNull(kitIndex)
+    // 0.9: con un kit de muestras cargado manda el paquete (nombre y carriles); si falta, se dice en el nombre.
+    val sampleKit = track.soundKey.takeIf { it.isNotEmpty() }?.let { com.caucesound.app.data.LocalSounds.current.instrument(it) }
+    val kit = when {
+        sampleKit != null -> com.caucesound.app.data.KitInfo(sampleKit.key, sampleKit.name, sampleKit.lanes)
+        track.soundKey.isNotEmpty() -> com.caucesound.app.data.KitInfo(track.soundKey, tr("Kit no instalado", "Kit not installed"), synthKit?.lanes ?: emptyList())
+        else -> synthKit
+    }
+    val laneNames = kit?.lanes?.takeIf { it.size >= 8 } ?: listOf("Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Perc 1", "Perc 2", "Perc 3")
     var patternId by remember(track.id) { mutableStateOf(track.patterns.firstOrNull()?.id ?: "") }
     val pattern = track.pattern(patternId) ?: track.patterns.firstOrNull()?.also { patternId = it.id }
     var showPads by remember { mutableStateOf(false) }
@@ -118,8 +125,10 @@ fun DrumsPanel(
             Box {
                 PillToggle((kit?.name ?: "Kit") + " ▾", false, { kitMenu = true }, height = 40.dp)
                 DropdownMenu(kitMenu, { kitMenu = false }) {
+                    DropdownMenuItem(text = { Text(tr("Kits de muestras Cauce…", "Cauce sample kits…"), fontWeight = FontWeight.Bold, color = Palette.Cyan) },
+                        onClick = { kitMenu = false; actions.selectTrack(track.id); actions.openPanel(Panel.SOUNDS) })
                     catalog.drumKits.forEachIndexed { i, k ->
-                        DropdownMenuItem(text = { Text(k.name, fontWeight = if (i == kitIndex) FontWeight.Bold else FontWeight.Normal) },
+                        DropdownMenuItem(text = { Text(k.name, fontWeight = if (i == kitIndex && track.soundKey.isEmpty()) FontWeight.Bold else FontWeight.Normal) },
                             onClick = { kitMenu = false; actions.setParam(track.id, "kit", i.toFloat()) })
                     }
                 }

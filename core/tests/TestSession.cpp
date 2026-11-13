@@ -140,7 +140,7 @@ TEST (project_json_corruption_is_rejected_safely)
     MEASURE ("3000 project.json mutados: %d aceptados (siguen siendo válidos), %d rechazados con error", accepted, rejected);
     // versión futura
     auto j = nlohmann::json::parse (good);
-    j["version"] = kProjectFormatVersion + 1;
+    j["version"] = kProjectFormatVersionMax + 1; // 0.9: la v4 ya se lee; la futura es la 5
     ProjectModel out;
     std::string err;
     CHECK (! fromJson (j.dump(), out, err));

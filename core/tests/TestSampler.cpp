@@ -6,6 +6,7 @@
 
 #include "cs/Api.h"
 #include "cs/Archive.h"
+#include "cs/Composer.h"
 #include "cs/Instruments.h"
 #include "cs/Packs.h"
 #include "cs/Sampler.h"
@@ -658,4 +659,90 @@ TEST (sampler_performance_offline_voices)
     const double audioSec = blocks * 256.0 / kSr;
     MEASURE ("32 voces estéreo: %.1f ms por segundo de audio (%.2f %% de un núcleo x86-64, sin medir en ARM)", 1000.0 * sec / audioSec, 100.0 * sec / audioSec);
     CHECK (sec / audioSec < 0.5);
+}
+
+// La interfaz Android usa solo la API JSON: listado, escucha, carga, uso en proyectos, borrado protegido.
+TEST (sampler_json_api_packs_browser_flow)
+{
+    const std::string base = cstest::tempDir ("smp_api");
+    fs::create_directories (base + "/factory");
+    buildTestPack (base + "/factory");
+    Engine engine;
+    engine.prepare (kSr, 512);
+    Session s (engine);
+    auto call = [&] (const json& q) { return json::parse (handleCommand (s, engine, q.dump())); };
+    CHECK (call ({ { "cmd", "configurePacks" }, { "factoryDir", "relativa" } })["ok"] == false); // rutas absolutas
+    json r = call ({ { "cmd", "configurePacks" }, { "factoryDir", base + "/factory" }, { "userDir", base + "/user" } });
+    CHECK (r["ok"] == true && r["packs"].size() == 1);
+    const json& pk = r["packs"][0];
+    CHECK (pk["id"] == "test.pack" && pk["factory"] == true && pk["instruments"].size() == 2 && pk["bytes"].get<long long>() > 0);
+    CHECK (pk["instruments"][1]["key"] == "test.pack:keys");
+    CHECK (call ({ { "cmd", "catalog" } })["samplerParams"].size() == 6);
+
+    const std::string root = base + "/projects";
+    CHECK (call ({ { "cmd", "createProject" }, { "folder", root + "/a" }, { "name", "A" } })["ok"] == true);
+    const json add = call ({ { "cmd", "addTrack" }, { "name", "Keys" }, { "kind", "synth" } });
+    const std::string tid = add["id"];
+    // Escucha previa sin tocar el proyecto.
+    r = call ({ { "cmd", "previewInstrument" }, { "key", "test.pack:keys" } });
+    CHECK (r["ok"] == true && r["slot"].get<int>() == (int) s.model().tracks.size());
+    CHECK (call ({ { "cmd", "previewInstrument" }, { "key", "" } })["slot"] == -1);
+    CHECK (call ({ { "cmd", "setSamplerInstrument" }, { "trackId", tid }, { "key", "test.pack:keys" } })["ok"] == true);
+    CHECK (call ({ { "cmd", "save" } })["ok"] == true);
+    // Uso en proyectos y borrado: uno de fábrica nunca se borra; uno en uso por el proyecto abierto tampoco.
+    r = call ({ { "cmd", "packUsage" }, { "root", root }, { "packId", "test.pack" } });
+    CHECK (r["projects"].size() == 1);
+    CHECK (call ({ { "cmd", "packUsage" }, { "root", root }, { "packId", "test" } })["projects"].empty());
+    CHECK (call ({ { "cmd", "removePack" }, { "packId", "test.pack" } })["ok"] == false);
+    // Importar otro paquete por ZIP y borrarlo (no lo usa nadie).
+    const std::string other = buildTestPack (base + "/src", "other.pack");
+    zipFolder (other, base + "/other.zip", "other.pack/");
+    r = call ({ { "cmd", "importPack" }, { "path", base + "/other.zip" } });
+    CHECK_MSG (r["ok"] == true, r.dump());
+    CHECK (call ({ { "cmd", "packs" } })["packs"].size() == 2);
+    CHECK (call ({ { "cmd", "verifyPack" }, { "packId", "other.pack" } })["ok"] == true);
+    CHECK (call ({ { "cmd", "removePack" }, { "packId", "other.pack" } })["ok"] == true);
+    CHECK (call ({ { "cmd", "packs" } })["packs"].size() == 1);
+    call ({ { "cmd", "closeProject" } });
+}
+
+// AutoMix (0.9): reglas medibles, no cambia nada hasta aplicar, y se revierte de una vez.
+TEST (automix_rules_suggest_reversibly)
+{
+    const std::string base = cstest::tempDir ("automix");
+    Engine engine;
+    engine.prepare (kSr, 512);
+    Session s (engine);
+    CHECK (s.createProject (base + "/song", "Song", kSr, "boombap").ok);
+    // Una plantilla sin tocar ya tiene el balance aprobado (0.6): AutoMix no propone nada.
+    for (const auto& x : s.autoMixSuggest (16)) CHECK_MSG (! x.change, x.name + ": " + x.reason);
+    // Desequilibrio provocado: los acordes 9 dB por encima de lo que dejó la plantilla.
+    MusicPlan plan;
+    CHECK (MusicPlan::fromJson (s.model().music, plan));
+    std::string chords;
+    for (const auto& [tid, role] : plan.roles) if (role == "chords") chords = tid;
+    CHECK (! chords.empty());
+    const float before = s.model().findTrack (chords)->volumeDb;
+    CHECK (s.setTrackVolumeDb (chords, before + 9).ok);
+    const std::string snapshot = toJson (s.model());
+    auto faders = [&] { std::vector<std::pair<float, float>> v; for (const auto& t : s.model().tracks) v.push_back ({ t.volumeDb, t.pan }); return v; };
+    const auto fadersBefore = faders();
+    const auto sug = s.autoMixSuggest (16);
+    CHECK (toJson (s.model()) == snapshot); // analizar no cambia el proyecto
+    CHECK (! sug.empty());
+    const AutoMixSuggestion* c = nullptr;
+    for (const auto& x : sug) if (x.trackId == chords) c = &x;
+    CHECK (c != nullptr);
+    MEASURE ("acordes +9 dB: medido %.1f dB, objetivo %.1f dB, fader %.1f -> %.1f (%s)", c->measuredDb, c->targetDb, c->volumeDb, c->suggestedVolumeDb, c->reason.c_str());
+    CHECK (c->change && c->suggestedVolumeDb < c->volumeDb - 3.0f); // propone bajarlos
+    for (const auto& x : sug) CHECK (x.suggestedPan == x.pan); // el panorama no se toca en este prototipo
+    std::vector<Session::MixChange> ch;
+    for (const auto& x : sug) if (x.change) ch.push_back ({ x.trackId, x.suggestedVolumeDb, x.suggestedPan });
+    CHECK (s.applyAutoMix (ch).ok);
+    CHECK (std::fabs (s.model().findTrack (chords)->volumeDb - c->suggestedVolumeDb) < 0.01f);
+    CHECK (s.revertAutoMix().ok);
+    CHECK (faders() == fadersBefore); // Revertir devuelve todos los faders de una vez
+    CHECK (! s.revertAutoMix().ok);
+    CHECK (! s.applyAutoMix ({ { "nope", 0, 0 } }).ok);
+    s.close();
 }

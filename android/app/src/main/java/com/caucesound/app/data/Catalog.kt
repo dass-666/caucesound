@@ -28,7 +28,10 @@ data class Catalog(
     /** Plugins compilados en el motor (p. ej. "solo.ai"). Lo que no está aquí no se muestra en la interfaz. */
     val plugins: List<String> = emptyList(),
     val fxChains: List<FxChainInfo> = emptyList(),
+    /** Parámetros de Cauce Sampler (0.9). */
+    val samplerParams: List<ParamInfo> = emptyList(),
 ) {
+    fun samplerParam(id: String) = samplerParams.firstOrNull { it.id == id }
     fun hasPlugin(id: String) = id in plugins
     fun synthParam(id: String) = synthParams.firstOrNull { it.id == id }
     fun effect(type: String) = effects.firstOrNull { it.type == type }
@@ -60,7 +63,7 @@ data class Catalog(
                 (0 until a.length()).map { a.getJSONObject(it).let { t -> TemplateInfo(t.getString("id"), t.getDouble("bpm"), t.getString("kit"), t.getJSONArray("tracks").let { l -> (0 until l.length()).map { l.getString(it) } }) } }
             } ?: emptyList()
             val plugins = o.optJSONArray("plugins")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("id") } } ?: emptyList()
-            return Catalog(presets, kits, params("synthParams"), params("drumParams"), fx, tpl, plugins, chains)
+            return Catalog(presets, kits, params("synthParams"), params("drumParams"), fx, tpl, plugins, chains, params("samplerParams"))
         }
     }
 }

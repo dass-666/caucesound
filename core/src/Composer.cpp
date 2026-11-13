@@ -474,11 +474,18 @@ std::map<std::string, DrumPattern> drumPatterns (const MusicPlan& p, uint32_t se
         else if (! electro && groove == 2) kicks = { 0, 8, 11 };
         else if (! electro && groove == 3) kicks = { 0, 3, 8, 10 };
         else if (electro && groove == 2) kicks = { 0, 4, 8, 12, 14 };
+        // 0.9: la electrónica tenía una sola familia distinta; ahora Regenerar cambia de verdad el pie del beat:
+        // 1 = breakbeat (bombo sincopado, caja fantasma), 3 = medio tiempo (caja solo en el 3). La familia 0 no cambia.
+        else if (electro && groove == 1) kicks = { 0, 6, 10 };
+        else if (electro && groove == 3) kicks = { 0, 10 };
+        const bool halfTime = electro && groove == 3;
         const bool perc = r.chance (0.6);
         auto main = [&] (PatternBuilder& b)
         {
             for (int s : kicks) b.hit (kKick, s, s == 0 ? 118 : 108);
-            b.hit (kSnare, 4, 112); b.hit (kSnare, 12, 116);
+            if (halfTime) b.hit (kSnare, 8, 118);
+            else { b.hit (kSnare, 4, 112); b.hit (kSnare, 12, 116); }
+            if (electro && groove == 1) b.hit (kSnare, 7, 58);
             if (electro)
             {
                 for (int s : { 2, 6, 10, 14 }) b.hit (kOpen, s, 74);

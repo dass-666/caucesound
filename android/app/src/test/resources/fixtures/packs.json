@@ -1,0 +1,258 @@
+{
+ "ok": true,
+ "packs": [
+  {
+   "author": "CAUCESOUND (mapa y edición) / Karoryfer Samples (grabación)",
+   "bytes": 8655854,
+   "complete": true,
+   "description": "Bajo eléctrico real tocado con dedos (Karoryfer, CC0), tres capas de fuerza, muestreado cada tercera menor.",
+   "factory": true,
+   "id": "cauce.bass.electric",
+   "instruments": [
+    {
+     "description": "Bajo eléctrico real (dedos) con tres capas de fuerza. Monofónico como un bajo de verdad.",
+     "family": "bass",
+     "genres": [
+      "boombap",
+      "jazzrap",
+      "rnb",
+      "funk",
+      "pop",
+      "latin"
+     ],
+     "highKey": 72,
+     "id": "electric-bass",
+     "key": "cauce.bass.electric:electric-bass",
+     "kind": "melodic",
+     "lanes": [],
+     "lowKey": 12,
+     "mono": true,
+     "name": "Cauce Electric Bass",
+     "origin": "cc0",
+     "previewKey": 36,
+     "tags": [
+      "Electric",
+      "Fingered",
+      "Warm",
+      "Real"
+     ]
+    }
+   ],
+   "license": "CC0-1.0",
+   "name": "Cauce Electric Bass",
+   "problems": [],
+   "sources": [
+    {
+     "author": "Karoryfer Samples",
+     "license": "CC0-1.0",
+     "name": "Karoryfer Black And Blue Basses (bajo «darkblack», articulación reg)",
+     "url": "https://github.com/sfzinstruments/karoryfer.black-and-blue-basses"
+    }
+   ],
+   "version": "1.0.0"
+  },
+  {
+   "author": "CAUCESOUND",
+   "bytes": 1647527,
+   "complete": true,
+   "description": "808 Lab (golpe de tono, glide, dos capas de saturación) y Deep Sub (bucle estable con armónicos para móviles).",
+   "factory": true,
+   "id": "cauce.bass.lab",
+   "instruments": [
+    {
+     "description": "808 afinado con golpe de tono y glide entre notas ligadas. Tocar fuerte satura más.",
+     "family": "bass",
+     "genres": [
+      "trap",
+      "darkhiphop",
+      "reggaeton",
+      "drill"
+     ],
+     "highKey": 60,
+     "id": "808-lab",
+     "key": "cauce.bass.lab:808-lab",
+     "kind": "melodic",
+     "lanes": [],
+     "lowKey": 12,
+     "mono": true,
+     "name": "Cauce 808 Lab",
+     "origin": "original",
+     "previewKey": 36,
+     "tags": [
+      "808",
+      "Trap",
+      "Dark",
+      "Sub"
+     ]
+    },
+    {
+     "description": "Subgrave sostenido y estable, con armónicos suaves para oírse en el móvil.",
+     "family": "bass",
+     "genres": [
+      "trap",
+      "rnb",
+      "electronic",
+      "boombap"
+     ],
+     "highKey": 60,
+     "id": "deep-sub",
+     "key": "cauce.bass.lab:deep-sub",
+     "kind": "melodic",
+     "lanes": [],
+     "lowKey": 12,
+     "mono": true,
+     "name": "Cauce Deep Sub",
+     "origin": "original",
+     "previewKey": 36,
+     "tags": [
+      "Sub",
+      "Deep",
+      "Clean"
+     ]
+    }
+   ],
+   "license": "LicenseRef-CauceSound-Content",
+   "name": "Cauce Bass Lab",
+   "problems": [],
+   "sources": [
+    {
+     "author": "CAUCESOUND",
+     "license": "LicenseRef-CauceSound-Content",
+     "name": "Síntesis CAUCESOUND",
+     "url": "desktop/tools/packbuilder/PackBuilder.cpp"
+    }
+   ],
+   "version": "1.0.0"
+  },
+  {
+   "author": "CAUCESOUND",
+   "bytes": 6061355,
+   "complete": true,
+   "description": "Tres kits con capas por fuerza y varias tomas por golpe: Raw Boom Bap, Dark Trap y Latin Pulse.",
+   "factory": true,
+   "id": "cauce.signature.drums",
+   "instruments": [
+    {
+     "description": "Bombo corto y con cuerpo, caja real áspera, charles orgánicos, grano de sampler antiguo.",
+     "family": "drums",
+     "genres": [
+      "boombap",
+      "jazzrap",
+      "hiphop"
+     ],
+     "highKey": 127,
+     "id": "raw-boombap",
+     "key": "cauce.signature.drums:raw-boombap",
+     "kind": "drumkit",
+     "lanes": [
+      "Kick",
+      "Snare",
+      "Clap",
+      "Closed Hat",
+      "Open Hat",
+      "Rim",
+      "Shaker",
+      "Crash"
+     ],
+     "lowKey": 0,
+     "mono": false,
+     "name": "Cauce Raw Boom Bap",
+     "origin": "original + cc0",
+     "previewKey": 60,
+     "tags": [
+      "Boom Bap",
+      "Vintage",
+      "Raw",
+      "Dusty",
+      "Organic"
+     ]
+    },
+    {
+     "description": "Bombo con pegada para el 808, caja seca con palma real, charles definidos con 4 tomas, percusión oscura.",
+     "family": "drums",
+     "genres": [
+      "trap",
+      "darkhiphop"
+     ],
+     "highKey": 127,
+     "id": "dark-trap",
+     "key": "cauce.signature.drums:dark-trap",
+     "kind": "drumkit",
+     "lanes": [
+      "Kick",
+      "Snare",
+      "Clap",
+      "Closed Hat",
+      "Open Hat",
+      "Rim",
+      "Dark Perc",
+      "Crash"
+     ],
+     "lowKey": 0,
+     "mono": false,
+     "name": "Cauce Dark Trap",
+     "origin": "original + cc0",
+     "previewKey": 60,
+     "tags": [
+      "Trap",
+      "Dark",
+      "Modern",
+      "Punchy"
+     ]
+    },
+    {
+     "description": "Bombo y caja de dembow, palmas, bongó, conga y güiro reales con varias fuerzas y tomas.",
+     "family": "drums",
+     "genres": [
+      "reggaeton",
+      "latin",
+      "dembow"
+     ],
+     "highKey": 127,
+     "id": "latin-pulse",
+     "key": "cauce.signature.drums:latin-pulse",
+     "kind": "drumkit",
+     "lanes": [
+      "Kick",
+      "Snare + Rim",
+      "Clap",
+      "Closed Hat",
+      "Open Hat",
+      "Bongó",
+      "Conga",
+      "Güiro"
+     ],
+     "lowKey": 0,
+     "mono": false,
+     "name": "Cauce Latin Pulse",
+     "origin": "original + cc0",
+     "previewKey": 60,
+     "tags": [
+      "Reggaetón",
+      "Latin",
+      "Dembow",
+      "Organic"
+     ]
+    }
+   ],
+   "license": "LicenseRef-CauceSound-Content AND CC0-1.0",
+   "name": "Cauce Signature Drums",
+   "problems": [],
+   "sources": [
+    {
+     "author": "Versilian Studios LLC",
+     "license": "CC0-1.0",
+     "name": "Versilian Community Sample Library (VCSL)",
+     "url": "https://github.com/sgossner/VCSL"
+    },
+    {
+     "author": "CAUCESOUND",
+     "license": "LicenseRef-CauceSound-Content",
+     "name": "Síntesis CAUCESOUND",
+     "url": "desktop/tools/packbuilder/PackBuilder.cpp"
+    }
+   ],
+   "version": "1.0.0"
+  }
+ ]
+}
