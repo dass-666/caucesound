@@ -4,6 +4,47 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.8 «Studio Flow» (2026-11-13, rama `claude/project-thread-nhte0l`)
+
+Mismas categorías que en la 0.6 y la 0.7. «Render JVM» son las capturas de `capturas-0.8.0/`.
+
+| Entrega | Implementado | Probado | Compilado | Audio real | Render JVM | Físico |
+|---|---|---|---|---|---|---|
+| Play entre proyectos (fase 1) | Ya corregido en la 0.3.1; no se reimplementó | Pruebas de `TestSwitch` en verde | Sí | — | — | Diego lo validó en la 0.6.0 |
+| Piano Roll: mover hacia atrás. Causa: el desplazamiento se redondeaba con `MusicTime.snapTicks`, que convierte en 0 cualquier valor negativo | Sí: `PianoRollOps.dragMove` / `dragResize`, imán sobre la posición final, opción «Libre», tono al cambiar de tecla | `PianoRollDragTest` (7): 8 direcciones, varias veces hacia atrás, límites 0 y 0-127, grupo sin deformarse, notas fuera de rejilla, duración mínima, notas no seleccionadas intactas | Sí | — | `03`, `15`, `17` | Pendiente (**tacto**) |
+| Mixer: faders, medidores, pan, M/S siempre visibles; efectos ocultos por defecto con barra «Ver efectos»; FX de la tira abre su rack; volumen del canal sobre sus efectos; indicador de saturación | Sí | `mixer_task_flow…` y las de `ChannelRackMixerTest` | Sí | — | `05`, `14`, `16`, `47` | Pendiente |
+| Grabación: ¿la toma lleva beat? | Diagnóstico: **no por vía digital** | `recording_takes_only_the_microphone_never_the_master_mix`: con plantilla, metrónomo y monitorización, error máximo de la toma 0 | — | — | — | Pendiente: si hay beat en la toma, es fuga acústica (altavoz → micrófono) |
+| Modo «Con bocinas»: el beat baja solo en la salida en vivo mientras se graba (0 a −24 dB, rampa ~20 ms) | Sí (`Engine::setRecordDuck`) | `speaker_mode_ducks_only_the_live_output_while_recording`: −12 dB da 0,256 (teórico 0,251); al parar vuelve a 1,06 | Sí | — | No (sin prueba JVM de la sección) | Pendiente |
+| Cancelación de eco del teléfono (opcional, preset VoiceCommunication de Oboe) | Sí | **Sin prueba automática** (depende del teléfono) | Sí | — | No | Pendiente. No guarda toma sin procesar |
+| VocalShift «Ajustar escuchando»: bucle de la región, recálculo 250 ms después de cada cambio, A/B, el original intacto | Sí | `vocalshift_continuous_listen_replaces_stale_previews…`: 5 cambios seguidos, 4 sustituidos, se aplica el último a los 0,24 s (x86) + prueba de interfaz | Sí | — | `48` | Pendiente (latencia en ARM sin medir) |
+| Estilos Boom Bap crudo, Jazz Rap, Hip-hop oscuro (kits 8-10, 5 presets, swing, progresiones y bajo propios) | Sí | `hiphop_styles_are_really_different` + las de calidad de todas las plantillas | Sí | WAV en `muestras-0.8/`, sin recortes | — | Pendiente (**juicio de oído**) |
+| Variar (conserva progresión y motivo) frente a Regenerar (otra progresión, groove y partes; respeta bloqueos) | Sí (`mutatePart`, `regenerateBeat`) | `vary_keeps_identity…` (parecido medio 0,62 frente a 0,28; en las 31 partes Variar se parece más al original), `regenerate_keeps_locked_parts…`; un solo paso de deshacer; reproducible por semilla; sobrevive a guardar | Sí | WAV comparativos | `12` | Pendiente |
+| Plantillas existentes | Sin cambios: la semilla por defecto reproduce exactamente el patrón de la 0.7 | Pruebas de composición existentes | Sí | — | — | — |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **145/145** |
+| ASan + UBSan | __ASAN__ |
+| TSan | __TSAN__ |
+| ARM64 | Solo compilación (arm64-v8a dentro del APK) |
+| Android JVM y Robolectric | **87/87** |
+| Lint | 0 errores, 38 avisos y 9 sugerencias (no ocultados) |
+| CI (GitHub Actions) | __CI__ |
+| APK `caucesound-0.8.0-studio-flow-preview.apk` | versionCode 10, `0.8.0-studio-flow-preview`, `com.caucesound.app.preview`, certificado `56b4de46571e04c4e7ee2add76fbbfb2205f81b4ce91ef913a17efff5f61ab2e` (el mismo que la 0.7.0, comprobado con `apksigner` en los dos). SHA-256 `435a6b6eae41a2608885a57e81d49123154a7523bf28cd5b8e084aa0af6fc5bb` |
+
+Límites conocidos de la 0.8:
+
+1. Nada probado en un teléfono: tacto del Piano Roll, atenuación con altavoz, cancelación de eco y latencia real de
+   «Ajustar escuchando» en ARM.
+2. Con altavoz no se puede eliminar el beat de la toma, solo reducirlo. La cancelación de eco del teléfono puede
+   degradar la voz y no guarda copia sin procesar.
+3. La regeneración de batería en trap, pop y electrónica cambia poco (parecido 0,72-0,81 frente a 0,75-0,83 al variar):
+   la caja y el pulso del estilo se mantienen a propósito.
+4. Hip-hop oscuro: el 58 % de la energía por debajo de 60 Hz; en altavoz de móvil sonará con poco grave.
+5. Los medidores se consultan por sondeo: un pico muy corto puede no encender el indicador de saturación.
+6. La sección «Grabación de voz» no tiene prueba de interfaz en la JVM.
+7. Regenerar todas las fixtures de la JVM con `cs_render --fixtures05` rompe 8 pruebas antiguas; solo se actualizó `catalog.json`.
+
 # Misión 0.7 «Channel Rack & Mixer Pro» (2026-11-13, rama `claude/project-thread-03ida9`, PR #3)
 
 Mismas categorías que en la 0.6. «Render JVM» son las capturas de `capturas-0.7.0/` (40-46 son de esta misión).

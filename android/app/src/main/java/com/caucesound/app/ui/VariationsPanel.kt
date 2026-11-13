@@ -99,10 +99,10 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
             Text(tr("Regenerar", "Regenerate"), fontWeight = FontWeight.Bold)
             Text(tr("Otra idea del mismo estilo, tono y tempo: acordes, groove, bajo y melodía nuevos. Lo bloqueado se queda (y si bloqueas una parte armónica, los acordes no cambian).",
                 "Another idea in the same style, key and tempo: new chords, groove, bass and melody. Locked parts stay (and if a harmonic part is locked, the chords don't change)."), color = Palette.TextDim, fontSize = 12.sp)
-            CauceButton(tr("Regenerar beat", "Regenerate beat"), { actions.regenerateBeat(newSeed()) }, Modifier.fillMaxWidth().testTag("regenerate_beat"), kind = ButtonKind.Primary, icon = Icons.Default.AutoAwesome)
+            CauceButton(tr("Regenerar beat", "Regenerate beat"), { actions.regenerateBeat(newSeed()) }, Modifier.fillMaxWidth().testTag("regenerate_beat"), icon = Icons.Default.AutoAwesome)
             Text(tr("Rehacer una sola parte (mismos acordes)", "Redo one part only (same chords)"), color = Palette.TextFaint, fontSize = 12.sp)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                CauceButton(tr("Todas", "All"), { vary("all") }, Modifier.testTag("vary_all"))
+                PillToggle(tr("Todas", "All"), false, { vary("all") }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_all"))
                 parts.forEach { part ->
                     PillToggle(partName(part), false, { vary(part) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_$part"))
                 }
