@@ -40,6 +40,9 @@ OpResult Session::setInstrumentParam (const std::string& trackId, const std::str
     t->instrument.state = inst->saveState();
     if (structural)
     {
+        // Elegir un kit sintetizado deja el kit de muestras (0.9): el estado vuelve a ser el de la 0.8.
+        json st = json::parse (t->instrument.state, nullptr, false);
+        if (st.is_object() && st.contains ("sampleKit")) { st.erase ("sampleKit"); st.erase ("sampleKitVersion"); t->instrument.state = st.dump(); }
         // Cambiar de kit regenera los sonidos: nueva instancia preparada aquí (nunca en el hilo de audio).
         instrumentInstances.erase (t->id);
         rebuildGraph();
@@ -276,6 +279,16 @@ OpResult Session::loadSynthPreset (const std::string& trackId, const std::string
     if (! t) return err;
     const std::string state = synthPresetState (presetId);
     if (state.empty()) return OpResult::fail ("preset desconocido");
+    if (t->instrument.type != "cs.synth")
+    {
+        // Volver de un instrumento de muestras (0.9) a Cauce Synth: instancia nueva, un paso de deshacer.
+        pushUndo();
+        t->instrument.type = "cs.synth";
+        t->instrument.state = state;
+        t->instrument.preset = presetId;
+        instrumentInstances.erase (t->id);
+        return finishEditLocked();
+    }
     auto inst = instrumentFor (*t);
     if (! inst) return OpResult::fail ("no se pudo cargar el preset");
     pushUndo();

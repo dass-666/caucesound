@@ -29,6 +29,16 @@ struct DrumKitInfo
 const std::vector<DrumKitInfo>& drumKits();
 int drumKitIndex (const std::string& kitId); // -1 si no existe
 
+// Estado de carga de un instrumento de muestras (cs.sampler o Cauce Drums con un kit de paquete). Hilo de control.
+struct SamplerStatus
+{
+    std::string key, name, error; // key: "<paquete>:<instrumento>"; vacío si no usa muestras
+    bool loaded = false;
+    size_t bytes = 0;
+    int regions = 0, missingSamples = 0;
+};
+SamplerStatus samplerStatus (const AudioProcessor* p);
+
 // Busca el índice de un parámetro por id (-1 si no existe).
 int parameterIndex (const AudioProcessor& p, const std::string& id);
 } // namespace cs

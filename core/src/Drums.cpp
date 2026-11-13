@@ -3,6 +3,10 @@
 // solo reproduce búferes ya calculados. Nota MIDI 36 + carril (canal indiferente).
 #include "cs/Instruments.h"
 #include "cs/Midi.h"
+#include "cs/Packs.h"
+#include "cs/Sampler.h"
+
+#include <nlohmann/json.hpp>
 
 #include "Dsp.h"
 
@@ -521,10 +525,47 @@ public:
     {
         sr = rate;
         builtKit = (int) std::lround (values[0].load());
-        sounds = buildKit (builtKit, sr);
+        loadError.clear();
+        program.reset();
+        if (sampleKit.empty()) sounds = buildKit (builtKit, sr);
+        else
+        {
+            // Kit de un paquete (0.9). Si falta, la pista queda muda y señalada: nunca se cambia por otro kit en silencio.
+            sounds.reset();
+            program = packLibrary().loadInstrument (sampleKit, (int) rate, loadError);
+        }
+        sampler.prepare (program, rate);
         reset();
     }
-    void reset() override { for (auto& lv : laneVoices) for (auto& v : lv) v = Voice(); }
+    void reset() override { for (auto& lv : laneVoices) for (auto& v : lv) v = Voice(); sampler.reset(); }
+
+    std::string saveState() const override
+    {
+        if (sampleKit.empty()) return AudioProcessor::saveState(); // idéntico a la 0.8: los proyectos no cambian
+        auto j = nlohmann::json::parse (AudioProcessor::saveState());
+        j["sampleKit"] = sampleKit;
+        if (! sampleKitVersion.empty()) j["sampleKitVersion"] = sampleKitVersion;
+        return j.dump();
+    }
+    bool loadState (const std::string& s) override
+    {
+        const auto j = nlohmann::json::parse (s, nullptr, false);
+        if (j.is_discarded() || ! j.is_object()) return false;
+        std::string kitKey;
+        if (j.contains ("sampleKit"))
+        {
+            if (! j["sampleKit"].is_string()) return false;
+            kitKey = j["sampleKit"].get<std::string>();
+            if (! kitKey.empty() && (kitKey.find (':') == std::string::npos || kitKey.size() > 140)) return false;
+        }
+        if (! AudioProcessor::loadState (s)) return false;
+        sampleKit = kitKey;
+        sampleKitVersion = j.value ("sampleKitVersion", std::string());
+        return true;
+    }
+    const std::string& sampleKitKey() const { return sampleKit; }
+    const std::string& sampleError() const { return loadError; }
+    std::shared_ptr<const SamplerProgram> sampleProgram() const { return program; }
     std::vector<ParameterInfo> parameters() const override { return drumParams(); }
     void setParameter (int i, float v) override
     {
@@ -536,12 +577,13 @@ public:
     int builtKitIndex() const { return builtKit; }
     int activeVoices() const override
     {
-        int n = 0;
+        int n = sampler.activeVoices();
         for (const auto& lv : laneVoices) for (const auto& v : lv) n += v.active;
         return n;
     }
     int tailSamples() const override
     {
+        if (! sampleKit.empty()) return sampler.tailSamples() * 2; // tono bajado hasta 12 semitonos
         size_t m = 0;
         if (sounds) for (const auto& b : sounds->lanes) m = std::max (m, b.size());
         return (int) (m * 2); // con el tono bajado 12 semitonos el sonido dura el doble
@@ -549,6 +591,22 @@ public:
 
     void handleMidi (const MidiEvent* ev, int count) override
     {
+        if (! sampleKit.empty())
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                if ((ev[i].status & 0xF0) != 0x90 || ev[i].data2 == 0) continue;
+                const int lane = (int) ev[i].data1 - kDrumBaseNote;
+                if (lane < 0 || lane >= kDrumLanes) continue;
+                // Carril monofónico como en los kits sintetizados: el golpe anterior se desvanece en 5 ms.
+                sampler.releaseTag (lane);
+                if (lane == 3) sampler.releaseTag (4); // el charles cerrado corta al abierto
+                const double rate = std::pow (2.0, values[(size_t) laneParam (lane, lPitch)].load (std::memory_order_relaxed) / 12.0);
+                const float decay = values[(size_t) laneParam (lane, lDecay)].load (std::memory_order_relaxed);
+                sampler.noteOn (ev[i].data1, ev[i].data2, lane, rate, decay);
+            }
+            return;
+        }
         if (! sounds) return;
         for (int i = 0; i < count; ++i)
         {
@@ -559,7 +617,7 @@ public:
             if (lane == 3) chokeLane (4); // el charles cerrado corta al abierto
         }
     }
-    void allNotesOff (bool hard) override { if (hard) reset(); } // los golpes terminan solos
+    void allNotesOff (bool hard) override { if (hard) reset(); } // los golpes terminan solos (también los de muestras)
     int auxLanes() const override { return kDrumLanes; }
     void setAuxOut (int lane, float* l, float* r) override
     {
@@ -570,7 +628,7 @@ public:
 
     void process (float* const* io, int numChannels, int n) override
     {
-        if (! sounds) return;
+        if (! sounds && ! program) return;
         bool anySolo = false;
         for (int l = 0; l < kDrumLanes; ++l) anySolo |= values[(size_t) laneParam (l, lSolo)].load (std::memory_order_relaxed) >= 0.5f;
         const float master = dsp::dbToLin (values[1].load (std::memory_order_relaxed));
@@ -584,11 +642,17 @@ public:
             const float g = audible ? dsp::dbToLin (values[(size_t) laneParam (l, lVol)].load (std::memory_order_relaxed)) * master : 0.0f;
             const float pan = values[(size_t) laneParam (l, lPan)].load (std::memory_order_relaxed);
             const float gl = g * (pan > 0 ? 1.0f - pan : 1.0f), gr = g * (pan < 0 ? 1.0f + pan : 1.0f);
-            const Buf& b = sounds->lanes[(size_t) l];
-            const double size = (double) b.size();
             // Carril con canal propio: suena en su bus (sin la protección de salida, que es de la suma de la pista).
             float* const Lout = auxL[(size_t) l] ? auxL[(size_t) l] : L;
             float* const Rout = auxL[(size_t) l] ? auxR[(size_t) l] : R;
+            if (program)
+            {
+                if (Rout != Lout) sampler.process (Lout, Rout, n, l, gl, gr);
+                else sampler.process (Lout, nullptr, n, l, 0.5f * (gl + gr), 0.0f);
+                continue;
+            }
+            const Buf& b = sounds->lanes[(size_t) l];
+            const double size = (double) b.size();
             for (auto& v : laneVoices[(size_t) l])
             {
                 if (! v.active) continue;
@@ -659,8 +723,29 @@ private:
     std::shared_ptr<KitSounds> sounds;
     std::array<std::array<Voice, 3>, kDrumLanes> laneVoices {};
     std::array<float*, kDrumLanes> auxL {}, auxR {};
+    std::string sampleKit, sampleKitVersion, loadError;
+    std::shared_ptr<const SamplerProgram> program;
+    SamplerEngine sampler;
 };
 } // namespace
+
+SamplerStatus drumSampleStatus (const AudioProcessor* p)
+{
+    SamplerStatus st;
+    auto* d = dynamic_cast<const Drums*> (p);
+    if (! d || d->sampleKitKey().empty()) return st;
+    st.key = d->sampleKitKey();
+    st.error = d->sampleError();
+    if (auto prog = d->sampleProgram())
+    {
+        st.loaded = true;
+        st.name = prog->name;
+        st.bytes = prog->bytes();
+        st.regions = (int) prog->regions.size();
+        st.missingSamples = (int) prog->missingSamples.size();
+    }
+    return st;
+}
 
 ProcessorPtr createDrums() { return std::make_shared<Drums>(); }
 

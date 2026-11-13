@@ -214,6 +214,21 @@ public:
     // deshacer. r.id = id del canal creado.
     OpResult routeDrumLane (const std::string& trackId, int lane, bool own);
 
+    // --- Cauce Sampler (0.9, SessionSampler.cpp) ---------------------------------------------------------------
+    // Instrumento de un paquete ("<paquete>:<instrumento>") en una pista de instrumento melódico. Un paso de deshacer;
+    // el preset de Cauce Synth anterior vuelve con deshacer o con loadSynthPreset. Falla sin tocar nada si el
+    // instrumento no está instalado o es un kit de batería.
+    OpResult setSamplerInstrument (const std::string& trackId, const std::string& instrumentKey);
+    // Kit de batería de un paquete en una pista de batería ("" = vuelve al kit sintetizado que tenía). Mismos
+    // patrones, carriles, canales propios y Channel Rack. Un paso de deshacer.
+    OpResult setDrumSampleKit (const std::string& trackId, const std::string& kitKey);
+    // Escucha previa en el navegador: carga el instrumento en una voz de prueba fuera del proyecto (no se guarda, no
+    // se exporta, no entra en deshacer). r.id = ranura para MIDI en vivo (Engine::sendLive). "" la quita.
+    OpResult setPreviewInstrument (const std::string& instrumentKey);
+    int previewSlot() const;
+    // Instrumentos de paquetes que usa el proyecto y no están instalados o no cargaron (la pista queda muda).
+    std::vector<std::string> missingInstruments() const;
+
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
     OpResult setMetronome (bool on);
@@ -305,6 +320,8 @@ private:
     bool listenPreview = false;  // la prueba está sonando en lugar de esa región del clip
     void clearPreviewLocked();
     void applyPreviewLocked (const std::string& projectId, VocalPreview&& p);
+    std::shared_ptr<Instrument> previewInstrument; // voz de prueba del navegador (nunca en el proyecto)
+    std::string previewKey;
     std::string listenMatchClip; // clip que se escucha a volumen igualado ("" = ninguno); nunca se guarda
     JobRunner jobs; // el último miembro: se destruye primero, así ningún trabajo sobrevive al resto de la sesión
 };
