@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
@@ -297,6 +299,7 @@ class UiScreensTest {
         assertEquals(presets.first { it.id == "urban_spatial" }.params, rec.vocal) // por defecto: Urbano Espacial
         // Otro preset y segunda voz desactivada.
         val other = presets.first { it.id != "urban_spatial" }
+        compose.onNodeWithTag("vocal_preset_picker").performScrollTo().performClick()
         compose.onNodeWithTag("vocal_preset_${other.id}").performScrollTo().performClick()
         compose.onNodeWithTag("vocal_process").performScrollTo().performClick()
         assertEquals(other.params, rec.vocal)
@@ -331,6 +334,7 @@ class UiScreensTest {
         // Cambiar los ajustes (aquí, otro preset): tras la pausa corta se pide otra prueba, sin pulsar nada más.
         rec.calls.clear()
         val other = presets.first { it.id != "urban_spatial" }
+        compose.onNodeWithTag("vocal_preset_picker").performScrollTo().performClick()
         compose.onNodeWithTag("vocal_preset_${other.id}").performScrollTo().performClick()
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(1000)
@@ -398,22 +402,22 @@ class UiScreensTest {
         compose.onNodeWithText("42 %", substring = true).assertExists()
         assertTrue(compose.onAllNodes(hasTestTag("vocal_process")).fetchSemanticsNodes().isEmpty()) // no se puede lanzar otro encima
         shot("22_vocalshift_processing")
-        compose.onNodeWithTag("vocal_cancel").performClick()
+        compose.onNodeWithTag("vocal_cancel").performScrollTo().performClick()
         assertEquals(listOf("cancelJob"), rec.calls)
     }
 
     @Test fun vocalshift_advanced_mode_only_shows_engine_controls() {
         val clip = stateBeat.tracks.first { it.name == "Voz" }.clips.first()
         compose.setContent { Themed { VocalShiftPanel(stateBeat, clip.id, ui(), emptyMap(), Recorder()) } }
-        compose.onNodeWithText(tr("Avanzado", "Advanced")).performClick()
-        for (tag in listOf("vocal_formant", "vocal_brightness", "vocal_pan", "vocal_offset")) compose.onNodeWithTag(tag).performScrollTo().assertExists()
-        // La mezcla solo existe sin segunda voz (así funciona el motor).
-        assertTrue(compose.onAllNodes(hasTestTag("vocal_mix")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("vocal_view_1").performClick() // vista Pro (antes «Avanzado»)
+        for (tag in listOf("vocal_formant", "vocal_brightness", "vocal_pan", "vocal_offset")) compose.onNodeWithTag(tag).performScrollTo().assertIsEnabled()
+        // La mezcla solo actúa sin segunda voz (así funciona el motor): se ve, pero deshabilitada.
+        compose.onNodeWithTag("vocal_mix").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("vocal_formant").performScrollTo()
         shot("21b_vocalshift_advanced")
-        compose.onNodeWithTag("vocal_second").performScrollTo().performClick()
-        compose.onNodeWithTag("vocal_mix").performScrollTo().assertExists()
-        assertTrue(compose.onAllNodes(hasTestTag("vocal_pan")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("vocal_second_0").performScrollTo().performClick()
+        compose.onNodeWithTag("vocal_mix").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("vocal_pan").performScrollTo().assertIsNotEnabled()
     }
 
     @Test fun vocalshift_asks_for_a_clip_when_none_is_selected() {

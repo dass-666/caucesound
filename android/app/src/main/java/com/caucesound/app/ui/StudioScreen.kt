@@ -302,7 +302,8 @@ fun StudioLayout(
                     Panel.RACK -> ChannelRackPanel(state, catalog, position, playing, actions)
                     Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"))
                     // Los plugins solo tienen pantalla si están compilados en el motor.
-                    Panel.VOCAL -> if (catalog.hasPlugin("vocalshift")) VocalShiftPanel(state, selected, plugins, waveforms, actions)
+                    Panel.VOCAL -> if (catalog.hasPlugin("vocalshift")) VocalShiftPanel(state, selected, plugins, waveforms, actions,
+                        trackPeak = { id -> state.tracks.indexOfFirst { it.id == id }.let { i -> if (i < 0) 0f else meters.value.getOrElse(i + 1) { 0f } } }, playing = playing)
                         else EmptyPanel(tr("VocalShift no está incluido en esta versión.", "VocalShift is not included in this build."), tr("Volver al arreglo", "Back to arrangement")) { actions.openPanel(Panel.ARRANGE) }
                     Panel.SOLO -> if (catalog.hasPlugin("solo.ai")) SoloAiPanel(state, selected, plugins, actions)
                         else EmptyPanel(tr("Solo AI no está incluido en esta versión.", "Solo AI is not included in this build."), tr("Volver al arreglo", "Back to arrangement")) { actions.openPanel(Panel.ARRANGE) }
