@@ -319,6 +319,23 @@ Buf lowpassed (Buf b, double sr, double hz)
     return b;
 }
 
+// Textura áspera (0.8, kit Crudo): saturación suave (tanh) y reducción de resolución a 'bits' con retención de muestra
+// x2. Da el grano «de vinilo/sampler» sin usar muestras de nadie.
+Buf gritty (Buf b, double sr, double drive, int bits)
+{
+    const double norm = std::tanh (drive);
+    const double q = std::pow (2.0, bits - 1);
+    float hold = 0.0f;
+    for (size_t i = 0; i < b.size(); ++i)
+    {
+        if (i % 2 == 0) hold = (float) (std::round (std::tanh (drive * b[i]) / norm * q) / q);
+        b[i] = hold;
+    }
+    Biquad lp; lp.set (Biquad::LowPass, sr, 12000.0, 0.7); // quita el zumbido de la retención
+    for (float& v : b) v = lp.process (v);
+    return b;
+}
+
 struct KitSounds { std::array<Buf, kDrumLanes> lanes; };
 
 std::shared_ptr<KitSounds> buildKit (int kit, double sr)
@@ -420,6 +437,42 @@ std::shared_ptr<KitSounds> buildKit (int kit, double sr)
             L[6] = guira (sr, 9000, 2, 0.006, 0.02); // pandereta corta
             L[7] = crash (sr, 0.85, 2.3);
             break;
+        // --- Misión 0.8: hip-hop con tres caracteres. Los kits 0-7 no cambian. --------------------------------------
+        case 8: // Cauce Crudo (boom bap crudo): seco, sin sala, con grano. Bombo corto, caja con «crack» y charles ásperos
+            L[0] = gritty (layeredKick (sr, 150, 47, 0.026, 0.2, 0.75, 0.6, 2.8, 0.45), sr, 1.8, 10);
+            L[1] = gritty (snare (sr, 205, 0.06, 0.11, 1300, 8000, 0.55, 0.32), sr, 2.2, 9);
+            L[2] = gritty (clap (sr, 1300, 0.1, 0.3), sr, 1.6, 9);
+            L[3] = gritty (lowpassed (hat (sr, 0.03, 6500, 0.16, 211), sr, 9000), sr, 1.5, 8);
+            L[4] = gritty (lowpassed (hat (sr, 0.22, 6000, 0.8, 213), sr, 8500), sr, 1.4, 8);
+            L[5] = gritty (rim (sr, 1500, 0.028), sr, 1.8, 9);
+            L[6] = gritty (shaker (sr, 5200, 0.012, 0.07), sr, 1.4, 8);
+            L[7] = lowpassed (crash (sr, 0.6, 1.8), sr, 9000);
+            break;
+        case 9: // Cauce Jazz (jazz rap / soul): bombo redondo y suave, caja de escobilla con sala, ride, aro de baqueta
+            L[0] = kick (sr, 105, 50, 0.03, 0.26, 0.7, 0.25, 1.4);
+            L[1] = lowpassed (snare (sr, 195, 0.05, 0.24, 600, 6000, 0.25, 0.55), sr, 6500);
+            addRoom (L[1], sr, 0.55, 0.12, 215);
+            L[2] = snap (sr);
+            addRoom (L[2], sr, 0.5, 0.1, 217);
+            L[3] = lowpassed (hat (sr, 0.16, 5400, 0.7, 219), sr, 9500);   // ride: más cola que un charles cerrado
+            L[4] = lowpassed (hat (sr, 0.4, 5200, 1.2, 221), sr, 9000);
+            L[5] = rim (sr, 1250, 0.035);                                  // golpe de aro
+            L[6] = shaker (sr, 4800, 0.02, 0.12);                          // escobilla
+            L[7] = lowpassed (crash (sr, 0.9, 2.3), sr, 8000);
+            break;
+        case 10: // Cauce Oscuro (dark hip-hop): bombo profundo y largo, caja grande con sala larga, tom grave, platillo oscuro
+            L[0] = layeredKick (sr, 120, 41, 0.05, 0.38, 0.55, 0.55, 3.2, 0.9);
+            L[1] = snare (sr, 170, 0.09, 0.19, 900, 7500, 0.5, 0.6);
+            mixInto (L[1], clap (sr, 1200, 0.16, 0.45), 0.5f);
+            addRoom (L[1], sr, 1.0, 0.3, 223);
+            L[2] = clap (sr, 1100, 0.25, 0.7);
+            addRoom (L[2], sr, 1.1, 0.35, 225);
+            L[3] = lowpassed (hat (sr, 0.035, 6800, 0.2, 227), sr, 7500);
+            L[4] = lowpassed (hat (sr, 0.3, 6500, 1.0, 229), sr, 7000);
+            L[5] = rim (sr, 1400, 0.025);
+            L[6] = tom (sr, 105, 72, 0.45, 1.1, 0.2);
+            L[7] = lowpassed (crash (sr, 1.0, 2.4), sr, 6000);
+            break;
     }
     static const float peaks[kDrumLanes] = { 0.95f, 0.75f, 0.7f, 0.42f, 0.4f, 0.55f, 0.5f, 0.65f };
     for (int i = 0; i < kDrumLanes; ++i) normalize (L[(size_t) i], peaks[i]);
@@ -434,7 +487,7 @@ const std::vector<ParameterInfo>& drumParams()
     static const std::vector<ParameterInfo> ps = []
     {
         std::vector<ParameterInfo> v;
-        v.push_back ({ "kit", "Kit", 0, 7, 0 });
+        v.push_back ({ "kit", "Kit", 0, 10, 0 });
         v.push_back ({ "volumeDb", "Volume (dB)", -40, 6, -3 });
         for (int l = 0; l < kDrumLanes; ++l)
         {
@@ -622,6 +675,9 @@ const std::vector<DrumKitInfo>& drumKits()
         { "cauce_trap", "Cauce Trap", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Rim", "Snap", "Crash" } },
         { "cauce_boombap", "Cauce Boom Bap", { "Kick", "Snare", "Snap", "Closed Hat", "Open Hat", "Rim", "Shaker", "Crash" } },
         { "cauce_pop", "Cauce Pop", { "Kick", "Snare + Clap", "Clap", "Closed Hat", "Open Hat", "Perc", "Tambourine", "Crash" } },
+        { "cauce_crudo", "Cauce Crudo", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Rim", "Shaker", "Crash" } },
+        { "cauce_jazz", "Cauce Jazz", { "Kick", "Brush Snare", "Snap", "Ride", "Open Ride", "Cross-stick", "Brush", "Crash" } },
+        { "cauce_oscuro", "Cauce Oscuro", { "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Rim", "Low Tom", "Crash" } },
     };
     return k;
 }

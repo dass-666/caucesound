@@ -14,6 +14,7 @@
 #include "cs/Processor.h"
 #include "cs/SpscRing.h"
 
+#include <cmath>
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -97,6 +98,11 @@ public:
     void setMetronome (bool on) { metronomeOn.store (on); }
     void setMetronomeGain (float linear) { metronomeGain.store (linear); }
     void setMonitoring (bool on, float gain = 1.0f) { monitorGain.store (on ? gain : 0.0f); }
+    // Modo bocinas (0.8): mientras se graba, la salida EN VIVO (beat + metrónomo) baja 'db' decibelios para que el
+    // micrófono capte menos música. No toca faders, master, proyecto ni exportación; al parar vuelve sola con una
+    // rampa (sin chasquidos). 0 = desactivado. Rango -30..0.
+    void setRecordDuck (float db) { recordDuckGain.store (db >= 0.0f ? 1.0f : std::pow (10.0f, std::max (-30.0f, db) / 20.0f)); }
+    float recordDuck() const { return recordDuckGain.load(); }
     // Región de bucle [start, end) en frames. Se ignora mientras se graba (la toma es lineal).
     void setLoop (bool on, Frame start, Frame end);
     bool loopEnabled() const { return loopOn.load(); }
@@ -196,6 +202,8 @@ private:
     std::atomic<bool> loopOn { false };
     std::atomic<Frame> loopStart { 0 }, loopEnd { 0 };
     bool prevRolling = false;
+    float duckNow = 1.0f;                                  // ganancia aplicada (rampa hacia recordDuckGain)
+    std::atomic<float> recordDuckGain { 1.0f };
     std::atomic<Frame> countInRequest { -1 }, countInOut { 0 };
     Frame countInLeft = 0, countInTotal = 0; // solo hilo de audio
     struct LiveMidi { int slot; uint8_t status, d1, d2; uint32_t epoch; };

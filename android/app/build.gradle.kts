@@ -15,8 +15,8 @@ android {
         applicationId = "com.caucesound.app"
         minSdk = 26          // Android 8.0: AAudio disponible; Oboe elige AAudio u OpenSL ES según el dispositivo
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.7.0-rack-mixer"
+        versionCode = 10
+        versionName = "0.8.0-studio-flow"
         manifestPlaceholders["appLabel"] = "CAUCESOUND"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // teléfonos actuales + emulador

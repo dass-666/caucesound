@@ -36,6 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.border
+import kotlinx.coroutines.delay
+import com.caucesound.app.data.JobUi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -103,12 +107,15 @@ fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginU
         PanelHeader("VocalShift", "${clip.name.ifBlank { tr("Clip de audio", "Audio clip") }} · ${track.name}") {
             ToolButton(Icons.Default.SwapHoriz, tr("Elegir otro clip", "Choose another clip"), { actions.selectClip(null) }, tint = Palette.Text)
         }
-        Text(tr("Proceso sin conexión: primero se calcula y después se escucha. No es efecto en directo. Tu grabación original no se modifica.",
-            "Offline process: it renders first, then you listen. It is not a live effect. Your original recording is never modified."),
+        Text(tr("Se calcula en el teléfono, sin conexión. «Ajustar escuchando» recalcula un fragmento al mover cada control; no es un efecto en directo sobre el micrófono. Tu grabación original no se modifica.",
+            "Rendered on the phone, offline. “Adjust while listening” re-renders a section each time you move a control; it is not a live microphone effect. Your original recording is never modified."),
             color = Palette.TextDim, fontSize = 12.sp)
 
         // Forma de onda de la versión que suena, con el avance real del proceso encima.
         ClipWave(clip, waveforms[clip.sourceId], Color(track.color.toInt()), job?.progress)
+
+        // 0.8 — Ajustar escuchando: la región suena en bucle y cada cambio de perilla se recalcula solo en segundo plano.
+        if (job == null) ContinuousListen(state, clip, p, previewFrom, previewLength, previewJob, actions)
 
         // Presets de fábrica de VocalShift (del motor).
         if (plugins.vocalPresets.isNotEmpty()) {
@@ -247,6 +254,75 @@ fun VocalShiftPanel(state: ProjectState, selectedClip: String?, plugins: PluginU
             }
         }
         Spacer(Modifier.height(4.dp))
+    }
+}
+
+/**
+ * «Ajustar escuchando» (0.8). Lo más cerca de un plugin en directo que permite un motor con 150 ms de latencia y
+ * coste alto: la región elegida suena en bucle, cada cambio se recalcula en segundo plano (250 ms después del último
+ * movimiento, y la prueba anterior se cancela) y el resultado sustituye al anterior sin parar la reproducción.
+ * Entre mover la perilla y oírla pasa el tiempo de cálculo de la región (medido y mostrado). No toca el proyecto ni la
+ * exportación: para que quede guardado hay que pulsar «Procesar voz».
+ */
+@Composable
+private fun ContinuousListen(state: ProjectState, clip: ClipState, p: VocalParams, from: Long, length: Long, previewJob: JobUi?, actions: StudioActions) {
+    var on by remember(clip.id) { mutableStateOf(false) }
+    var wantProcessed by remember(clip.id) { mutableStateOf(true) }
+    var savedLoop by remember(clip.id) { mutableStateOf<Triple<Boolean, Long, Long>?>(null) }
+    val pv = state.vocalPreview?.takeIf { it.clipId == clip.id }
+    val st by rememberUpdatedState(state)
+    fun loopTicks(): Pair<Long, Long> = st.framesToTicks(clip.start + from) to st.framesToTicks(clip.start + from + length)
+    fun stopListening() {
+        on = false
+        savedLoop?.let { (e, a, b) -> actions.setLoop(e, a, b) }
+        savedLoop = null
+        actions.previewListen(clip.id, false)
+    }
+    // Cada cambio de ajustes (o de región) con la escucha activa pide una prueba nueva tras una pausa corta.
+    LaunchedEffect(on, p, from, length) {
+        if (!on) return@LaunchedEffect
+        delay(250)
+        actions.vocalPreview(clip.id, p, from, length)
+    }
+    // En cuanto llega la primera prueba, se escucha (si el usuario no eligió «Original»).
+    LaunchedEffect(on, pv != null, wantProcessed) {
+        if (on && pv != null && pv.listening != wantProcessed) actions.previewListen(clip.id, wantProcessed)
+    }
+    DisposableEffect(clip.id) { onDispose { if (on) stopListening() } }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Dims.Radius)).background(if (on) Palette.SurfaceHigh else Palette.Surface)
+        .border(1.dp, if (on) Palette.Cyan else Palette.Grid, RoundedCornerShape(Dims.Radius)).padding(12.dp).testTag("vocal_continuous"),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(tr("Ajustar escuchando", "Adjust while listening"), fontWeight = FontWeight.Bold)
+                Text(tr("%.0f s en bucle; cada cambio se oye cuando termina de calcularse.", "%.0f s looped; each change is heard once it finishes rendering.")
+                    .format(length / SAMPLE_RATE.toDouble()), color = Palette.TextDim, fontSize = 12.sp)
+            }
+            PillToggle(if (on) tr("Activado", "On") else tr("Activar", "Turn on"), on, {
+                if (on) stopListening() else {
+                    on = true
+                    savedLoop = Triple(st.loopEnabled, st.loopStart, st.loopEnd)
+                    val (a, b) = loopTicks()
+                    actions.setLoop(true, a, b)
+                    actions.seek(clip.start + from)
+                    actions.play()
+                }
+            }, color = Palette.Cyan, height = 44.dp, modifier = Modifier.testTag("vocal_continuous_toggle"))
+        }
+        if (on) {
+            Segmented(listOf(tr("Original", "Original"), tr("Con VocalShift", "With VocalShift")), if (wantProcessed) 1 else 0,
+                { wantProcessed = it == 1; if (pv != null) actions.previewListen(clip.id, wantProcessed) }, Modifier.fillMaxWidth().testTag("vocal_continuous_ab"), height = 44.dp)
+            val status = when {
+                previewJob != null -> tr("Calculando tus ajustes… ${(previewJob.progress * 100).roundToInt()} %", "Rendering your settings… ${(previewJob.progress * 100).roundToInt()} %")
+                pv == null -> tr("Preparando la primera prueba…", "Preparing the first test…")
+                pv.params.copy(preset = "") != p.copy(preset = "") -> tr("Ajustes cambiados: se recalculan en un momento.", "Settings changed: re-rendering shortly.")
+                else -> tr("Suena con estos ajustes. No cambia el proyecto: pulsa «Procesar voz» para guardarlos.", "Playing with these settings. The project is unchanged: tap “Process voice” to keep them.")
+            }
+            Text(status, color = if (previewJob != null) Palette.Cyan else Palette.TextFaint, fontSize = 12.sp, modifier = Modifier.testTag("vocal_continuous_status"))
+            pv?.seconds?.takeIf { it > 0 }?.let { sec ->
+                Text(tr("Último cálculo: %.1f s para %.0f s de voz.", "Last render: %.1f s for %.0f s of voice.").format(sec, length / SAMPLE_RATE.toDouble()), color = Palette.TextFaint, fontSize = 11.sp)
+            }
+        }
     }
 }
 

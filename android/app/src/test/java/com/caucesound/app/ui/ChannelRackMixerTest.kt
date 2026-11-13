@@ -156,9 +156,13 @@ class ChannelRackMixerTest {
 
     // --- Mixer Pro ----------------------------------------------------------------------------------------------
 
+    /** 0.8: en vertical los efectos empiezan cerrados (faders a toda altura); se abren con la barra «Ver efectos». */
+    private fun openFx() = compose.onNodeWithTag("rack_toggle").performClick()
+
     @Test fun mixer_rack_shows_the_engine_chain_in_processing_order() {
         val rec = Rec()
         compose.setContent { Studio(Panel.MIXER, rec, voice.id) }
+        openFx()
         shot("44_mixer_pro_voice")
         assertEquals(listOf("cs.filter", "cs.eq", "cs.compressor", "cs.saturation", "cs.delay", "cs.reverb"), voice.inserts.map { it.type })
         voice.inserts.indices.forEach { compose.onNodeWithTag("slot_$it").performScrollTo().assertExists() }
@@ -169,6 +173,7 @@ class ChannelRackMixerTest {
     @Test fun effect_picker_lists_only_real_effects_by_category_and_vocalshift_offline() {
         val rec = Rec()
         compose.setContent { Studio(Panel.MIXER, rec, voice.id) }
+        openFx()
         compose.onNodeWithTag("add_effect").performScrollTo().performClick()
         shot("45_effect_picker")
         // Solo los efectos que el motor publica; ninguno latente; el catálogo trae descripción para cada uno.
@@ -196,6 +201,7 @@ class ChannelRackMixerTest {
         val rec = Rec()
         val synth = rack.tracks.first { it.isSynth && it.inserts.isEmpty() }
         compose.setContent { Studio(Panel.MIXER, rec, synth.id) }
+        openFx()
         compose.onNodeWithTag("fx_chains").performScrollTo().performClick()
         compose.onNodeWithTag("chain_trap_808").performScrollTo().performClick()
         shot("46_chain_dialog")
@@ -208,6 +214,7 @@ class ChannelRackMixerTest {
     @Test fun lane_channel_strip_says_where_its_signal_comes_from() {
         val bus = rack.tracks.first { it.id == drums.laneRoutes[0] }
         compose.setContent { Studio(Panel.MIXER, Rec(), bus.id) }
+        openFx()
         compose.onNodeWithTag("strip_route_${bus.id}", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("routing_label").assertExists()
         compose.onNodeWithText(tr("Pieza 1 de «${drums.name}» → Master", "Piece 1 of “${drums.name}” → Master"), substring = true).assertExists()

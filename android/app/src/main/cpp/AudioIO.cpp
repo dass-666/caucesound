@@ -44,15 +44,17 @@ bool AudioIO::openInputLocked()
         ->setChannelCount (oboe::ChannelCount::Mono)
         ->setSampleRate (kProjectRate)
         ->setSampleRateConversionQuality (oboe::SampleRateConversionQuality::Medium)
-        // VoicePerformance: preset de baja latencia para música/voz en directo (sin cancelación de eco)
-        ->setInputPreset (oboe::InputPreset::VoicePerformance);
+        // VoicePerformance: preset de baja latencia para música/voz en directo (sin cancelación de eco).
+        // VoiceCommunication (modo bocinas): el sistema aplica cancelación de eco si el teléfono la tiene.
+        ->setInputPreset (echoCancel.load() ? oboe::InputPreset::VoiceCommunication : oboe::InputPreset::VoicePerformance);
     oboe::Result r = b.openStream (in);
     if (r != oboe::Result::OK)
     {
-        LOGW ("entrada VoicePerformance: %s, reintento con Generic", oboe::convertToText (r));
+        LOGW ("entrada %s: %s, reintento con Generic", echoCancel.load() ? "VoiceCommunication" : "VoicePerformance", oboe::convertToText (r));
         b.setInputPreset (oboe::InputPreset::Generic);
         r = b.openStream (in);
     }
+    if (r == oboe::Result::OK) inPresetUsed.store ((int) in->getInputPreset());
     if (r != oboe::Result::OK) { LOGW ("entrada: %s", oboe::convertToText (r)); in.reset(); return false; }
     inBuf.assign ((size_t) std::max (8192, in->getBufferCapacityInFrames() * 2), 0.0f);
     return true;
@@ -108,6 +110,21 @@ void AudioIO::stop()
     std::lock_guard<std::mutex> l (mtx);
     running.store (false);
     closeLocked();
+}
+
+bool AudioIO::setEchoCancel (bool on)
+{
+    if (echoCancel.exchange (on) == on) return true;
+    std::lock_guard<std::mutex> l (mtx);
+    if (! running.load() || ! in) return true; // se aplicará al abrir la entrada
+    // Reabrir la entrada con el perfil nuevo (mismo protocolo que setInputEnabled).
+    inRaw.store (nullptr);
+    out->stop();
+    in->stop(); in->close(); in.reset();
+    const bool ok = openInputLocked();
+    if (ok) { in->requestStart(); primingInput = true; inRaw.store (in.get()); }
+    out->requestStart();
+    return ok;
 }
 
 bool AudioIO::setInputEnabled (bool on)
@@ -196,6 +213,7 @@ std::string AudioIO::statusJson()
     std::lock_guard<std::mutex> l (mtx);
     std::ostringstream s;
     s << "{\"running\":" << (running.load() ? "true" : "false");
+    s << ",\"echoCancel\":" << (echoCancel.load() ? "true" : "false") << ",\"inputPreset\":" << inPresetUsed.load();
     s << ",\"reopenCount\":" << reopenCount.load() << ",\"inputShortReads\":" << inputShortReads.load();
     s << ",\"callbacks\":" << callbacks.load() << ",\"processedFrames\":" << engine.processedFrames()
       << ",\"ensureRestarts\":" << ensureRestarts.load() << ",\"lastError\":" << lastError.load();

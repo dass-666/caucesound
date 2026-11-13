@@ -73,6 +73,8 @@ interface StudioActions {
     /** Nueva versión de una parte (o de todas con "all"); seed 0 = recomponer con la semilla guardada. */
     fun varyPart(part: String, seed: Long, energy: Float? = null) {}
     fun setPartLocked(trackId: String, locked: Boolean) {}
+    fun mutatePart(part: String, seed: Long) {}
+    fun regenerateBeat(seed: Long) {}
 
     // --- Plugins integrados (misión 0.5). Procesos offline: nunca en el hilo de audio. ---
     /** VocalShift: procesa el clip con estos parámetros. El resultado entra como versión procesada (no destructivo). */

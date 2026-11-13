@@ -139,6 +139,13 @@ public:
     // Respeta las pistas bloqueadas. Una sola entrada de deshacer: deshacer/rehacer sirve para comparar versiones.
     OpResult varyPart (const std::string& part, uint32_t seed, float energy = 0, bool setEnergy = false);
     OpResult setPartLocked (const std::string& trackId, bool locked);
+    // 0.8 — Variar: conserva la identidad de la parte (misma semilla base, mismos acordes) y solo cambia detalles
+    // (charles, notas fantasma, saltos de octava, alguna nota del motivo). Un paso de deshacer. part: como varyPart.
+    OpResult mutatePart (const std::string& part, uint32_t seed);
+    // 0.8 — Regenerar beat: composición nueva del mismo estilo, tempo y tonalidad: semillas nuevas en todas las pistas
+    // sin candado y, si ninguna pista armónica (bajo, acordes, melodía, pad) está bloqueada, otra progresión del
+    // estilo. Lo bloqueado no cambia. Un paso de deshacer.
+    OpResult regenerateBeat (uint32_t seed);
     // Solo AI (SessionSolo.cpp). soloRequest prepara la petición (tonalidad y acordes del plan o, sin plan, de la
     // tonalidad dada; si falta, falla con "key_required"). addSoloTrack añade el resultado como pista nueva.
     OpResult soloRequest (int startBar, int bars, int keyRoot, bool minor, solo::MelodyRequest& out) const;

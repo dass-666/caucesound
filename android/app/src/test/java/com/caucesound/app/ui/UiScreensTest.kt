@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -73,7 +74,12 @@ class UiScreensTest {
         override fun addReverbBus() { calls += "addReverbBus" }
         override fun setSendLive(trackId: String, busId: String, level: Float) { calls += "send:$trackId:$busId" }
         override fun setPanLive(id: String, pan: Float) { calls += "pan:$id" }
+        override fun setVolumeLive(id: String, db: Float) { calls += "vol:$id" }
+        override fun setLoop(on: Boolean, startTick: Long, endTick: Long) { calls += "loop:$on" }
+        override fun seek(frame: Long) { calls += "seek:$frame" }
         override fun varyPart(part: String, seed: Long, energy: Float?) { calls += "vary:$part:${seed != 0L}:$energy" }
+        override fun mutatePart(part: String, seed: Long) { calls += "mutate:$part:${seed != 0L}" }
+        override fun regenerateBeat(seed: Long) { calls += "regen:${seed != 0L}" }
         override fun setPartLocked(trackId: String, locked: Boolean) { calls += "lock:$trackId:$locked" }
         var vocal: com.caucesound.app.data.VocalParams? = null
         var request: com.caucesound.app.data.SoloRequest? = null
@@ -156,14 +162,19 @@ class UiScreensTest {
         val rec = Recorder()
         compose.setContent { Themed { VariationsPanel(state04, rec) } }
         shot("12_variations")
-        compose.onNodeWithTag("vary_all").performClick()
-        compose.onNodeWithTag("vary_melody").performClick()
-        compose.onNodeWithText(tr("Más enérgica", "More energy")).performClick()
+        compose.onNodeWithTag("mutate_all").performClick()
+        compose.onNodeWithTag("mutate_drums").performClick()
+        compose.onNodeWithTag("regenerate_beat").performScrollTo().performClick()
+        compose.onNodeWithTag("vary_all").performScrollTo().performClick()
+        compose.onNodeWithTag("vary_melody").performScrollTo().performClick()
+        compose.onNodeWithText(tr("Más enérgica", "More energy")).performScrollTo().performClick()
         val bass = plan.roles.entries.first { it.value == "bass" }.key
         compose.onNodeWithTag("lock_$bass").performScrollTo().performClick()
-        assertEquals(listOf("vary:all:true:null", "vary:melody:true:null", "vary:all:false:0.6", "lock:$bass:true"), rec.calls)
+        assertEquals(listOf("mutate:all:true", "mutate:drums:true", "regen:true", "vary:all:true:null", "vary:melody:true:null",
+            "vary:all:false:0.6", "lock:$bass:true"), rec.calls)
         // El trap no tiene parte de acordes: no se ofrece un botón que no haría nada.
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("vary_chords")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("mutate_chords")).fetchSemanticsNodes().isEmpty())
     }
 
     // --- Misión 0.5: Solo AI 2.0 y VocalShift. Todos los datos son JSON reales del motor (cs_render --fixtures05). ---
@@ -252,7 +263,7 @@ class UiScreensTest {
         compose.onNodeWithTag("solo_vary").performScrollTo().performClick()
         compose.onNodeWithTag("solo_listen").performScrollTo().performClick()
         compose.onNodeWithTag("solo_open_piano").performScrollTo().performClick()
-        assertEquals(listOf("pick:2", "vary", "play", "selectClip:${track.midiClips.first().id}", "panel:PIANO"), rec.calls)
+        assertEquals(listOf("pick:2", "vary", "play", "selectClip:${track.midiClips.first().id}", "panel:PIANO"), rec.calls.filterNot { it.startsWith("seek:") })
         // Controles creativos 0.6: cada botón envía su transformación real.
         rec.calls.clear()
         for (tag in listOf("solo_simpler", "solo_intense", "solo_soft", "solo_octave_up", "solo_octave_down", "solo_new_ending")) compose.onNodeWithTag(tag).performScrollTo().performClick()
@@ -305,6 +316,33 @@ class UiScreensTest {
         compose.onNodeWithText(tr("Original", "Original")).performClick()
         assertEquals(listOf("previewListen:false"), rec.calls)
         shot("25_vocalshift_preview")
+    }
+
+    /** 0.8 — «Ajustar escuchando»: bucle en la región, reproducción y recálculo automático tras mover un control. */
+    @Test fun vocalshift_adjust_while_listening_loops_and_rerenders_after_each_change() {
+        val rec = Recorder()
+        val clip = stateBeat.tracks.first { it.name == "Voz" }.clips.first()
+        compose.setContent { Themed { VocalShiftPanel(stateBeat, clip.id, ui(), emptyMap(), rec) } }
+        compose.onNodeWithTag("vocal_continuous_toggle").performScrollTo().performClick()
+        assertEquals(listOf("loop:true", "seek:${clip.start}", "play"), rec.calls.take(3))
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(500) // la pausa de 250 ms antes de recalcular
+        assertTrue(rec.calls.toString(), rec.calls.any { it.startsWith("preview:0:") })
+        // Cambiar los ajustes (aquí, otro preset): tras la pausa corta se pide otra prueba, sin pulsar nada más.
+        rec.calls.clear()
+        val other = presets.first { it.id != "urban_spatial" }
+        compose.onNodeWithTag("vocal_preset_${other.id}").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(1000)
+        assertEquals(1, rec.calls.count { it.startsWith("preview:") }) // un cambio = una sola prueba
+        assertEquals(other.params, rec.vocal)
+        compose.onNodeWithTag("vocal_continuous_status").assertExists()
+        shot("48_vocalshift_continuous")
+        // Apagar: se restaura el bucle anterior y se deja de escuchar la prueba.
+        rec.calls.clear()
+        compose.onNodeWithTag("vocal_continuous_toggle").performScrollTo().performClick()
+        assertTrue(rec.calls.contains("previewListen:false"))
+        assertTrue(rec.calls.any { it.startsWith("loop:") })
     }
 
     @Test fun vocalshift_preview_shows_real_progress_and_can_be_cancelled() {
@@ -546,6 +584,9 @@ class UiScreensTest {
         val rec = Recorder()
         val meters = mutableStateOf(FloatArray(st.tracks.size + 1) { 0.3f })
         compose.setContent { Themed { MixerPanel(st, meters, synth.id, rec, catalog) } }
+        // 0.8: los efectos empiezan cerrados (faders a toda altura); se abren con la barra inferior.
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("insert_rack")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("rack_toggle").performClick()
         shot("05b_mixer_bus")
         // 0.7: el envío se ajusta en el rack del canal seleccionado (la perilla salió de la tira para dejar sitio al rack).
         compose.onNodeWithTag("send_${bus.id}").performScrollTo().assertExists()
@@ -554,6 +595,36 @@ class UiScreensTest {
         assertTrue(rec.calls.contains("send:${synth.id}:${bus.id}"))
         assertEquals("commit", rec.calls.last())
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasText("Bus de reverb")).fetchSemanticsNodes().isEmpty())
+    }
+
+    /** Prueba de tareas del Mixer (0.8): abrir, localizar el fader, bajar, abrir efectos, tocar uno, volver al volumen. */
+    @Test fun mixer_task_flow_keeps_volume_reachable_while_editing_effects() {
+        val st = StateParser.state(res("state_bus.json"))!!
+        val voice = st.tracks.first { it.isSynth }
+        val rec = Recorder()
+        val selected = mutableStateOf<String?>(null)
+        val actions = object : StudioActions by rec { override fun selectTrack(id: String) { selected.value = id; rec.selectTrack(id) } }
+        val meters = mutableStateOf(FloatArray(st.tracks.size + 1) { 0.3f })
+        compose.setContent { Themed { MixerPanel(st, meters, selected.value, actions, catalog) } }
+        // 1-2. Faders visibles desde el principio, sin efectos tapándolos.
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("insert_rack")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Fader", substring = true), useUnmergedTree = true).fetchSemanticsNodes().size >= st.tracks.size)
+        // 3. Bajar el volumen con el fader de la tira.
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Fader", substring = true), useUnmergedTree = true)[st.tracks.indexOf(voice)]
+            .performTouchInput { swipeDown() }
+        assertTrue(rec.calls.contains("vol:${voice.id}"))
+        // 4. Abrir sus efectos con el botón FX de la tira: selecciona el canal y abre el rack en el mismo toque.
+        compose.onNodeWithTag("strip_fx_${voice.id}", useUnmergedTree = true).performScrollTo().performClick()
+        assertEquals(voice.id, selected.value)
+        compose.onNodeWithTag("insert_rack").assertExists()
+        shot("47_mixer_fx_with_volume")
+        // 6. El volumen del canal sigue a mano sobre los efectos.
+        rec.calls.clear()
+        compose.onNodeWithTag("fx_volume_slider").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(-12f) }
+        assertTrue(rec.calls.contains("vol:${voice.id}"))
+        // Cerrar devuelve toda la altura a los faders.
+        compose.onNodeWithTag("rack_toggle").performClick()
+        assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasTestTag("insert_rack")).fetchSemanticsNodes().isEmpty())
     }
 
     @Test fun effects_panel_shows_engine_chain() {

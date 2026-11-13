@@ -15,7 +15,7 @@ using namespace cs;
 namespace
 {
 constexpr int kSr = 48000;
-const std::vector<std::string> kGenres = { "trap", "reggaeton", "hiphop", "pop", "electronic" };
+const std::vector<std::string> kGenres = { "trap", "reggaeton", "hiphop", "boombap", "jazzrap", "darkhiphop", "pop", "electronic" };
 
 struct Fx
 {
@@ -114,7 +114,9 @@ TEST (composer_notes_stay_in_key)
                         const auto sc = composer::scale (plan); // chordAt da notas con conducción de voces (no siempre la fundamental abajo)
                         const int nextRoot = sc[(size_t) plan.progression[(size_t) (absBar + 1) % plan.progression.size()]] % 12;
                         const int d = ((n.key - nextRoot) % 12 + 12) % 12;
-                        const bool isApproach = part == "bass" && n.start % (4 * kPpq) >= 14 * kStepTicks && n.length <= 2 * kStepTicks && (d == 1 || d == 11);
+                        // Jazz rap (0.8): el bajo que camina se acerca a la fundamental siguiente en el cuarto tiempo.
+                        const Tick from = g == "jazzrap" ? 12 * kStepTicks : 14 * kStepTicks, maxLen = g == "jazzrap" ? 4 * kStepTicks : 2 * kStepTicks;
+                        const bool isApproach = part == "bass" && n.start % (4 * kPpq) >= from && n.length <= maxLen && (d == 1 || d == 11);
                         if (isApproach) ++approach; else ++outside;
                     }
                     CHECK (n.key >= 0 && n.key <= 127 && n.velocity >= 1 && n.velocity <= 127 && n.length > 0 && n.start >= 0);
@@ -391,4 +393,155 @@ TEST (final_section_restates_the_motif_with_octave_doubling)
         MEASURE ("%s: A %zu notas, Final %zu notas, %d dobladas a la octava", g.c_str(), na.size(), nf.size(), doubled);
         CHECK (doubled >= 2 && nf.size() > na.size());
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Misión 0.8: «Variar» conserva la identidad y «Regenerar» propone otra composición. Se mide con el parecido entre
+// versiones (índice de Jaccard sobre las notas o los golpes: 1 = idénticas, 0 = nada en común).
+namespace
+{
+std::set<std::string> events (const TrackModel& t)
+{
+    std::set<std::string> e;
+    for (const auto& c : t.midiClips)
+        for (const auto& n : c.notes) e.insert (c.name + "|" + std::to_string (n.start) + "|" + std::to_string (n.key));
+    for (const auto& p : t.patterns)
+        for (size_t l = 0; l < p.lanes.size(); ++l)
+            for (size_t s = 0; s < p.lanes[l].size(); ++s) if (p.lanes[l][s] > 0) e.insert (p.name + "|" + std::to_string (l) + "|" + std::to_string (s));
+    return e;
+}
+double jaccard (const std::set<std::string>& a, const std::set<std::string>& b)
+{
+    if (a.empty() && b.empty()) return 1.0;
+    size_t inter = 0;
+    for (const auto& x : a) inter += b.count (x);
+    return (double) inter / (double) (a.size() + b.size() - inter);
+}
+double partSimilarity (const ProjectModel& a, const ProjectModel& b, const std::string& role)
+{
+    const TrackModel* x = byRole (a, role);
+    const TrackModel* y = x ? b.findTrack (x->id) : nullptr;
+    return x && y ? jaccard (events (*x), events (*y)) : -1.0;
+}
+} // namespace
+
+TEST (vary_keeps_identity_and_regenerate_changes_the_composition)
+{
+    double sumVar = 0, sumRegen = 0;
+    int n = 0;
+    for (const auto& g : kGenres)
+    {
+        Fx f ("comp_var_regen_" + g);
+        CHECK (f.session.createProject (f.dir + "/p", "x", kSr, g).ok);
+        const ProjectModel base = f.session.model();
+        MusicPlan p0;
+        CHECK (MusicPlan::fromJson (base.music, p0));
+        CHECK_MSG (f.session.mutatePart ("all", 777).ok, g);
+        const ProjectModel varied = f.session.model();
+        CHECK (f.session.undo().ok);
+        {
+            ProjectModel undone = f.session.model();
+            undone.modifiedAt = base.modifiedAt; // la fecha de modificación sí avanza; el contenido debe ser el mismo
+            CHECK (toJson (undone, false) == toJson (base, false)); // un solo paso de deshacer
+        }
+        CHECK_MSG (f.session.regenerateBeat (777).ok, g);
+        const ProjectModel regen = f.session.model();
+        MusicPlan p1;
+        CHECK (MusicPlan::fromJson (regen.music, p1));
+        CHECK_MSG (p1.progression != p0.progression, g + ": regenerar debe cambiar la progresión");
+        CHECK (p1.keyRoot == p0.keyRoot && p1.minor == p0.minor && regen.bpm == base.bpm); // mismo estilo, tono y tempo
+        std::string line;
+        for (const std::string role : { "drums", "bass", "chords", "melody" })
+        {
+            const double v = partSimilarity (base, varied, role), r = partSimilarity (base, regen, role);
+            if (v < 0) continue;
+            char buf[96];
+            std::snprintf (buf, sizeof buf, " %s var %.2f / regen %.2f;", role.c_str(), v, r);
+            line += buf;
+            CHECK_MSG (v < 0.999, g + "/" + role + ": variar no cambió nada");
+            CHECK_MSG (v > r, g + "/" + role + ": la variación se aleja más que la regeneración");
+            sumVar += v; sumRegen += r; ++n;
+        }
+        MEASURE ("%s:%s", g.c_str(), line.c_str());
+        // Variar es reproducible (misma semilla, mismo resultado) y sobrevive a guardar y reabrir.
+        CHECK (f.session.undo().ok);
+        CHECK (f.session.mutatePart ("melody", 4242).ok);
+        const std::string fp = fpOf (f.session, byRole (f.session.model(), "melody")->id);
+        CHECK (f.session.undo().ok);
+        CHECK (f.session.mutatePart ("melody", 4242).ok);
+        CHECK (fpOf (f.session, byRole (f.session.model(), "melody")->id) == fp);
+        CHECK (f.session.save().ok);
+        f.session.close();
+        CHECK (f.session.openProject (f.dir + "/p").ok);
+        CHECK (fpOf (f.session, byRole (f.session.model(), "melody")->id) == fp);
+    }
+    MEASURE ("media de %d partes: parecido tras variar %.2f, tras regenerar %.2f", n, sumVar / n, sumRegen / n);
+    CHECK (sumVar / n > 0.55);
+    CHECK (sumRegen / n < 0.45);
+}
+
+TEST (regenerate_keeps_locked_parts_and_their_harmony)
+{
+    Fx f ("comp_regen_lock");
+    CHECK (f.session.createProject (f.dir + "/p", "x", kSr, "boombap").ok);
+    const ProjectModel base = f.session.model();
+    const TrackModel* chords = byRole (base, "chords");
+    const TrackModel* drums = byRole (base, "drums");
+    CHECK (chords && drums);
+    const std::string chordsFp = fingerprint (*chords), drumsFp = fingerprint (*drums);
+    MusicPlan p0;
+    CHECK (MusicPlan::fromJson (base.music, p0));
+    CHECK (f.session.setPartLocked (chords->id, true).ok);
+    CHECK (f.session.regenerateBeat (99).ok);
+    MusicPlan p1;
+    CHECK (MusicPlan::fromJson (f.session.model().music, p1));
+    CHECK (p1.progression == p0.progression);                 // los acordes bloqueados siguen encajando
+    CHECK (fpOf (f.session, chords->id) == chordsFp);         // la pista bloqueada no se toca
+    CHECK (fpOf (f.session, drums->id) != drumsFp);           // el resto sí cambia
+    // Todo bloqueado: no hay nada que regenerar y no se crea un paso de deshacer vacío.
+    MusicPlan p;
+    CHECK (MusicPlan::fromJson (f.session.model().music, p));
+    for (const auto& [id, role] : p.roles) CHECK (f.session.setPartLocked (id, true).ok);
+    CHECK (! f.session.regenerateBeat (5).ok);
+    CHECK (! f.session.mutatePart ("all", 5).ok);
+    CHECK (! f.session.mutatePart ("kazoo", 5).ok);
+}
+
+TEST (hiphop_styles_are_really_different)
+{
+    // No es «el mismo patrón con otros sonidos»: swing, densidad, bajo y armonía distintos (medidos).
+    struct Row { std::string g; float swing; int hats, kicks, ghost; double bassLen; int chordSize; };
+    std::vector<Row> rows;
+    for (const std::string g : { "hiphop", "boombap", "jazzrap", "darkhiphop" })
+    {
+        const MusicPlan p = composer::defaultPlan (g);
+        const auto pats = composer::drumPatterns (p, p.seeds.at ("drums"));
+        const DrumPattern& m = pats.at ("main");
+        Row r { g, m.swing, 0, 0, 0, 0, 0 };
+        for (int s = 0; s < m.steps; ++s)
+        {
+            r.hats += m.lanes[3][(size_t) s] > 0;
+            r.kicks += m.lanes[0][(size_t) s] > 0;
+            r.ghost += m.lanes[1][(size_t) s] > 0 && m.lanes[1][(size_t) s] < 60;
+        }
+        const SongSection a = p.sections[1];
+        const auto bass = composer::partNotes (p, "bass", a, p.seeds.at ("bass"), 4);
+        for (const auto& n : bass) r.bassLen += (double) n.length / kStepTicks;
+        r.bassLen /= std::max<size_t> (1, bass.size());
+        const auto ch = composer::partNotes (p, "chords", a, p.seeds.at ("chords"), 4);
+        std::map<Tick, int> stacks;
+        for (const auto& n : ch) stacks[n.start / kStepTicks]++;
+        for (const auto& [t, c] : stacks) r.chordSize = std::max (r.chordSize, c);
+        rows.push_back (r);
+        MEASURE ("%-10s swing %.2f · charles %2d · bombos %d · fantasmas %d · nota media del bajo %.1f semicorcheas · notas por acorde %d",
+                 g.c_str(), r.swing, r.hats, r.kicks, r.ghost, r.bassLen, r.chordSize);
+    }
+    const Row& hh = rows[0]; const Row& bb = rows[1]; const Row& jz = rows[2]; const Row& dk = rows[3];
+    CHECK (bb.swing > hh.swing && jz.swing > hh.swing && dk.swing < hh.swing); // crudo y jazz con más swing; oscuro más recto
+    CHECK (dk.hats < hh.hats);                 // el oscuro deja espacio
+    CHECK (jz.ghost >= hh.ghost);              // el jazz tiene más notas fantasma
+    CHECK (bb.ghost <= 1);                     // el crudo no adorna la caja
+    CHECK (bb.bassLen < hh.bassLen);           // bajo más seco
+    CHECK (dk.bassLen > bb.bassLen);           // sub largo
+    CHECK (jz.chordSize >= 5);                 // acordes con novena
 }

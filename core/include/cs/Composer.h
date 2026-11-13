@@ -23,7 +23,7 @@ struct SongSection
 
 struct MusicPlan
 {
-    std::string genre;            // "trap", "reggaeton", "hiphop", "pop", "electronic"
+    std::string genre;            // "trap", "reggaeton", "hiphop", "boombap", "jazzrap", "darkhiphop", "pop", "electronic"
     int keyRoot = 9;              // clase de altura de la tónica (0 = Do ... 9 = La)
     bool minor = true;
     std::vector<int> progression; // grados de la escala (0..6), un acorde por compás, en ciclo
@@ -32,6 +32,9 @@ struct MusicPlan
     std::map<std::string, std::string> roles;   // id de pista -> parte
     std::map<std::string, std::string> patternIds; // clave de patrón ("main", "fill"...) -> id del patrón en la pista de batería
     std::vector<std::string> locked;            // pistas bloqueadas: las variaciones no las tocan
+    // 0.8 — «Variar»: por parte, semilla de la mutación aplicada sobre la parte de su semilla base (0 = sin variar).
+    // La identidad (ritmo base, acordes, motivo) sale de seeds; variants solo cambia detalles.
+    std::map<std::string, uint32_t> variants;
     std::vector<SongSection> sections;
 
     std::string toJson() const;
@@ -59,5 +62,18 @@ std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, co
 
 // Plan por defecto de cada plantilla ("" si el género no existe).
 MusicPlan defaultPlan (const std::string& genre);
+
+// 0.8 — Progresiones típicas del género (grados de su modo). «Regenerar» elige otra distinta de la actual.
+// Familia rítmica (0-3) que usa la batería con esta semilla; 0 = el groove original del estilo.
+int drumGroove (uint32_t seed);
+std::vector<std::vector<int>> progressionBank (const std::string& genre);
+
+// 0.8 — «Variar»: mutaciones que conservan la identidad. Sobre las notas de una parte (no tocan el primer golpe de
+// cada compás ni la armonía) y sobre un patrón de batería (no tocan el bombo del 1 ni la caja de los tiempos 2 y 4).
+void mutateNotes (const MusicPlan& p, const std::string& part, std::vector<MidiNote>& notes, uint32_t variant, int beatsPerBar);
+void mutatePattern (const MusicPlan& p, DrumPattern& d, uint32_t variant, const std::string& key);
+
+// Familias de género (para compartir reglas).
+bool hipHopFamily (const std::string& genre); // hiphop, boombap, jazzrap, darkhiphop
 } // namespace composer
 } // namespace cs

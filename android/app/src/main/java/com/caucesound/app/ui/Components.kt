@@ -264,8 +264,11 @@ val ValueText = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, l
 @Composable
 fun LevelMeter(level: () -> Float, modifier: Modifier = Modifier, vertical: Boolean = true) {
     val hold = remember { FloatArray(1) }
+    val clipHold = remember { IntArray(1) }
     Canvas(modifier.clip(RoundedCornerShape(3.dp)).background(Palette.Background)) {
         val l = level()
+        // 0.8: indicador de saturación. Un pico en 0 dBFS o más enciende un tope rojo durante ~2 s (unos 120 cuadros).
+        if (l >= 0.999f) clipHold[0] = 120 else if (clipHold[0] > 0) clipHold[0]--
         val db = if (l > 1e-5f) 20 * log10(l) else -100f
         val target = ((db + 60f) / 60f).coerceIn(0f, 1f)
         hold[0] = max(target, hold[0] - 0.025f)
@@ -275,9 +278,11 @@ fun LevelMeter(level: () -> Float, modifier: Modifier = Modifier, vertical: Bool
             val grad = Brush.verticalGradient(*stops, startY = size.height, endY = 0f)
             val h = size.height * shown
             clipRectSafe(0f, size.height - h, size.width, size.height) { drawRect(grad) }
+            if (clipHold[0] > 0) drawRect(Palette.Record, size = androidx.compose.ui.geometry.Size(size.width, minOf(size.height, 4.dp.toPx())))
         } else {
             val grad = Brush.horizontalGradient(*stops)
             clipRectSafe(0f, 0f, size.width * shown, size.height) { drawRect(grad) }
+            if (clipHold[0] > 0) drawRect(Palette.Record, topLeft = androidx.compose.ui.geometry.Offset(size.width - minOf(size.width, 4.dp.toPx()), 0f), size = androidx.compose.ui.geometry.Size(minOf(size.width, 4.dp.toPx()), size.height))
         }
     }
 }

@@ -2,6 +2,7 @@
 //   cs_render <carpeta> [plantilla...]      → <carpeta>/<plantilla>.wav + <carpeta>/metrics.json
 //   cs_render --analyze <archivo.wav> <bpm>  → métricas de un WAV existente
 // Las métricas son objetivas (niveles, espectro, dinámica, repetición); NO dicen si algo «suena bien».
+#include <algorithm>
 #include "cs/Api.h"
 #include "cs/Session.h"
 #include "cs/Wav.h"
@@ -244,6 +245,42 @@ int main (int argc, char** argv)
         std::printf ("%s\n", analyze (a, s.model().bpm).dump (2).c_str());
         s.close();
         std::filesystem::remove_all (dir);
+        return 0;
+    }
+    if (argc >= 3 && std::string (argv[1]) == "--compare")
+    {
+        // Misión 0.8: por estilo, original / variación («Variar todo») / regeneración («Regenerar beat»), misma semilla
+        // 777 para que se pueda reproducir. WAV de 16 bits (para escuchar; las métricas no dependen de la profundidad).
+        const std::string out = std::filesystem::absolute (argv[2]).string();
+        std::filesystem::create_directories (out);
+        json all = json::object();
+        for (const auto& t : projectTemplates())
+        {
+            if (argc > 3 && std::find (argv + 3, argv + argc, t.id) == argv + argc) continue;
+            Engine e; e.prepare (48000, 1024);
+            Session s (e);
+            const std::string dir = out + "/_proj_" + t.id;
+            std::filesystem::remove_all (dir);
+            if (! s.createProject (dir, t.id, 48000, t.id).ok) return 1;
+            auto take = [&] (const std::string& tag) -> bool
+            {
+                const std::string wav = out + "/" + t.id + "_" + tag + ".wav";
+                long clipped = 0;
+                if (! s.exportMix (wav, 16, 0, &clipped).ok) return false;
+                AudioData a; std::string err; readWav (wav, a, err);
+                json m = analyze (a, s.model().bpm);
+                m["exportClippedSamples"] = clipped;
+                all[t.id][tag] = m;
+                std::printf ("%s %s: pico %.1f dB, RMS %.1f dB, recortes %ld\n", t.id.c_str(), tag.c_str(), (double) m["peakDb"], (double) m["rmsDb"], clipped);
+                return true;
+            };
+            if (! take ("1_original")) return 1;
+            if (! s.mutatePart ("all", 777).ok || ! take ("2_variar")) return 1;
+            if (! s.undo().ok || ! s.regenerateBeat (777).ok || ! take ("3_regenerar")) return 1;
+            s.close();
+            std::filesystem::remove_all (dir);
+        }
+        std::ofstream (out + "/metricas.json") << all.dump (2);
         return 0;
     }
     if (argc < 2) { std::fprintf (stderr, "uso: cs_render <carpeta> [plantilla...] | --analyze wav bpm | --state plantilla salida.json\n"); return 1; }

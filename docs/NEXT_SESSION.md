@@ -1,20 +1,23 @@
-# Para retomar el trabajo (actualizado 2026-11-13, fin de la misión 0.7 «Channel Rack & Mixer Pro»)
+# Para retomar el trabajo (actualizado 2026-11-13, fin de la misión 0.8 «Studio Flow»)
 
 ## Estado
 
-- **Rama de trabajo**: `claude/project-thread-03ida9`, PR #3 contra la rama de la 0.6. **Sin fusionar** (y tampoco los PR #1 y #2): requiere autorización de Diego.
-- **APK de prueba**: `/mnt/project-files/caucesound/caucesound-0.7.0-rack-mixer-preview.apk`, versionCode 9, misma firma Preview (SHA-256 en STATUS.md). Se instala encima de la 0.6.0 (comprobado por certificado y versionCode; **no** en teléfono).
+- **Rama de trabajo**: `claude/project-thread-nhte0l`, basada en la 0.7 (`claude/project-thread-03ida9`, PR #3). PR borrador contra la rama de la 0.7. **Nada fusionado** (PR #1, #2, #3 y el de la 0.8): requiere autorización de Diego.
+- **APK de prueba**: `/mnt/project-files/caucesound/caucesound-0.8.0-studio-flow-preview.apk`, versionCode 10, `0.8.0-studio-flow-preview`, misma firma Preview (certificado comprobado con `apksigner` contra la 0.7.0). **No** probada en teléfono.
 - **Clave de prueba**: `/mnt/project-files/caucesound/signing/`. **No regenerar.** `CAUCE_SIGNING=/mnt/project-files/caucesound/signing/keystore.properties ./gradlew assemblePreview`.
-- **Capturas**: `/mnt/project-files/caucesound/capturas-0.7.0/` (renders JVM en inglés, no de teléfono). **Muestras de Solo AI 0.6 y 0.7**: `/mnt/project-files/caucesound/muestras-0.7/`.
-- **Validación física**: ninguna desde la 0.3.0. Diego probó la 0.6.0 (ver memoria del proyecto); la guía nueva es **SAMSUNG_ACCEPTANCE_0.7.md**.
-- **Formato de proyecto**: versión 3 (FORMAT_V3.md). Abre los v2 y deja `project.v2.json`.
+- **Capturas**: `/mnt/project-files/caucesound/capturas-0.8.0/` (renders JVM en inglés, no de teléfono; 47 y 48 nuevas, 05 y 12 cambiadas). **Muestras**: `/mnt/project-files/caucesound/muestras-0.8/` (original / variar / regenerar por estilo, con LEEME).
+- **Validación física**: ninguna desde la 0.3.0 salvo lo que Diego probó de la 0.6.0. Guía nueva: **SAMSUNG_ACCEPTANCE_0.8.md** (8 pruebas).
+- **Formato de proyecto**: versión 3 sin cambios. El plan musical puede llevar `variants` (solo si se usó «Variar»); las versiones anteriores lo ignoran.
 - **Submódulos** sin cambios: `solo-ai-studio@fe8445b`, `vocalshift-ai-studio@10e679c`, `signalsmith-stretch@88061fd`, `signalsmith-linear@7bb1c8f`.
+- **Fuera de alcance por decisión de Diego**: FrostBitten Studio (no investigar, no DigitalOcean, no Cauce Service).
 
 ## Qué leer
 
 | Documento | Para qué |
 |---|---|
 | STATUS.md | Qué está implementado, probado, compilado y qué no |
+| SAMSUNG_ACCEPTANCE_0.8.md | Las ocho pruebas de la 0.8 que solo puede hacer Diego |
+| muestras-0.8/LEEME.md (carpeta del proyecto) | Qué escuchar en los WAV de Variar y Regenerar, con mediciones |
 | SAMSUNG_ACCEPTANCE_0.7.md | Las cinco pruebas de la 0.7 que solo puede hacer Diego |
 | SOLO_AI_ALTERNATIVES.md | Causa y corrección de «A-D suenan iguales», con mediciones |
 | FORMAT_V3.md | Pieza de batería en canal propio y migración v2 → v3 |
@@ -29,11 +32,11 @@
 
 | Conjunto | Comando | Resultado |
 |---|---|---|
-| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 139/139 |
-| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | **139/139** prueba por prueba; 136 en la primera pasada. Las 3 restantes, explicadas y repetidas: `daw_export_with_drum_piece…` chocó con una ejecución mía simultánea en la misma carpeta temporal (repetida sola: correcta); `fuzz_command_api…` con 300 iteraciones solo falla su recuento mínimo, sin informe del sanitizador (repetida con 1500: correcta, 0 respuestas inválidas); `solo_ai_profiles…` destapó un defecto real (ver SOLO_AI_ALTERNATIVES.md §6), corregido y repetidas las 11 pruebas `solo_ai`: correctas. Sin informes de ASan ni UBSan |
-| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | **139/139** prueba por prueba, sin avisos de carrera; misma salvedad del fuzz (repetido con 1500 iteraciones: correcto). Tras la corrección de Solo AI se repitieron las 11 pruebas `solo_ai`: correctas |
+| Motor x86-64 | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && ./build/cs_core_tests` | 145/145 |
+| ASan + UBSan | `-DCS_SANITIZE=ON` en `build-asan` | **145/145** prueba por prueba, sin informes de ASan ni UBSan (fuzz de comandos con 1500 iteraciones) |
+| TSan | `-DCMAKE_CXX_FLAGS=-fsanitize=thread` en `build-tsan` | **145/145** prueba por prueba, sin avisos de carrera |
 | ARM64 | — | **No ejecutado** (sin QEMU ni compilador cruzado). Solo compilación con el NDK |
-| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 78/78 |
+| App JVM | `cd android && ./gradlew testDebugUnitTest` (añade `-Pscreenshots` para capturas) | 87/87 |
 | Lint | `./gradlew lintDebug` | 0 errores, 37 avisos |
 | Paquete para DAW | `./build/cauce verify paquete.zip` y `python3 desktop/tools/verify_daw_package.py` (dentro del ZIP descomprimido; necesita `pip install mido`) | Correcto en el ejemplo |
 
@@ -41,7 +44,7 @@ Con sanitizadores conviene ejecutar prueba por prueba: la suite entera tarda má
 `fuzz_command_api…` sola pasa de 20 minutos (se puede acortar con `CS_FUZZ_ITERATIONS`).
 
 Datos de prueba de la interfaz: JSON real del motor. Se regeneran con
-`./build/cs_render --fixtures05 android/app/src/test/resources/fixtures`; los anteriores (incluido `state_rack.json` de la 0.7) con
+`./build/cs_render --fixtures05 android/app/src/test/resources/fixtures` (**ojo**: en la 0.8 regenerarlos todos rompe 8 pruebas de la JVM que dependen de valores antiguos; solo se regeneró `catalog.json` con `cs_render --catalog`); los anteriores (incluido `state_rack.json` de la 0.7) con
 `CS_FIXTURE_DIR=android/app/src/test/resources/fixtures ./build/cs_core_tests ui_fixtures`.
 
 ## Entorno de compilación (nube)

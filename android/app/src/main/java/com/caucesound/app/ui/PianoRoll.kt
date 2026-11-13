@@ -91,7 +91,40 @@ private val RULER_H = 28.dp
 /** Operaciones puras del piano roll (probadas en la JVM). Ticks relativos al clip. */
 object PianoRollOps {
     fun moved(n: NoteState, dTicks: Long, dKeys: Int) = n.copy(start = max(0, n.start + dTicks), key = (n.key + dKeys).coerceIn(0, 127))
-    fun resized(n: NoteState, newEnd: Long, grid: Long) = n.copy(length = max(max(1L, grid / 2), newEnd - n.start))
+    fun resized(n: NoteState, newEnd: Long, grid: Long) = n.copy(length = max(minLength(grid), newEnd - n.start))
+    /** Duración mínima de una nota: media celda de la rejilla, o una fusa de 1/64 sin rejilla. */
+    fun minLength(grid: Long) = if (grid > 0) max(1L, grid / 2) else max(1L, PPQ / 16L)
+    /** Redondea a la rejilla con signo (a diferencia de MusicTime.snapTicks, que no baja de 0). grid ≤ 0 = sin imán. */
+    fun snapSigned(t: Long, grid: Long): Long = if (grid <= 0) t else Math.round(t.toDouble() / grid) * grid
+
+    /**
+     * Arrastre de notas (0.8). Corrige el fallo «no se puede mover hacia atrás»: antes el desplazamiento se redondeaba
+     * con MusicTime.snapTicks, que recorta a 0 los valores negativos, así que cualquier arrastre hacia la izquierda
+     * valía 0. Ahora:
+     *  - el imán se aplica a la posición final de la nota que tiene el dedo (ancla), no al desplazamiento;
+     *  - el grupo se mueve con el mismo desplazamiento, sin bajar de 0 ni salir de 0..127 (el grupo conserva su forma);
+     *  - la duración, la intensidad y el canal no cambian.
+     * rawTicks es el desplazamiento horizontal del dedo sin redondear (puede ser negativo).
+     */
+    fun dragMove(notes: List<NoteState>, group: Set<Int>, anchor: Int, rawTicks: Long, dKeys: Int, grid: Long): List<NoteState> {
+        if (group.isEmpty() || anchor !in notes.indices) return notes
+        val a = notes[anchor]
+        var dt = snapSigned(a.start + rawTicks, grid) - a.start
+        val minStart = group.minOf { notes[it].start }
+        if (minStart + dt < 0) dt = -minStart
+        val lo = group.minOf { notes[it].key }; val hi = group.maxOf { notes[it].key }
+        val dk = dKeys.coerceIn(-lo, 127 - hi)
+        return notes.mapIndexed { i, x -> if (i in group) x.copy(start = x.start + dt, key = x.key + dk) else x }
+    }
+
+    /** Cambio de duración arrastrando el borde derecho (alarga y acorta). El final del ancla va al imán. */
+    fun dragResize(notes: List<NoteState>, group: Set<Int>, anchor: Int, rawTicks: Long, grid: Long): List<NoteState> {
+        if (group.isEmpty() || anchor !in notes.indices) return notes
+        val a = notes[anchor]
+        val dEnd = snapSigned(a.end + rawTicks, grid) - a.end
+        val minLen = minLength(grid)
+        return notes.mapIndexed { i, x -> if (i in group) x.copy(length = max(minLen, x.length + dEnd)) else x }
+    }
     fun transpose(notes: List<NoteState>, sel: Set<Int>, semis: Int) = notes.mapIndexed { i, n -> if (i in sel) n.copy(key = (n.key + semis).coerceIn(0, 127)) else n }
     /** Duplica la selección justo detrás de sí misma (edición por grupos). Devuelve la lista nueva y los índices de las copias. */
     fun duplicate(notes: List<NoteState>, sel: Set<Int>): Pair<List<NoteState>, Set<Int>> {
@@ -169,8 +202,9 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
     Column(Modifier.fillMaxSize()) {
         // --- Herramientas: fila fija (rejilla, modo, escala, zoom) y fila de acciones según haya selección ---
         val fixedTools: @Composable () -> Unit = {
-            val grids = listOf(PPQ.toLong(), PPQ / 2L, PPQ / 4L, PPQ / 8L)
-            Segmented(listOf("1/4", "1/8", "1/16", "1/32"), grids.indexOf(grid).coerceAtLeast(0), { grid = grids[it] }, height = 40.dp)
+            // «Libre» desactiva el imán: las notas se colocan y se mueven sin ajustarse a la rejilla.
+            val grids = listOf(PPQ.toLong(), PPQ / 2L, PPQ / 4L, PPQ / 8L, 0L)
+            Segmented(listOf("1/4", "1/8", "1/16", "1/32", tr("Libre", "Free")), grids.indexOf(grid).coerceAtLeast(0), { grid = grids[it] }, height = 40.dp)
             ToolButton(Icons.Default.Edit, tr("Dibujar notas", "Draw notes"), { drawMode = true }, active = drawMode)
             ToolButton(Icons.Default.TabUnselected, tr("Seleccionar con rectángulo", "Rectangle select"), { drawMode = false }, active = !drawMode)
             Box {
@@ -198,7 +232,7 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
                 ToolButton(Icons.Default.Delete, tr("Borrar", "Delete"), { val keep = notes.filterIndexed { i, _ -> i !in selection }; selection = emptySet(); commit(keep) }, tint = Palette.Record)
                 ToolButton(Icons.Default.Close, tr("Quitar selección", "Clear selection"), { selection = emptySet() })
             } else {
-                CauceButton(tr("Cuantizar", "Quantize"), { actions.quantizeClip(clip.id, grid) }, icon = Icons.Default.GridOn, height = 40.dp)
+                CauceButton(tr("Cuantizar", "Quantize"), { actions.quantizeClip(clip.id, if (grid > 0) grid else PPQ / 4L) }, icon = Icons.Default.GridOn, height = 40.dp)
                 CauceButton(tr("Todo", "All"), { selection = notes.indices.toSet() }, icon = Icons.Default.SelectAll, height = 40.dp)
                 // Repetir el clip entero: la forma rápida de pasar de 2 a 4 compases (o de 4 a 8).
                 CauceButton(tr("Repetir ×2", "Repeat ×2"), {
@@ -319,6 +353,7 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
                                 val note = before[hitIdx]
                                 val resize = (note.end * pxPerTick - offX) - down.position.x < edgePx && note.length * pxPerTick > edgePx * 1.5f
                                 val group = if (hitIdx in sel) sel else setOf(hitIdx)
+                                var lastHeard = note.key
                                 preview(note.key, note.velocity)
                                 do {
                                     val ev = awaitPointerEvent()
@@ -326,9 +361,13 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
                                     if (c.isConsumed || ev.changes.count { it.pressed } > 1) { cancelled = true; break }
                                     if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) movedFar = true
                                     if (movedFar && c.pressed) {
-                                        val dt = MusicTime.snapTicks(tickAt(c.position.x) - t0, grid)
-                                        work = if (resize) before.mapIndexed { i, x -> if (i in group) PianoRollOps.resized(x, MusicTime.snapTicks(x.end + dt, grid), grid) else x }
-                                        else before.mapIndexed { i, x -> if (i in group) PianoRollOps.moved(x, dt, keyAt(c.position.y) - k0) else x }
+                                        // Desplazamiento del dedo en píxeles → ticks, con signo (izquierda = negativo).
+                                        val raw = ((c.position.x - down.position.x) / pxPerTick).toLong()
+                                        val dKeys = -Math.floorDiv((c.position.y - down.position.y + rowH / 2).toInt(), rowH.toInt().coerceAtLeast(1))
+                                        work = if (resize) PianoRollOps.dragResize(before, group, hitIdx, raw, grid)
+                                        else PianoRollOps.dragMove(before, group, hitIdx, raw, dKeys, grid)
+                                        // Al cambiar de tono durante el arrastre se oye la nota nueva (si no está sonando la canción).
+                                        if (!resize && work[hitIdx].key != lastHeard) { lastHeard = work[hitIdx].key; preview(lastHeard, note.velocity) }
                                         notes = work
                                         c.consume()
                                     }
@@ -361,7 +400,7 @@ fun PianoRollPanel(state: ProjectState, track: TrackState, clip: MidiClipState, 
                                     if (c.isConsumed || ev.changes.count { it.pressed } > 1) { cancelled = true; break }
                                     if ((c.position - down.position).getDistance() > viewConfiguration.touchSlop) movedFar = true
                                     if (movedFar && c.pressed) {
-                                        val len = max(grid, MusicTime.snapTicks(tickAt(c.position.x) - start + grid / 2, grid))
+                                        val len = max(PianoRollOps.minLength(grid) * 2, MusicTime.snapTicks(tickAt(c.position.x) - start + grid / 2, grid))
                                         work = before + created.copy(length = len)
                                         notes = work
                                         c.consume()

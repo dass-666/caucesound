@@ -56,6 +56,8 @@ object Cmd {
     fun applyFxChain(trackId: String, preset: String, replace: Boolean) = c("applyFxChain", "trackId" to trackId, "preset" to preset, "replace" to replace)
     /** Channel Rack: pieza de batería a su propio canal del mezclador (own = true) o de vuelta a la batería. */
     fun routeDrumLane(trackId: String, lane: Int, own: Boolean) = c("routeDrumLane", "trackId" to trackId, "lane" to lane, "own" to own)
+    fun mutatePart(part: String, seed: Long) = c("mutatePart", "part" to part, "seed" to seed)
+    fun regenerateBeat(seed: Long) = c("regenerateBeat", "seed" to seed)
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =
@@ -110,6 +112,8 @@ object Cmd {
     fun stop() = c("stop")
     fun seek(frame: Long) = c("seek", "frame" to frame)
     fun setMonitoring(on: Boolean) = c("setMonitoring", "on" to on, "gain" to 1.0)
+    /** Modo bocinas: baja la salida en vivo mientras se graba (0 = nada). No toca faders ni exportación. */
+    fun setRecordDuck(db: Double) = c("setRecordDuck", "db" to db)
     fun startRecording(trackId: String, countInBars: Int = 0) = c("startRecording", "trackId" to trackId, "channels" to 1, "countInBars" to countInBars)
     /** Paquete para DAW (trabajo en segundo plano): mode wet = con efectos, dry = sin efectos. */
     fun exportDaw(path: String, wet: Boolean, bits: Int = 24) = c("exportDaw", "path" to path, "mode" to if (wet) "wet" else "dry", "bits" to bits)

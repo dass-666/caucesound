@@ -111,13 +111,55 @@
     "Crash"
    ],
    "name": "Cauce Pop"
+  },
+  {
+   "id": "cauce_crudo",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Shaker",
+    "Crash"
+   ],
+   "name": "Cauce Crudo"
+  },
+  {
+   "id": "cauce_jazz",
+   "lanes": [
+    "Kick",
+    "Brush Snare",
+    "Snap",
+    "Ride",
+    "Open Ride",
+    "Cross-stick",
+    "Brush",
+    "Crash"
+   ],
+   "name": "Cauce Jazz"
+  },
+  {
+   "id": "cauce_oscuro",
+   "lanes": [
+    "Kick",
+    "Snare",
+    "Clap",
+    "Closed Hat",
+    "Open Hat",
+    "Rim",
+    "Low Tom",
+    "Crash"
+   ],
+   "name": "Cauce Oscuro"
   }
  ],
  "drumParams": [
   {
    "default": 0.0,
    "id": "kit",
-   "max": 7.0,
+   "max": 10.0,
    "min": 0.0,
    "name": "Kit"
   },
@@ -1101,6 +1143,31 @@
    "category": "lead",
    "id": "electro_arp",
    "name": "Electro Arp"
+  },
+  {
+   "category": "bass",
+   "id": "upright_bass",
+   "name": "Round Bass"
+  },
+  {
+   "category": "keys",
+   "id": "dusty_keys",
+   "name": "Dusty Keys"
+  },
+  {
+   "category": "keys",
+   "id": "soul_keys",
+   "name": "Soul Keys"
+  },
+  {
+   "category": "keys",
+   "id": "dark_piano",
+   "name": "Dark Keys"
+  },
+  {
+   "category": "bass",
+   "id": "dark_sub",
+   "name": "Dark Sub"
   }
  ],
  "templates": [
@@ -1140,6 +1207,46 @@
     "Bajo",
     "Keys",
     "Melodía",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 90.0,
+   "id": "boombap",
+   "kit": "cauce_crudo",
+   "tracks": [
+    "Drums",
+    "Bajo",
+    "Keys",
+    "Melodía",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 86.0,
+   "id": "jazzrap",
+   "kit": "cauce_jazz",
+   "tracks": [
+    "Drums",
+    "Bajo",
+    "Rhodes",
+    "Melodía",
+    "Voz",
+    "Reverb"
+   ]
+  },
+  {
+   "bpm": 80.0,
+   "id": "darkhiphop",
+   "kit": "cauce_oscuro",
+   "tracks": [
+    "Drums",
+    "Sub",
+    "Keys",
+    "Melodía",
+    "Pad",
     "Voz",
     "Reverb"
    ]

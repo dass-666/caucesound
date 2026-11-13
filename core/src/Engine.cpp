@@ -584,6 +584,24 @@ void Engine::process (const float* input, int inChannels, float* output, int out
             }
         }
 
+        // Modo bocinas: atenúa lo que sale por el altavoz mientras se graba (solo la salida en vivo; la grabación
+        // toma el micrófono más abajo y nunca lee L/R). Rampa de ~20 ms por bloque para no chasquear.
+        {
+            const bool recNow = rolling && recording.load (std::memory_order_relaxed);
+            const float target = recNow ? recordDuckGain.load (std::memory_order_relaxed) : 1.0f;
+            if (target != 1.0f || duckNow != 1.0f)
+            {
+                const float k = 1.0f - std::exp (-1.0f / (0.02f * (float) rate));
+                for (int i = 0; i < n; ++i)
+                {
+                    duckNow += (target - duckNow) * k;
+                    L[i] *= duckNow;
+                    R[i] *= duckNow;
+                }
+                if (std::fabs (duckNow - target) < 1e-4f) duckNow = target;
+            }
+        }
+
         // Entrada: grabación y monitorización
         const float* in = input ? input + (size_t) done * (size_t) inChannels : nullptr;
         if (in && inChannels > 0)

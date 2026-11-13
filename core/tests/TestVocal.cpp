@@ -1012,3 +1012,56 @@ TEST (no_internal_effect_adds_latency_so_buses_stay_aligned)
     for (const auto& p : cat.at ("plugins")) if (p.value ("id", std::string()) == "vocalshift") { vs = true; CHECK (p.value ("realtime", true) == false && p.value ("kind", std::string()) == "offline"); }
     CHECK (vs);
 }
+
+// Escucha continua (0.8): al mover una perilla varias veces seguidas, cada prueba nueva sustituye a la que se estaba
+// calculando. No hay errores «ya se está procesando», solo se aplica el último ajuste y el proyecto no cambia.
+TEST (vocalshift_continuous_listen_replaces_stale_previews_and_applies_the_last)
+{
+    Fx f ("vocal_continuous");
+    CHECK (f.session.createProject (f.dir + "/p", "x").ok);
+    CHECK (f.session.addTrack ("Voz").ok);
+    const auto imp = f.session.importWav (writeVoice (f.dir + "/voz.wav", 8.0), f.session.model().tracks.back().id, 0);
+    CHECK (imp.ok);
+    const std::string clip = imp.id;
+    const std::string saved = toJson (f.session.model(), false);
+    const Frame len = f.session.model().findClip (clip)->length;
+    const Frame plen = 6 * 48000;
+    std::vector<std::string> ids;
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int st : { 2, 4, 6, -3, -5 })
+    {
+        json p = kUrban;
+        p["semitones"] = st;
+        const json r = f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", p }, { "from", 0 }, { "length", plen } });
+        CHECK_MSG (r.value ("ok", false), r.dump());
+        ids.push_back (r.value ("jobId", std::string()));
+    }
+    const json last = waitJob (f, ids.back());
+    const double wall = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+    CHECK_MSG (last.value ("state", std::string()) == "done", last.dump());
+    f.session.jobRunner().waitIdle();
+    int cancelled = 0;
+    for (size_t i = 0; i + 1 < ids.size(); ++i)
+    {
+        const std::string s = waitJob (f, ids[i]).value ("state", std::string());
+        CHECK_MSG (s == "cancelled" || s == "done", s);
+        if (s == "cancelled") ++cancelled;
+    }
+    const json st = json::parse (f.session.stateJson());
+    CHECK (st.at ("vocalPreview").at ("params").value ("semitones", 0.0) == -5.0);
+    CHECK (toJson (f.session.model(), false) == saved);
+    // Lo que suena es la última prueba: igual a pedir directamente esos ajustes.
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", true } }).value ("ok", false));
+    const auto heard = liveLeft (f, 0, len);
+    CHECK (f.cmd ({ { "cmd", "previewListen" }, { "clipId", clip }, { "on", false } }).value ("ok", false));
+    CHECK (maxDiff (heard, liveLeft (f, 0, len), 4800, plen - 4800) > 0.02);
+    MEASURE ("5 cambios seguidos: %d pruebas sustituidas sin terminar, última aplicada %.2f s después del primer cambio (x86)", cancelled, wall);
+    MEASURE ("respuesta de una prueba de 6 s: %.2f s de cálculo (x86; en un teléfono de gama media se espera entre 3 y 6 veces más, sin medir)",
+             last["result"].value ("seconds", 0.0));
+    // Un procesado completo sigue sin poder solaparse con nada.
+    const json full = f.cmd ({ { "cmd", "vocalProcess" }, { "clipId", clip }, { "params", kUrban } });
+    CHECK (full.value ("ok", false));
+    CHECK (! f.cmd ({ { "cmd", "vocalPreview" }, { "clipId", clip }, { "params", kUrban }, { "from", 0 }, { "length", plen } }).value ("ok", true));
+    waitJob (f, full.value ("jobId", std::string()));
+    f.session.jobRunner().waitIdle();
+}

@@ -7,7 +7,8 @@ fun tr(es: String, en: String): String = if (Locale.getDefault().language == "es
 
 object Genre {
     fun name(id: String) = when (id) {
-        "trap" -> "Trap"; "reggaeton" -> "Reggaetón"; "hiphop" -> "Hip-hop"; "pop" -> "Pop"; "electronic" -> tr("Electrónica", "Electronic")
+        "trap" -> "Trap"; "reggaeton" -> "Reggaetón"; "hiphop" -> "Hip-hop"; "boombap" -> tr("Boom Bap crudo", "Raw Boom Bap")
+        "jazzrap" -> "Jazz Rap"; "darkhiphop" -> tr("Hip-hop oscuro", "Dark Hip-hop"); "pop" -> "Pop"; "electronic" -> tr("Electrónica", "Electronic")
         else -> tr("Proyecto vacío", "Empty project")
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -219,13 +220,56 @@ internal fun SettingsDialog(vm: DawViewModel, s: ProjectState, requestMic: (() -
                 Slider(offsetMs, { offsetMs = it }, valueRange = 0f..500f, onValueChangeFinished = { vm.setLatencyOffsetMs(offsetMs.toDouble()) })
                 Text(stringResource(R.string.record_offset_note), fontSize = 11.sp, color = Palette.TextDim)
                 Spacer(Modifier.height(8.dp))
+                RecordModeSection(vm, route)
+                Spacer(Modifier.height(8.dp))
+                val speakers by vm.speakerMode.collectAsState()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.monitoring), Modifier.weight(1f))
-                    Switch(monitoring, { on -> if (on) requestMic { vm.setMonitoring(true) } else vm.setMonitoring(false) })
+                    Switch(monitoring && !speakers, { on -> if (on) requestMic { vm.setMonitoring(true) } else vm.setMonitoring(false) }, enabled = !speakers)
                 }
-                Text(stringResource(R.string.monitoring_note), fontSize = 11.sp, color = Palette.TextDim)
+                Text(if (speakers) tr("Con bocinas la monitorización se apaga: el micrófono volvería a sonar por el altavoz y se acoplaría.",
+                    "With speakers, monitoring is off: the microphone would play through the speaker and feed back.")
+                    else stringResource(R.string.monitoring_note), fontSize = 11.sp, color = Palette.TextDim)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
     )
+}
+
+/**
+ * Grabación de voz (0.8). El motor ya graba solo el micrófono (comprobado: la mezcla interna no entra en la toma);
+ * lo que se oye de fondo en una toma con bocinas es sonido que el micrófono capta por el aire. Este bloque reduce esa
+ * filtración sin prometer eliminarla.
+ */
+@Composable
+internal fun RecordModeSection(vm: DawViewModel, route: AudioGuard.Route) {
+    val speakers by vm.speakerMode.collectAsState()
+    val echo by vm.echoCancel.collectAsState()
+    val duck by vm.duckDb.collectAsState()
+    var duckUi by remember(duck) { mutableFloatStateOf(duck) }
+    Column(Modifier.fillMaxWidth().testTag("record_mode")) {
+        Text(tr("Grabación de voz", "Voice recording"), fontWeight = FontWeight.SemiBold)
+        Segmented(listOf(tr("Con audífonos", "Headphones"), tr("Con bocinas", "Speakers")), if (speakers) 1 else 0, { vm.setSpeakerMode(it == 1) },
+            Modifier.fillMaxWidth().testTag("record_mode_switch"), height = 40.dp)
+        if (!speakers) {
+            Text(tr("Modo estudio: el micrófono se graba tal cual, sin cancelación ni atenuación. Es la mejor calidad de voz.",
+                "Studio mode: the microphone is recorded as is, with no cancelling or ducking. Best voice quality."), fontSize = 11.sp, color = Palette.TextDim)
+            if (route == AudioGuard.Route.SPEAKER) Text(tr("Ahora mismo suena por el altavoz: el micrófono captará el beat. Conecta audífonos o elige «Con bocinas».",
+                "Sound is going to the speaker right now: the microphone will pick up the beat. Plug in headphones or choose “Speakers”."), fontSize = 11.sp, color = Palette.Solo)
+        } else {
+            Text(tr("Bajar el beat mientras grabas: %.0f dB".format(duckUi), "Lower the beat while recording: %.0f dB".format(duckUi)), fontSize = 13.sp)
+            Slider(duckUi, { duckUi = it }, valueRange = -24f..0f, onValueChangeFinished = { vm.setDuckDb(duckUi) }, modifier = Modifier.testTag("record_duck"))
+            Text(tr("Solo lo que oyes durante la toma. Los faders, la mezcla y la exportación no cambian.",
+                "Only what you hear during the take. Faders, mix and export are unchanged."), fontSize = 11.sp, color = Palette.TextDim)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("Cancelación de eco del teléfono", "Phone echo cancelling"), Modifier.weight(1f), fontSize = 13.sp)
+                Switch(echo, { vm.setEchoCancel(it) }, modifier = Modifier.testTag("record_echo"))
+            }
+            Text(tr("Experimental y distinta en cada teléfono: puede quitar parte del beat, pero también apagar o metalizar la voz, y se aplica al grabar (la toma no guarda una copia sin procesar). Pruébala con una toma corta.",
+                "Experimental and different on every phone: it may remove some of the beat but can also dull or warp the voice, and it is applied while recording (no unprocessed copy is kept). Try it on a short take."),
+                fontSize = 11.sp, color = Palette.TextDim)
+        }
+        Text(tr("Para comprobar una toma: pulsa S en la pista de voz y escúchala sola.", "To check a take: press S on the voice track and listen to it alone."),
+            fontSize = 11.sp, color = Palette.TextFaint)
+    }
 }

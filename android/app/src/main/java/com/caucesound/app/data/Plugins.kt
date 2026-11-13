@@ -123,7 +123,7 @@ data class SoloFamily(val request: SoloRequest, val proposals: List<SoloProposal
 data class HarmonyState(val keyRoot: Int, val minor: Boolean, val source: String, val chords: Int, val chordsBpm: Double)
 
 /** Escucha previa de VocalShift: una región corta procesada en memoria por el motor. No forma parte del proyecto. */
-data class VocalPreviewState(val clipId: String, val from: Long, val length: Long, val listening: Boolean, val params: VocalParams)
+data class VocalPreviewState(val clipId: String, val from: Long, val length: Long, val listening: Boolean, val params: VocalParams, val seconds: Double = 0.0)
 
 /**
  * Exportación para DAW en curso o recién terminada (estado de interfaz).
