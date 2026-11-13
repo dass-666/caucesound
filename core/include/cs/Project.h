@@ -17,6 +17,13 @@ namespace cs
 // Un proyecto v1 se lee sin cambios (los campos nuevos toman su valor por defecto) y, antes del primer guardado
 // en v2, Session copia el original a project.v1.json (ver Session::openProject).
 constexpr int kProjectFormatVersion = 3;
+// v4 (0.9, Cauce Sampler): instrumentos de paquetes. Solo se escribe v4 si el proyecto USA algo de la 0.9 (pista con
+// "cs.sampler" o batería con "sampleKit"); cualquier otro proyecto se sigue guardando como v3, byte a byte igual que
+// en la 0.8. Así una app 0.8 abre todo lo que entiende y rechaza («versión más nueva») lo que sonaría distinto,
+// en lugar de cambiar en silencio un kit de muestras por el kit 0. Plan y pruebas: docs/FORMAT_V4.md.
+constexpr int kProjectFormatVersionMax = 4;
+struct ProjectModel;
+int requiredProjectVersion (const ProjectModel& p); // 3 o 4 según lo que use el proyecto
 
 struct SourceRef
 {

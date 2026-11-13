@@ -517,7 +517,7 @@ TEST (future_format_and_broken_music_data_are_rejected)
 {
     ProjectModel p;
     std::string err;
-    CHECK (! fromJson (R"({"format":"caucesound-project","version":4,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[]})", p, err));
+    CHECK (! fromJson (R"({"format":"caucesound-project","version":5,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[]})", p, err));
     const std::string bad[] = {
         R"({"format":"caucesound-project","version":2,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[{"id":"t","clips":[],"kind":"synth"}]})",
         R"({"format":"caucesound-project","version":2,"id":"x","name":"n","sampleRate":48000,"bpm":120,"beatsPerBar":4,"sources":[],"tracks":[{"id":"t","clips":[],"kind":"drums","instrument":{"type":"cs.drums"},"patterns":[{"id":"p","steps":12,"lanes":[]}]}]})",

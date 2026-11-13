@@ -4,6 +4,7 @@
 #include "cs/Archive.h"
 
 #include "cs/Instruments.h"
+#include "cs/Packs.h"
 #include "cs/Project.h"
 
 #include <cmath>
@@ -111,7 +112,7 @@ json catalog()
     json tpl = json::array();
     for (const auto& t : projectTemplates()) tpl.push_back ({ { "id", t.id }, { "bpm", t.bpm }, { "kit", t.kitId }, { "tracks", t.tracks } });
     return { { "ok", true }, { "ppq", kPpq }, { "synthPresets", presets }, { "drumKits", kits }, { "synthParams", params ("cs.synth") },
-             { "drumParams", params ("cs.drums") }, { "effects", fx }, { "fxChains", chains }, { "templates", tpl },
+             { "drumParams", params ("cs.drums") }, { "samplerParams", params ("cs.sampler") }, { "effects", fx }, { "fxChains", chains }, { "templates", tpl },
              // Plugins integrados: solo se anuncian los que están compilados (la interfaz no muestra los demás).
              { "plugins", pluginDescriptors() } };
 }
@@ -164,6 +165,48 @@ std::vector<MidiNote> parseNotes (const json& arr)
     return notes;
 }
 
+// Paquetes de sonidos instalados (misión 0.9), para el explorador de instrumentos.
+json packsJson()
+{
+    json arr = json::array();
+    for (const auto& p : packLibrary().list())
+    {
+        const auto& m = p.manifest;
+        json instr = json::array();
+        for (const auto& i : m.instruments)
+            instr.push_back ({ { "key", m.id + ":" + i.id }, { "id", i.id }, { "name", i.name }, { "family", i.family }, { "kind", i.kind },
+                               { "description", i.description }, { "origin", i.origin }, { "tags", i.tags }, { "genres", i.genres },
+                               { "lanes", i.laneNames }, { "previewKey", i.previewKey }, { "lowKey", i.lowKey }, { "highKey", i.highKey },
+                               { "mono", i.mono } });
+        json src = json::array();
+        for (const auto& so : m.sources) src.push_back ({ { "name", so.name }, { "author", so.author }, { "url", so.url }, { "license", so.license } });
+        arr.push_back ({ { "id", m.id }, { "version", m.version }, { "name", m.name }, { "author", m.author }, { "description", m.description },
+                         { "license", m.license }, { "bytes", m.totalBytes() }, { "factory", p.factory }, { "complete", p.complete },
+                         { "problems", p.problems }, { "sources", src }, { "instruments", instr } });
+    }
+    return arr;
+}
+
+// Proyectos de la carpeta raíz que usan instrumentos de un paquete (aviso antes de borrarlo).
+json packUsage (const std::string& root, const std::string& packId)
+{
+    json arr = json::array();
+    const std::string needle = "\"" + packId + ":";
+    for (const auto& name : listDir (root))
+    {
+        std::string text;
+        const std::string folder = root + "/" + name;
+        if (! readFile (folder + "/project.json", text)) continue;
+        // El estado del instrumento va como texto JSON escapado (\"cauce.x:y\"): en ambos casos aparece "<id>:.
+        if (text.find (needle) == std::string::npos)
+            continue;
+        ProjectModel pm;
+        std::string err;
+        arr.push_back ({ { "folder", folder }, { "name", fromJson (text, pm, err) ? pm.name : name } });
+    }
+    return arr;
+}
+
 bool insideRoot (const std::string& root, const std::string& folder)
 {
     namespace fs = std::filesystem;
@@ -186,7 +229,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         auto str = [&] (const char* k)
         {
             std::string v = q.value (k, std::string());
-            static const char* pathKeys[] = { "folder", "path", "out", "archive", "dest", "root" };
+            static const char* pathKeys[] = { "folder", "path", "out", "archive", "dest", "root", "factoryDir", "userDir" };
             for (const char* pk : pathKeys)
                 if (std::strcmp (k, pk) == 0 && ! v.empty() && ! std::filesystem::path (v).is_absolute())
                     throw std::invalid_argument (std::string (k) + " debe ser una ruta absoluta");
@@ -210,6 +253,65 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "listProjects") return json { { "ok", true }, { "projects", listProjects (str ("root")) } }.dump();
         if (cmd == "createProject") return result (s.createProject (str ("folder"), str ("name"), 48000, str ("template"))).dump();
         if (cmd == "catalog") return catalog().dump();
+        if (cmd == "packs") return json { { "ok", true }, { "packs", packsJson() } }.dump();
+        if (cmd == "configurePacks")
+        {
+            packLibrary().configure (str ("factoryDir"), str ("userDir"));
+            return json { { "ok", true }, { "packs", packsJson() } }.dump();
+        }
+        if (cmd == "importPack")
+        {
+            const PackImportResult r = packLibrary().importZip (str ("path"), flag ("replace"));
+            json j = { { "ok", r.ok }, { "packId", r.packId }, { "version", r.version }, { "files", r.files }, { "bytes", r.bytes }, { "replaced", r.replaced } };
+            if (! r.ok) j["error"] = r.error;
+            return j.dump();
+        }
+        if (cmd == "packUsage") return json { { "ok", true }, { "projects", packUsage (str ("root"), str ("packId")) } }.dump();
+        if (cmd == "removePack")
+        {
+            const std::string id = str ("packId");
+            // El proyecto abierto no puede perder su sonido sin aviso: la interfaz debe cerrar o cambiar antes.
+            for (const auto& k : s.usedPackInstruments())
+                if (k.rfind (id + ":", 0) == 0) return result (OpResult::fail ("el proyecto abierto usa este paquete")).dump();
+            std::string err;
+            if (! packLibrary().remove (id, err)) return result (OpResult::fail (err)).dump();
+            return result ({}).dump();
+        }
+        if (cmd == "verifyPack")
+        {
+            std::vector<std::string> bad;
+            std::string err;
+            const bool ok = packLibrary().verify (str ("packId"), bad, err);
+            json j = { { "ok", ok }, { "bad", bad } };
+            if (! err.empty()) j["error"] = err;
+            return j.dump();
+        }
+        if (cmd == "autoMixSuggest")
+        {
+            json arr = json::array();
+            for (const auto& a : s.autoMixSuggest (num ("seconds", 16)))
+                arr.push_back ({ { "trackId", a.trackId }, { "name", a.name }, { "role", a.role }, { "reason", a.reason }, { "measuredDb", a.measuredDb },
+                                 { "targetDb", a.targetDb }, { "volumeDb", a.volumeDb }, { "suggestedVolumeDb", a.suggestedVolumeDb }, { "pan", a.pan },
+                                 { "suggestedPan", a.suggestedPan }, { "change", a.change } });
+            return json { { "ok", s.isOpen() }, { "suggestions", arr }, { "canRevert", s.canRevertAutoMix() }, { "rules", "reglas fijas por papel y estilo (no IA): docs/AUTOMIX.md" } }.dump();
+        }
+        if (cmd == "autoMixApply")
+        {
+            std::vector<Session::MixChange> ch;
+            for (const auto& c : q.value ("changes", json::array()))
+                ch.push_back ({ c.at ("trackId").get<std::string>(), (float) c.at ("volumeDb").get<double>(), (float) c.at ("pan").get<double>() });
+            return result (s.applyAutoMix (ch)).dump();
+        }
+        if (cmd == "autoMixRevert") return result (s.revertAutoMix()).dump();
+        if (cmd == "setSamplerInstrument") return result (s.setSamplerInstrument (str ("trackId"), str ("key"))).dump();
+        if (cmd == "setDrumSampleKit") return result (s.setDrumSampleKit (str ("trackId"), str ("key"))).dump();
+        if (cmd == "previewInstrument")
+        {
+            json j = result (s.setPreviewInstrument (str ("key")));
+            j["slot"] = s.previewSlot();
+            j.erase ("id");
+            return j.dump();
+        }
         if (cmd == "renameProject" || cmd == "duplicateProject")
         {
             // Opera sobre proyectos cerrados (desde la pantalla de inicio). root delimita lo que se puede tocar.

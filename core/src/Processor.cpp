@@ -76,6 +76,7 @@ private:
 
 ProcessorPtr createSynth();
 ProcessorPtr createDrums();
+ProcessorPtr createSampler(); // SamplerInstrument.cpp (Cauce Sampler, 0.9)
 ProcessorPtr createEffect (const std::string& typeId); // Effects.cpp (Cauce FX)
 
 ProcessorPtr createProcessor (const std::string& typeId)
@@ -83,6 +84,7 @@ ProcessorPtr createProcessor (const std::string& typeId)
     if (typeId == "cs.gain") return std::make_shared<GainProcessor>();
     if (typeId == "cs.synth") return createSynth();
     if (typeId == "cs.drums") return createDrums();
+    if (typeId == "cs.sampler") return createSampler();
     return createEffect (typeId);
 }
 
@@ -91,6 +93,7 @@ std::vector<std::string> availableProcessorTypes()
     auto v = effectTypes();
     v.push_back ("cs.synth");
     v.push_back ("cs.drums");
+    v.push_back ("cs.sampler");
     return v;
 }
 } // namespace cs

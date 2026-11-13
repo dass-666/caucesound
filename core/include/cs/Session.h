@@ -26,6 +26,17 @@ struct OpResult
     static OpResult fail (std::string e) { OpResult r; r.ok = false; r.error = std::move (e); return r; }
 };
 
+// AutoMix (0.9, prototipo): sugerencias de mezcla por REGLAS (no es IA). Ver docs/AUTOMIX.md.
+struct AutoMixSuggestion
+{
+    std::string trackId, name, role, reason;
+    float measuredDb = -120;   // RMS de la pista sola (antes del máster) en el tramo analizado
+    float targetDb = -120;     // objetivo según su papel, relativo a la batería
+    float volumeDb = 0, suggestedVolumeDb = 0;
+    float pan = 0, suggestedPan = 0;
+    bool change = false;
+};
+
 // Exportación para DAW (ver SessionExport.cpp).
 struct DawExportOptions
 {
@@ -214,6 +225,31 @@ public:
     // deshacer. r.id = id del canal creado.
     OpResult routeDrumLane (const std::string& trackId, int lane, bool own);
 
+    // --- Cauce Sampler (0.9, SessionSampler.cpp) ---------------------------------------------------------------
+    // Instrumento de un paquete ("<paquete>:<instrumento>") en una pista de instrumento melódico. Un paso de deshacer;
+    // el preset de Cauce Synth anterior vuelve con deshacer o con loadSynthPreset. Falla sin tocar nada si el
+    // instrumento no está instalado o es un kit de batería.
+    OpResult setSamplerInstrument (const std::string& trackId, const std::string& instrumentKey);
+    // Kit de batería de un paquete en una pista de batería ("" = vuelve al kit sintetizado que tenía). Mismos
+    // patrones, carriles, canales propios y Channel Rack. Un paso de deshacer.
+    OpResult setDrumSampleKit (const std::string& trackId, const std::string& kitKey);
+    // Escucha previa en el navegador: carga el instrumento en una voz de prueba fuera del proyecto (no se guarda, no
+    // se exporta, no entra en deshacer). r.id = ranura para MIDI en vivo (Engine::sendLive). "" la quita.
+    OpResult setPreviewInstrument (const std::string& instrumentKey);
+    int previewSlot() const;
+    // Instrumentos de paquetes que usa el proyecto y no están instalados o no cargaron (la pista queda muda).
+    std::vector<std::string> missingInstruments() const;
+    // Claves "<paquete>:<instrumento>" que usa el proyecto abierto (para no borrar un paquete en uso).
+    std::vector<std::string> usedPackInstruments() const;
+    // AutoMix: analiza (render offline, sin tocar el proyecto) y propone faders. Solo cambia faders y panoramas (nunca
+    // notas, efectos ni sonidos). Como la mezcla no entra en Deshacer (diseño de la app), Aplicar guarda los valores
+    // anteriores y revertAutoMix los devuelve de una vez.
+    std::vector<AutoMixSuggestion> autoMixSuggest (double maxSeconds = 16.0);
+    struct MixChange { std::string trackId; float volumeDb, pan; };
+    OpResult applyAutoMix (const std::vector<MixChange>& changes);
+    OpResult revertAutoMix();
+    bool canRevertAutoMix() const;
+
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
     OpResult setMetronome (bool on);
@@ -305,6 +341,9 @@ private:
     bool listenPreview = false;  // la prueba está sonando en lugar de esa región del clip
     void clearPreviewLocked();
     void applyPreviewLocked (const std::string& projectId, VocalPreview&& p);
+    std::shared_ptr<Instrument> previewInstrument;
+    std::vector<MixChange> autoMixBefore; // faders previos a la última aplicación de AutoMix // voz de prueba del navegador (nunca en el proyecto)
+    std::string previewKey;
     std::string listenMatchClip; // clip que se escucha a volumen igualado ("" = ninguno); nunca se guarda
     JobRunner jobs; // el último miembro: se destruye primero, así ningún trabajo sobrevive al resto de la sesión
 };

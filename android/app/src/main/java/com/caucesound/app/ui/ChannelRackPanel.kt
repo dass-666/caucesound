@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VolumeUp
@@ -147,8 +148,15 @@ private val VELOCITY_CYCLE = listOf(127, 100, 70, 40)
 private fun DrumRackGroup(state: ProjectState, track: TrackState, catalog: Catalog, position: LongState, playing: Boolean, actions: StudioActions) {
     val slot = state.trackIndex(track.id)
     val kitIndex = (track.params["kit"] ?: 0f).toInt().coerceIn(0, (catalog.drumKits.size - 1).coerceAtLeast(0))
-    val kit = catalog.drumKits.getOrNull(kitIndex)
-    val laneNames = kit?.lanes ?: listOf("Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Perc 1", "Perc 2", "Perc 3")
+    val synthKit = catalog.drumKits.getOrNull(kitIndex)
+    // 0.9: con un kit de muestras cargado manda el paquete (nombre y carriles); si falta, se dice en el nombre.
+    val sampleKit = track.soundKey.takeIf { it.isNotEmpty() }?.let { com.caucesound.app.data.LocalSounds.current.instrument(it) }
+    val kit = when {
+        sampleKit != null -> com.caucesound.app.data.KitInfo(sampleKit.key, sampleKit.name, sampleKit.lanes)
+        track.soundKey.isNotEmpty() -> com.caucesound.app.data.KitInfo(track.soundKey, tr("Kit no instalado", "Kit not installed"), synthKit?.lanes ?: emptyList())
+        else -> synthKit
+    }
+    val laneNames = kit?.lanes?.takeIf { it.size >= 8 } ?: listOf("Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Perc 1", "Perc 2", "Perc 3")
     var patternId by remember(track.id) { mutableStateOf(track.patterns.firstOrNull()?.id ?: "") }
     val pattern = track.pattern(patternId) ?: track.patterns.firstOrNull()
     var velocityMode by remember { mutableStateOf(false) }
@@ -157,6 +165,8 @@ private fun DrumRackGroup(state: ProjectState, track: TrackState, catalog: Catal
 
     RackCard(track) {
         RackTitle(track, "Cauce Drums · ${kit?.name ?: "Kit"}", mixerChannelOf(state, track), { openMixer(actions, track.id) }) {
+            ToolButton(Icons.Default.LibraryMusic, tr("Kits de muestras Cauce", "Cauce sample kits"), { actions.selectTrack(track.id); actions.openPanel(Panel.SOUNDS) }, tint = Palette.Cyan,
+                modifier = Modifier.testTag("rack_sounds_${track.id}"))
             ToolButton(Icons.Default.GridOn, tr("Rejilla completa de batería", "Full drum grid"), { actions.selectTrack(track.id); actions.openPanel(Panel.DRUMS) }, tint = Palette.Text)
         }
         if (pattern == null) {
