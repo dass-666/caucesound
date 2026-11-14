@@ -287,23 +287,30 @@ int main (int argc, char** argv)
     }
     if (argc >= 2 && std::string (argv[1]) == "--automix")
     {
-        // Calibración de AutoMix: nivel de cada papel respecto a la batería en las plantillas tal cual (balance 0.6).
-        for (const auto& t : projectTemplates())
-        {
-            Engine e; e.prepare (48000, 1024);
-            Session s (e);
-            const std::string dir = std::filesystem::temp_directory_path().string() + "/cs_automix_" + t.id;
-            std::filesystem::remove_all (dir);
-            if (! s.createProject (dir, t.id, 48000, t.id).ok) return 1;
-            float ref = -120;
-            const auto sug = s.autoMixSuggest (16);
-            for (const auto& x : sug) if (x.role == "drums") ref = std::max (ref, x.measuredDb);
-            std::printf ("%-11s", t.id.c_str());
-            for (const auto& x : sug) std::printf (" %s=%+.1f", x.role.c_str(), x.measuredDb - ref);
-            std::printf ("\n");
-            s.close();
-            std::filesystem::remove_all (dir);
-        }
+        // Calibración de AutoMix: nivel de cada papel respecto a la batería, y de la caja respecto al bombo, en las
+        // plantillas tal cual. cs_render --automix [carpeta de paquetes]: con paquetes mide también «Signature 2».
+        const bool two = argc >= 3;
+        if (two) packLibrary().configure (std::filesystem::absolute (argv[2]).string(), "");
+        for (int style = 1; style <= (two ? 2 : 1); ++style)
+            for (const auto& t : projectTemplates())
+            {
+                Engine e; e.prepare (48000, 1024);
+                Session s (e);
+                const std::string dir = std::filesystem::temp_directory_path().string() + "/cs_automix_" + t.id;
+                std::filesystem::remove_all (dir);
+                if (! s.createProject (dir, t.id, 48000, style == 2 ? t.id + "@2" : t.id).ok) return 1;
+                const auto sug = s.autoMixSuggest (16);
+                std::printf ("estilo %d %-11s", style, t.id.c_str());
+                for (const auto& x : sug)
+                {
+                    if (x.role == "master") std::printf (" pico=%+.1f", x.measuredDb);
+                    else if (x.role != "drums" && x.role != "vocal") std::printf (" %s=%+.1f", x.role.c_str(), x.measuredDb - x.referenceDb);
+                    if (x.change) std::printf ("(!)");
+                }
+                std::printf ("\n");
+                s.close();
+                std::filesystem::remove_all (dir);
+            }
         return 0;
     }
     if (argc >= 4 && std::string (argv[1]) == "--compare10")

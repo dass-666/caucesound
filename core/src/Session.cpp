@@ -612,6 +612,7 @@ void Session::close()
     previewInstrument.reset();
     previewKey.clear();
     autoMixBefore.clear();
+    autoMixShowsBefore = false;
     undoStack.clear();
     redoStack.clear();
     proj = ProjectModel();

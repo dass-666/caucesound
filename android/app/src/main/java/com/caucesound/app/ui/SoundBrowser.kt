@@ -242,7 +242,8 @@ fun AutoMixDialog(ui: com.caucesound.app.data.AutoMixUi, onApply: () -> Unit, on
     CauceDialog("AutoMix", onDismiss, confirm = if (changes.isEmpty()) null else tr("Aplicar ${changes.size} cambios", "Apply ${changes.size} changes"), onConfirm = onApply,
         dismiss = tr("Cerrar", "Close")) {
         if (ui.analyzing) { Text(tr("Escuchando cada pista por separado…", "Listening to each track…")); return@CauceDialog }
-        Text(tr("Reglas fijas por papel y estilo (no es IA). Solo mueve faders; se puede revertir de una vez.", "Fixed rules per role and style (not AI). Only moves faders; can be reverted at once."),
+        Text(tr("Reglas fijas por papel y estilo (no es IA). Mueve faders, el volumen de la caja y el máster si la mezcla recortaría. Después puedes comparar con la mezcla anterior y revertir de una vez.",
+            "Fixed rules per role and style (not AI). Moves faders, the snare level and the master if the mix would clip. Afterwards you can compare with the previous mix and revert at once."),
             fontSize = 12.sp, color = Palette.TextDim)
         Spacer(Modifier.width(4.dp))
         if (changes.isEmpty()) Text(tr("La mezcla ya está equilibrada según las reglas: no hay nada que cambiar.", "The mix is already balanced by the rules: nothing to change."), modifier = Modifier.testTag("automix_none"))
@@ -250,7 +251,7 @@ fun AutoMixDialog(ui: com.caucesound.app.data.AutoMixUi, onApply: () -> Unit, on
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(s.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(s.reason, fontSize = 11.sp, color = Palette.TextDim, maxLines = 2)
+                    Text(s.reason, fontSize = 11.sp, color = Palette.TextDim, maxLines = 4)
                 }
                 Text(if (s.change) "%+.1f → %+.1f dB".format(s.volumeDb, s.suggestedVolumeDb) else "—", fontSize = 12.sp, color = if (s.change) Palette.Cyan else Palette.TextFaint)
             }

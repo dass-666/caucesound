@@ -662,6 +662,9 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val _autoMixRevertable = MutableStateFlow(false)
     val autoMixRevertable: StateFlow<Boolean> = _autoMixRevertable.asStateFlow()
     override fun autoMixRevert() = edit(Cmd.autoMixRevert()) { _autoMixRevertable.value = false; toast(tr("Mezcla anterior recuperada", "Previous mix restored")) }
+    override fun autoMixCompare() = edit(Cmd.autoMixCompare()) { r ->
+        toast(if (r.raw.optString("showing") == "before") tr("Suena la mezcla ANTERIOR", "Playing the PREVIOUS mix") else tr("Suena la mezcla de AUTOMIX", "Playing the AUTOMIX mix"))
+    }
     fun dismissAutoMix() { _autoMix.value = com.caucesound.app.data.AutoMixUi() }
 
     // --- Sonidos Cauce (misión 0.9) ------------------------------------------------------------------------------

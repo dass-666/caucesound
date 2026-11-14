@@ -32,6 +32,7 @@ struct AutoMixSuggestion
     std::string trackId, name, role, reason;
     float measuredDb = -120;   // RMS de la pista sola (antes del máster) en el tramo analizado
     float targetDb = -120;     // objetivo según su papel, relativo a la batería
+    float referenceDb = -120;  // 0.10: con qué se compara (la batería; para la caja, el bombo a solas)
     float volumeDb = 0, suggestedVolumeDb = 0;
     float pan = 0, suggestedPan = 0;
     bool change = false;
@@ -262,6 +263,9 @@ public:
     OpResult applyAutoMix (const std::vector<MixChange>& changes);
     OpResult revertAutoMix();
     bool canRevertAutoMix() const;
+    // 0.10: compara de oído sin perder nada: alterna entre la mezcla anterior y la de AutoMix (id = "before" o
+    // "automix" según la que queda sonando). Los cambios admiten además "<id batería>#snare" y "@master".
+    OpResult compareAutoMix();
 
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
@@ -362,6 +366,10 @@ private:
     void clearPreviewLocked();
     void applyPreviewLocked (const std::string& projectId, VocalPreview&& p);
     std::shared_ptr<Instrument> previewInstrument;
+    bool autoMixShowsBefore = false;
+    float autoMixValueLocked (const std::string& id, bool& ok);
+    void autoMixSetLocked (const MixChange& c);
+    void swapAutoMixLocked();
     std::vector<MixChange> autoMixBefore; // faders previos a la última aplicación de AutoMix // voz de prueba del navegador (nunca en el proyecto)
     std::string previewKey;
     std::string listenMatchClip; // clip que se escucha a volumen igualado ("" = ninguno); nunca se guarda

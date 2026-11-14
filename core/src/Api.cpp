@@ -315,6 +315,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             return result (s.applyAutoMix (ch)).dump();
         }
         if (cmd == "autoMixRevert") return result (s.revertAutoMix()).dump();
+        if (cmd == "autoMixCompare") { const OpResult r = s.compareAutoMix(); json j = result (r); if (r.ok) { j["showing"] = r.id; j.erase ("id"); } return j.dump(); }
         if (cmd == "setSamplerInstrument") return result (s.setSamplerInstrument (str ("trackId"), str ("key"))).dump();
         if (cmd == "setDrumSampleKit") return result (s.setDrumSampleKit (str ("trackId"), str ("key"))).dump();
         if (cmd == "previewInstrument")

@@ -140,6 +140,7 @@ interface StudioActions {
     /** AutoMix (0.9, reglas): pide sugerencias de faders (no cambia nada) / devuelve la mezcla anterior. */
     fun autoMixSuggest() {}
     fun autoMixRevert() {}
+    fun autoMixCompare() {}
 }
 
 enum class Panel { ARRANGE, RACK, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO, SOUNDS }

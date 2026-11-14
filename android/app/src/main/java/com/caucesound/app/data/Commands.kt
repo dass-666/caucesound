@@ -138,4 +138,5 @@ object Cmd {
         changes.forEach { put(JSONObject().put("trackId", it.trackId).put("volumeDb", it.suggestedVolumeDb.toDouble()).put("pan", it.suggestedPan.toDouble())) }
     })
     fun autoMixRevert() = c("autoMixRevert")
+    fun autoMixCompare() = c("autoMixCompare")
 }
