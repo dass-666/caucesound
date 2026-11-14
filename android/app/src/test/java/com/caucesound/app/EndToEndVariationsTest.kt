@@ -76,9 +76,11 @@ class EndToEndVariationsTest {
             if (pats != null) for (k in 0 until pats.length()) {
                 val pat = pats.getJSONObject(k)
                 val lanes = pat.getJSONArray("lanes")
+                val rolls = pat.optJSONArray("rolls")
                 for (l in 0 until lanes.length()) {
                     val lane = lanes.getJSONArray(l)
-                    for (st2 in 0 until lane.length()) if (lane.getInt(st2) > 0) e.add(pat.getString("id") + "|" + l + "|" + st2)
+                    // Un redoble dentro del paso es otro sonido: cuenta como cambio (igual que lo mide el motor).
+                    for (st2 in 0 until lane.length()) if (lane.getInt(st2) > 0) e.add(pat.getString("id") + "|" + l + "|" + st2 + "|" + (rolls?.optJSONArray(l)?.optInt(st2, 0) ?: 0))
                 }
             }
         }

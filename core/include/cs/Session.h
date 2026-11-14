@@ -347,6 +347,7 @@ private:
     std::map<std::string, std::shared_ptr<Instrument>> instrumentInstances; // por id de pista
     std::vector<ProjectModel> undoStack, redoStack;
     std::string lastVariation; // informe JSON de la última variación (0.9.2)
+    int attemptDepth = 1;      // pasadas de variación del intento en curso (0.10)
     std::string paramGestureKey; // parámetro del gesto abierto ("" = ninguno)
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;

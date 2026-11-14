@@ -8,6 +8,7 @@
 #include "cs/Midi.h"
 
 #include <cstdint>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -35,6 +36,10 @@ struct MusicPlan
     // 0.8 — «Variar»: por parte, semilla de la mutación aplicada sobre la parte de su semilla base (0 = sin variar).
     // La identidad (ritmo base, acordes, motivo) sale de seeds; variants solo cambia detalles.
     std::map<std::string, uint32_t> variants;
+    // 0.10: cuántas pasadas de variación se aplican (por defecto 1). «Variar» sube a 2 o 3 solo cuando una pasada no
+    // llega al cambio mínimo; los planes anteriores no lo llevan y suenan igual.
+    std::map<std::string, int> variantDepth;
+    int depthOf (const std::string& part) const { auto it = variantDepth.find (part); return it == variantDepth.end() ? 1 : std::clamp (it->second, 1, 4); }
     std::vector<SongSection> sections;
     // 0.9.2 — número de versión de la composición: sube con cada Variar/Regenerar aceptado (la interfaz lo muestra
     // como «Versión N»). Deshacer devuelve el plan anterior y, con él, el número anterior. Opcional en el JSON.
@@ -84,6 +89,7 @@ std::vector<std::vector<int>> progressionBank (const std::string& genre);
 // cada compás ni la armonía) y sobre un patrón de batería (no tocan el bombo del 1 ni la caja de los tiempos 2 y 4).
 void mutateNotes (const MusicPlan& p, const std::string& part, std::vector<MidiNote>& notes, uint32_t variant, int beatsPerBar);
 void mutatePattern (const MusicPlan& p, DrumPattern& d, uint32_t variant, const std::string& key);
+void mutatePatternDeep (const MusicPlan& p, DrumPattern& d, uint32_t variant, const std::string& key); // con las pasadas del plan
 
 // Familias de género (para compartir reglas).
 bool hipHopFamily (const std::string& genre); // hiphop, boombap, jazzrap, darkhiphop

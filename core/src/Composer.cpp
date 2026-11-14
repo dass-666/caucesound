@@ -26,6 +26,7 @@ std::string MusicPlan::toJson() const
     j["patternIds"] = patternIds;
     j["locked"] = locked;
     if (! variants.empty()) j["variants"] = variants;
+    if (! variantDepth.empty()) j["variantDepth"] = variantDepth;
     if (revision > 1) j["revision"] = revision;
     if (style != 1) j["style"] = style;
     if (humanize > 0) j["humanize"] = humanize;
@@ -54,6 +55,7 @@ bool MusicPlan::fromJson (const std::string& text, MusicPlan& out)
         if (j.contains ("patternIds")) p.patternIds = j.at ("patternIds").get<std::map<std::string, std::string>>();
         if (j.contains ("locked")) p.locked = j.at ("locked").get<std::vector<std::string>>();
         if (j.contains ("variants")) p.variants = j.at ("variants").get<std::map<std::string, uint32_t>>();
+        if (j.contains ("variantDepth")) p.variantDepth = j.at ("variantDepth").get<std::map<std::string, int>>();
         p.revision = std::max (1, j.value ("revision", 1));
         p.style = std::clamp (j.value ("style", 1), 1, 2);
         p.humanize = std::clamp (j.value ("humanize", 0.0f), 0.0f, 1.0f);
@@ -1051,7 +1053,7 @@ std::vector<std::vector<int>> kickStepsPerBar (const MusicPlan& p, const SongSec
     const auto seedIt = p.seeds.find ("drums");
     auto pats = drumPatterns (p, seedIt != p.seeds.end() ? seedIt->second : 11u);
     const auto var = p.variants.find ("drums");
-    if (var != p.variants.end() && var->second != 0) for (auto& [key, pat] : pats) mutatePattern (p, pat, var->second, key);
+    if (var != p.variants.end() && var->second != 0) for (auto& [key, pat] : pats) mutatePatternDeep (p, pat, var->second, key);
     std::vector<std::vector<int>> out;
     for (const auto& slot : drumLayout (p, s))
     {
@@ -1141,7 +1143,9 @@ std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, co
     else if (part == "pad") v = chordPart (p, s, r, bpb, true, seed);
     else if (part == "melody") v = melodyPart (p, s, seed, bpb);
     const auto var = p.variants.find (part);
-    if (var != p.variants.end() && var->second != 0) mutateNotes (p, part, v, var->second ^ (hashStr (s.name) * 97u) ^ (uint32_t) s.startBar, bpb);
+    if (var != p.variants.end() && var->second != 0)
+        for (int d = 0, nd = p.depthOf (part); d < nd; ++d) // la primera pasada es la de siempre
+            mutateNotes (p, part, v, (var->second + 0x9E3779B9u * (uint32_t) d) ^ (hashStr (s.name) * 97u) ^ (uint32_t) s.startBar, bpb);
     if (p.style >= 2) signature2Notes (p, part, s, v, bpb);
     if (p.humanize > 0) humanizeNotes (p, part, s, v, seed, bpb);
     sortNotes (v);
@@ -1236,6 +1240,11 @@ void mutatePattern (const MusicPlan& p, DrumPattern& d, uint32_t variant, const 
     // Un redoble de charles en trap o dark; un charles abierto en el resto.
     if ((p.genre == "trap" || p.genre == "darkhiphop") && r.chance (0.6)) { const int s = std::min (n - 1, r.chance (0.5) ? 11 : 15); lane (kHat)[(size_t) s] = 70; roll (kHat)[(size_t) s] = r.range (2, 4); }
     else if (r.chance (0.35) && n > 14) { lane (kOpen)[(size_t) 14] = 64; lane (kHat)[(size_t) 14] = 0; }
+}
+
+void mutatePatternDeep (const MusicPlan& p, DrumPattern& d, uint32_t variant, const std::string& key)
+{
+    for (int i = 0, n = p.depthOf ("drums"); i < n; ++i) mutatePattern (p, d, variant + 0x9E3779B9u * (uint32_t) i, key);
 }
 
 int drumGroove (uint32_t seed) { return grooveIndex (seed, 11u, 4); }

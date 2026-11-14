@@ -765,7 +765,7 @@ void Session::composeTrackLocked (TrackModel& t, const MusicPlan& plan, const st
     if (role == "drums")
     {
         auto pats = composer::drumPatterns (plan, seed);
-        if (plan.variants.count ("drums")) for (auto& [key, pat] : pats) composer::mutatePattern (plan, pat, plan.variants.at ("drums"), key);
+        if (plan.variants.count ("drums")) for (auto& [key, pat] : pats) composer::mutatePatternDeep (plan, pat, plan.variants.at ("drums"), key);
         for (const auto& [key, id] : plan.patternIds)
         {
             DrumPattern* p = t.findPattern (id);
@@ -1029,7 +1029,7 @@ OpResult Session::variationLocked (const char* op, const std::string& part, uint
         if (std::find (plan0.locked.begin(), plan0.locked.end(), t.id) != plan0.locked.end()) skipped.push_back (t.name);
     }
     const ProjectModel before = proj;
-    constexpr int kAttempts = 8;
+    constexpr int kAttempts = 24; // 0.10: eran 8; del 9 al 16 «Variar» aplica dos pasadas y del 17 al 24, tres
     double bestScore = -1;
     ProjectModel best;
     MusicPlan bestPlan;
@@ -1040,6 +1040,7 @@ OpResult Session::variationLocked (const char* op, const std::string& part, uint
     {
         proj = before;
         MusicPlan plan = plan0;
+        attemptDepth = 1 + a / 8;
         const std::vector<std::string> touched = apply (plan, attemptSeed (seed, a));
         if (touched.empty()) break; // nada que cambiar (todo bloqueado o borrado): no tiene sentido reintentar
         anyTarget = true;
@@ -1057,6 +1058,7 @@ OpResult Session::variationLocked (const char* op, const std::string& part, uint
         if (score > bestScore) { bestScore = score; best = proj; bestPlan = plan; bestParts = parts; bestAttempt = a; }
         if (score >= minChange) break;
     }
+    attemptDepth = 1;
     proj = before;
     if (! anyTarget) return OpResult::fail (skipped.empty() ? "no hay pistas generadas que cambiar (¿se borraron?)" : "todas las pistas de esa parte están bloqueadas: quita el candado para variarlas");
     if (bestScore <= 0.0) return OpResult::fail ("no se encontró una versión distinta de la actual; prueba otra parte o «Regenerar»");
@@ -1109,6 +1111,7 @@ OpResult Session::varyPart (const std::string& part, uint32_t seed, float energy
                 }
                 plan.seeds[role] = ns;
                 plan.variants.erase (role);
+                plan.variantDepth.erase (role);
             }
             composeTrackLocked (t, plan, role);
             touched.push_back (t.id);
@@ -1135,6 +1138,7 @@ OpResult Session::mutatePart (const std::string& part, uint32_t seed)
             if (part != "all" && role != part) continue;
             if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
             plan.variants[role] = (s ^ fnv32 (role)) | 1u;
+            if (attemptDepth > 1) plan.variantDepth[role] = attemptDepth; else plan.variantDepth.erase (role);
             composeTrackLocked (t, plan, role);
             touched.push_back (t.id);
         }
@@ -1174,6 +1178,7 @@ OpResult Session::regenerateBeat (uint32_t seed)
             }
             plan.seeds[role] = ns;
             plan.variants.erase (role);
+            plan.variantDepth.erase (role);
             composeTrackLocked (t, plan, role);
             touched.push_back (t.id);
         }
