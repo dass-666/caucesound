@@ -288,6 +288,12 @@ public:
     // Paquete ZIP para DAW (stems WAV + MIDI + mezcla + proyecto + manifiesto). Trabajo en segundo plano: devuelve el id
     // del trabajo. No modifica el proyecto. outPath absoluto; se escribe en un temporal y se renombra al terminar.
     static constexpr double kDawExportMaxSeconds = 1200.0;
+    // Auditoría 0.10: la mezcla se renderiza entera en memoria (8 bytes por frame estéreo) y un audio importado se
+    // queda entero en memoria. Sin tope, un clip arrastrado por error a 45 minutos hacía que «Exportar» reservara
+    // 1,3 GB (medido) y un archivo de una hora podía cerrar la app por falta de memoria. Mismo límite que el paquete
+    // para DAW; ambos fallan con un mensaje claro y sin tocar el proyecto.
+    static constexpr double kMixExportMaxSeconds = 1200.0;
+    static constexpr double kImportMaxSeconds = 1200.0;
     OpResult exportDaw (const std::string& outPath, const DawExportOptions& options);
     // Solo el archivo MIDI estándar (formato 1). Inmediato.
     OpResult exportMidi (const std::string& outPath);

@@ -1,5 +1,9 @@
 # CAUCESOUND
 
+> **Este README describe la fase 1.2.** El estado actual (0.10.x: sampler, paquetes de sonido, Mixer Pro, Channel
+> Rack, Solo AI, VocalShift, exportación para DAW) está en [docs/STATUS.md](docs/STATUS.md) y
+> [docs/NEXT_SESSION.md](docs/NEXT_SESSION.md).
+
 DAW (estación de trabajo de audio digital) móvil para Android e iOS. **Fase 1.2: prototipo Android** con beatmaker,
 MIDI, sintetizador y efectos propios sobre un motor de audio C++ compartido. No es un producto terminado: ver [docs/STATUS.md](docs/STATUS.md) para lo implementado,
 lo probado automáticamente y lo que falta validar en un teléfono real.

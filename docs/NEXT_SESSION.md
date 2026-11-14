@@ -1,5 +1,14 @@
 # Para retomar el trabajo (actualizado 2026-11-14, misión 0.10)
 
+## Auditoría de la 0.10 y correcciones 0.10.1 (lo más reciente)
+
+- **Rama**: `claude/project-thread-cc9x6c`, basada en la 0.10 (`claude/mission-010-sound-engine`, PR #9). PR borrador nuevo contra la rama de la 0.10. **Nada fusionado; los PR #1 a #9 no se tocaron.**
+- **APK**: `/mnt/project-files/caucesound/caucesound-0.10.1-audit-preview.apk`, versionCode 16, misma firma Preview y los mismos seis paquetes.
+- **Cambios**: medidores con pico retenido, tope de 20 min en exportar mezcla e importar audio, textos por UTF-16 en el puente JNI, CI sin ejecuciones duplicadas. Pruebas en `core/tests/TestAudit.cpp` y `JniBridgeEndToEndTest.kt`.
+- **Pendiente de decidir por Diego** (del informe de auditoría): fusionar la cadena de PR #1 a #9 en `main` (hoy `main` sigue en la fase 1.2); repositorios públicos sin licencia (este y los dos de plugins); probar en el Samsung.
+- **Pendiente técnico recomendado**, por orden: exportación de mezcla por bloques a disco (quita el tope y la memoria), audio importado en 16/24 bits o por streaming, TSan y pruebas con paquetes en la CI, R8 y clave de producción antes de publicar, espera real del hilo de audio al parar la grabación (hoy una pausa fija de 30 ms).
+- **Entorno**: Maven Central devuelve 403 desde la nube; hace falta el espejo de `~/.gradle/init.d/mirror.gradle` y `ROBOLECTRIC_REPO_URL` (ver más abajo).
+
 ## Misión 0.10 «Sound Engine & Music Quality» (lo más reciente)
 
 - **Rama**: `claude/mission-010-sound-engine`, basada en la 0.9.2 (`claude/project-thread-sol38i`, PR #8). PR borrador nuevo contra la rama de la 0.9.2. **Nada fusionado; los PR #1 a #8 no se tocaron.**

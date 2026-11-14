@@ -832,10 +832,19 @@ OpResult Session::importWav (const std::string& path, const std::string& trackId
     if (t->kind == "bus") return OpResult::fail ("un bus no admite clips: importa en una pista de audio");
     const std::string tid = t->id;
 
+    // Duración por la cabecera, antes de cargar nada: un archivo demasiado largo se rechaza sin reservar su memoria.
+    const char* tooLong = "el audio dura más de 20 minutos: recórtalo antes de importarlo";
+    {
+        WavInfo probe;
+        std::string perr;
+        if (probeWav (path, probe, perr) && probe.sampleRate > 0 && (double) probe.frames / probe.sampleRate > kImportMaxSeconds)
+            return OpResult::fail (tooLong);
+    }
     AudioData a;
     std::string err;
     if (! readWav (path, a, err)) return OpResult::fail ("no se pudo importar: " + err);
     if (a.numFrames() == 0) return OpResult::fail ("el archivo no contiene audio");
+    if (a.sampleRate > 0 && (double) a.numFrames() / a.sampleRate > kImportMaxSeconds) return OpResult::fail (tooLong);
     if (a.numChannels() > 2) a.channels.resize (2); // fase 1: se conservan los dos primeros canales
     if (a.sampleRate != proj.sampleRate) a = resample (a, proj.sampleRate);
 
@@ -1178,6 +1187,8 @@ OpResult Session::exportMix (const std::string& outPath, int bitDepth, Frame tai
     // Las colas de los instrumentos (release, platillos) se incluyen siempre: el archivo no corta notas.
     // Un bus recibe la cola de las pistas y añade la suya (p. ej. la reverb compartida).
     const Frame total = proj.contentEnd() + std::max<Frame> (std::max<Frame> (0, tailFrames), instrumentTail + busTail);
+    if ((double) total / proj.sampleRate > kMixExportMaxSeconds)
+        return OpResult::fail ("la canción dura más de 20 minutos y no se puede exportar (¿hay un clip suelto muy lejos del final?)");
     offline.setMasterGain (dbToGain (proj.masterDb));
     offline.publish (std::move (g));
 

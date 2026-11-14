@@ -76,6 +76,10 @@ struct TrackParams
     std::atomic<float> pan { 0.0f };   // -1 .. +1 (ley de balance: centro = 0 dB en ambos lados)
     std::atomic<bool> mute { false }, solo { false };
     std::atomic<float> peak { 0.0f };  // pico del último bloque (medidor), escrito por el hilo de audio
+    // Pico máximo desde la última lectura con Engine::takeTrackPeak(). La interfaz lee una vez por fotograma (~16 ms)
+    // y el audio procesa cada ~4 ms: con solo «el último bloque» se perdían 3 de cada 4 bloques y el indicador de
+    // saturación podía no encenderse (auditoría 0.10).
+    std::atomic<float> peakHold { 0.0f };
     std::atomic<float> send[kMaxBuses] = {}; // nivel de envío lineal (0..1) hacia cada bus, post-fader
 };
 
@@ -135,6 +139,9 @@ public:
     void resetTransport();
     Frame position() const { return positionOut.load(); }
     float masterPeak() const { return masterPeakOut.load(); }
+    // Medidores para la interfaz: pico máximo desde la lectura anterior (y lo pone a cero). Un único lector.
+    float takeMasterPeak() { return masterPeakHold.exchange (0.0f, std::memory_order_relaxed); }
+    float takeTrackPeak (int slot) { return params[(size_t) slot].peakHold.exchange (0.0f, std::memory_order_relaxed); }
     long xrunsReportedByHost() const { return hostXruns.load(); }
     // Carga DSP: tiempo de process() / duración del bloque (1,0 = sin margen). Media móvil (~1 s) y pico desde la
     // última lectura con takeDspLoadPeak(). blocksOverBudget: bloques que tardaron más que su duración.
@@ -199,7 +206,7 @@ private:
 
     std::atomic<bool> playing { false };
     std::atomic<Frame> seekRequest { -1 }, positionOut { 0 };
-    std::atomic<float> masterGain { 1.0f }, metronomeGain { 0.5f }, monitorGain { 0.0f }, masterPeakOut { 0.0f };
+    std::atomic<float> masterGain { 1.0f }, metronomeGain { 0.5f }, monitorGain { 0.0f }, masterPeakOut { 0.0f }, masterPeakHold { 0.0f };
     std::atomic<bool> metronomeOn { false };
     std::atomic<long> hostXruns { 0 };
     std::atomic<float> dspLoadAvg { 0.0f }, dspLoadPeak { 0.0f };

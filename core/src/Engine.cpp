@@ -28,6 +28,13 @@ void makeClick (std::vector<float>& out, int rate, double freq, float amp)
     }
 }
 
+// Medidor con retención: solo sube; lo baja a cero quien lo lee (Engine::take*Peak). Si la lectura cae entre el load y
+// el store se pierde como mucho ese reinicio (el medidor muestra un pico un fotograma más): inocuo y sin bloqueos.
+inline void holdPeak (std::atomic<float>& hold, float peak)
+{
+    if (peak > hold.load (std::memory_order_relaxed)) hold.store (peak, std::memory_order_relaxed);
+}
+
 inline float approach (float current, float target, float step)
 {
     if (current < target) return std::min (current + step, target);
@@ -407,6 +414,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
                 }
                 addSends (t, tl, tr, n, false);
                 params[(size_t) t.slot].peak.store (peak, std::memory_order_relaxed);
+                holdPeak (params[(size_t) t.slot].peakHold, peak);
             }
         (void) anySoloStopped;
         return;
@@ -506,6 +514,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
             addSends (t, tl, tr, n, true);
         }
         p.peak.store (peak, std::memory_order_relaxed);
+        holdPeak (p.peakHold, peak);
     }
 
     // Master
@@ -723,6 +732,7 @@ void Engine::process (const float* input, int inChannels, float* output, int out
     processedOut.fetch_add (frames, std::memory_order_relaxed);
     positionOut.store (pos, std::memory_order_release);
     masterPeakOut.store (mPeak, std::memory_order_relaxed);
+    holdPeak (masterPeakHold, mPeak);
 }
 
 bool Engine::renderOffline (Frame from, float* left, float* right, Frame frames, const std::atomic<bool>* cancel)

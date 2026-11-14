@@ -272,6 +272,9 @@ class EndToEndVariationsTest {
         assertTrue("pista nueva armada", newTrack.id != voz.id && newTrack.armed)
         waitFor("fin de la cuenta previa", 10_000) { NativeEngine.countInRemaining() == 0L && NativeEngine.position() > 48_000 }
         Thread.sleep(400)
+        // Desde la 0.10.1 los medidores retienen el pico hasta que se leen: la primera
+        // lectura devuelve la cuenta previa (nadie los leyó mientras sonaba) y se descarta.
+        NativeEngine.meters(st.tracks.size)
         val peaks = (0 until 10).map { Thread.sleep(30); NativeEngine.meters(st.tracks.size)[0] }
         assertTrue("el máster debe callar durante la toma: $peaks", peaks.all { it < 1e-4f })
         vm.stop()
