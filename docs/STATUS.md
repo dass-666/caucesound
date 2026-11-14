@@ -24,7 +24,7 @@ Detalle, causa real y mediciones en HOTFIX_0.9.2.md. Estudio de VocalShift en vi
 | TSan | Variaciones, VocalShift en vivo, grabación y PDC: **13/13**, sin avisos de carrera. `sampler_concurrent…` (prueba de la 0.9, no tocada) falló 1 de 4 veces por el recuento de instancias, sin aviso de TSan; es inestable con carga (también falló una vez en Release con otra suite en paralelo) |
 | Android JVM y Robolectric (`testDebugUnitTest` con `CS_HOST_JNI_DIR`) | **123/123**, 0 omitidas (incluye las 3 de extremo a extremo con el JNI real) |
 | Lint | 0 errores, 38 avisos |
-| CI | CI_RESULT |
+| CI (GitHub Actions) | `core` (Release + ASan/UBSan suite completa) y `android` (con las pruebas de extremo a extremo) **en verde** en `dafb5f3`, push y pull_request del PR #8 |
 | APK `caucesound-0.9.2-hotfix-preview.apk` | versionCode 14, `0.9.2-hotfix-preview`, `com.caucesound.app.preview`, certificado `56b4de46…61ab2e` (el mismo), 37,3 MB, paquetes idénticos a la 0.9.1 (191 archivos), SHA-256 `724fb1ac0be0e465b352be6fe1f5514f55fb0e77911588c0bb26ca2bf6e599b1` |
 
 # Misión 0.9 «Signature Sounds» (2026-11-13, rama `claude/project-thread-y494z5`, PR #6 borrador)
