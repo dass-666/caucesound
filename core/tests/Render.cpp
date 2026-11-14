@@ -306,6 +306,53 @@ int main (int argc, char** argv)
         }
         return 0;
     }
+    if (argc >= 4 && std::string (argv[1]) == "--compare10")
+    {
+        // Misión 0.10: cs_render --compare10 <salida> <carpeta de paquetes>
+        // Por estilo, tres mezclas: (1) la plantilla de siempre; (2) «Signature 2» SIN paquetes (misma composición nueva
+        // con los sintetizadores de siempre: aísla lo que aporta la composición); (3) «Signature 2» con los sonidos 2.0.
+        // Además mide cada papel a solas en (2) y (3): la diferencia es el ajuste de volumen que conserva el balance.
+        namespace fs = std::filesystem;
+        const std::string out = fs::absolute (argv[2]).string(), packs = fs::absolute (argv[3]).string();
+        fs::create_directories (out);
+        const std::string none = out + "/_sin_paquetes";
+        fs::create_directories (none);
+        json all = json::object();
+        for (const auto& t : projectTemplates())
+        {
+            std::map<std::string, float> lv[3];
+            for (int mode = 0; mode < 3; ++mode)
+            {
+                packLibrary().configure (mode == 2 ? packs : none, "");
+                Engine e; e.prepare (48000, 1024);
+                Session s (e);
+                const std::string dir = out + "/_proj_" + t.id + std::to_string (mode);
+                fs::remove_all (dir);
+                if (! s.createProject (dir, t.id, 48000, mode == 0 ? t.id : t.id + "@2").ok) return 1;
+                for (const auto& n : s.templateNotes()) std::printf ("  aviso (%s, modo %d): %s\n", t.id.c_str(), mode, n.c_str());
+                static const char* tags[3] = { "1_plantilla_0.9", "2_signature2_solo_composicion", "3_signature2" };
+                const std::string wav = out + "/" + t.id + "_" + tags[mode] + ".wav";
+                long clipped = 0;
+                if (! s.exportMix (wav, 24, 0, &clipped).ok) return 1;
+                AudioData a; std::string err; readWav (wav, a, err);
+                json m = analyze (a, s.model().bpm);
+                m["exportClippedSamples"] = clipped;
+                json roles = json::object();
+                for (const auto& x : s.autoMixSuggest (120)) { lv[mode][x.name] = x.measuredDb; roles[x.name] = std::round (x.measuredDb * 10) / 10; }
+                m["soloRmsDb"] = roles;
+                all[t.id][tags[mode]] = m;
+                std::printf ("%-11s %-30s pico %6.1f dB, RMS %6.1f dB, >150 Hz %5.1f dB, recortes %ld\n", t.id.c_str(), tags[mode], (double) m["peakDb"], (double) m["rmsDb"], (double) m["above150HzVsTotalDb"], clipped);
+                s.close();
+                fs::remove_all (dir);
+            }
+            std::printf ("%-11s ajuste (sintetizador - muestras):", t.id.c_str());
+            for (const auto& [name, db1] : lv[1]) if (lv[2].count (name) && db1 > -90) std::printf (" %s=%+.1f", name.c_str(), db1 - lv[2][name]);
+            std::printf ("\n");
+        }
+        fs::remove_all (none);
+        std::ofstream (out + "/medidas.json") << all.dump (1);
+        return 0;
+    }
     if (argc >= 4 && std::string (argv[1]) == "--compare09")
     {
         // Misión 0.9: cs_render --compare09 <salida> <carpeta de paquetes> [carpeta muestras-0.8]

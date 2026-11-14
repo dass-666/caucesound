@@ -58,6 +58,7 @@ object Cmd {
     fun routeDrumLane(trackId: String, lane: Int, own: Boolean) = c("routeDrumLane", "trackId" to trackId, "lane" to lane, "own" to own)
     fun mutatePart(part: String, seed: Long) = c("mutatePart", "part" to part, "seed" to seed)
     fun regenerateBeat(seed: Long) = c("regenerateBeat", "seed" to seed)
+    fun setHumanize(amount: Float) = c("setHumanize", "amount" to amount.toDouble())
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =

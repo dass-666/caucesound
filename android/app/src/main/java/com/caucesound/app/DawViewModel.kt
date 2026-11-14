@@ -163,6 +163,10 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             val folder = File(projectsRoot, "p_" + System.currentTimeMillis())
             val r = call(Cmd.createProject(folder.absolutePath, safe, template))
             if (!r.ok) { toast(r.error ?: ""); return@launch }
+            // 0.10: si a «Signature 2» le faltaba algún sonido de paquete, el motor usó el sintetizador y lo dice.
+            r.raw.optJSONArray("notes")?.takeIf { it.length() > 0 }?.let {
+                toast(tr("Faltan sonidos de Signature 2: se usaron los sintetizadores. ", "Signature 2 sounds missing: synths were used. ") + it.optString(0))
+            }
             if (template == "empty") for (i in 1..4) call(Cmd.addTrack(defaultTrackName(i)))
             call(Cmd.save())
             onProjectOpened()
@@ -371,6 +375,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun varyPart(part: String, seed: Long, energy: Float?) =
         variation(Cmd.varyPart(part, seed, energy), if (energy != null) tr("Cambiando la intensidad…", "Changing intensity…") else tr("Rehaciendo…", "Redoing…"))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
+    override fun setHumanize(amount: Float) = edit(Cmd.setHumanize(amount))
     override fun mutatePart(part: String, seed: Long) = variation(Cmd.mutatePart(part, seed), tr("Creando una variación…", "Creating a variation…"))
     override fun regenerateBeat(seed: Long) = variation(Cmd.regenerateBeat(seed), tr("Componiendo otra idea…", "Composing another idea…"))
 

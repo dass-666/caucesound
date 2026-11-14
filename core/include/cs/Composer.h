@@ -39,6 +39,13 @@ struct MusicPlan
     // 0.9.2 — número de versión de la composición: sube con cada Variar/Regenerar aceptado (la interfaz lo muestra
     // como «Versión N»). Deshacer devuelve el plan anterior y, con él, el número anterior. Opcional en el JSON.
     int revision = 1;
+    // 0.10 — «Signature 2»: 2 activa la composición mejorada (estructura Intro/Verso/Coro, acentos y notas fantasma
+    // por género, remates por sección, bajo anclado al bombo). 1 = composición de siempre: los proyectos anteriores no
+    // llevan este campo y se regeneran exactamente igual que antes.
+    int style = 1;
+    // 0.10 — Humanización 0..1 (0 = exacto, como hasta ahora): pequeñas diferencias deterministas de fuerza en todo y
+    // de tiempo en las partes MIDI. Mismo plan = mismas notas; cambiar el valor no cambia qué notas suenan.
+    float humanize = 0.0f;
 
     std::string toJson() const;
     static bool fromJson (const std::string& text, MusicPlan& out);
@@ -63,8 +70,10 @@ std::vector<DrumSlot> drumLayout (const MusicPlan& p, const SongSection& s);
 // "melody" o "pad". Respetan la escala y el acorde de cada compás; la energía cambia densidad e intensidad.
 std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, const SongSection& s, uint32_t seed, int beatsPerBar);
 
-// Plan por defecto de cada plantilla ("" si el género no existe).
-MusicPlan defaultPlan (const std::string& genre);
+// Plan por defecto de cada plantilla ("" si el género no existe). style 2 = «Signature 2» (0.10).
+MusicPlan defaultPlan (const std::string& genre, int style = 1);
+// Tipo interno de una sección: las de «Signature 2» (Verso, Coro...) se componen con las reglas de A, B, Final y Break.
+std::string sectionKind (const SongSection& s);
 
 // 0.8 — Progresiones típicas del género (grados de su modo). «Regenerar» elige otra distinta de la actual.
 // Familia rítmica (0-3) que usa la batería con esta semilla; 0 = el groove original del estilo.

@@ -251,7 +251,16 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
 
         if (cmd == "state") return s.stateJson();
         if (cmd == "listProjects") return json { { "ok", true }, { "projects", listProjects (str ("root")) } }.dump();
-        if (cmd == "createProject") return result (s.createProject (str ("folder"), str ("name"), 48000, str ("template"))).dump();
+        if (cmd == "createProject")
+        {
+            // 0.10: "style": 2 (o "template": "trap@2") crea la plantilla en modo «Signature 2». Sin eso, la de siempre.
+            std::string tpl = str ("template");
+            if (q.value ("style", 1) == 2 && tpl.find ('@') == std::string::npos && ! tpl.empty() && tpl != "empty") tpl += "@2";
+            json j = result (s.createProject (str ("folder"), str ("name"), 48000, tpl));
+            if (j.value ("ok", false)) j["notes"] = s.templateNotes();
+            return j.dump();
+        }
+        if (cmd == "setHumanize") return result (s.setHumanize ((float) num ("amount"))).dump();
         if (cmd == "catalog") return catalog().dump();
         if (cmd == "packs") return json { { "ok", true }, { "packs", packsJson() } }.dump();
         if (cmd == "configurePacks")

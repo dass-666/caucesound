@@ -27,6 +27,8 @@ std::string MusicPlan::toJson() const
     j["locked"] = locked;
     if (! variants.empty()) j["variants"] = variants;
     if (revision > 1) j["revision"] = revision;
+    if (style != 1) j["style"] = style;
+    if (humanize > 0) j["humanize"] = humanize;
     json s = json::array();
     for (const auto& x : sections) s.push_back ({ { "name", x.name }, { "startBar", x.startBar }, { "bars", x.bars }, { "energy", x.energy } });
     j["sections"] = s;
@@ -53,6 +55,8 @@ bool MusicPlan::fromJson (const std::string& text, MusicPlan& out)
         if (j.contains ("locked")) p.locked = j.at ("locked").get<std::vector<std::string>>();
         if (j.contains ("variants")) p.variants = j.at ("variants").get<std::map<std::string, uint32_t>>();
         p.revision = std::max (1, j.value ("revision", 1));
+        p.style = std::clamp (j.value ("style", 1), 1, 2);
+        p.humanize = std::clamp (j.value ("humanize", 0.0f), 0.0f, 1.0f);
         if (j.contains ("sections"))
             for (const auto& s : j.at ("sections"))
                 p.sections.push_back ({ s.value ("name", std::string ("A")), std::max (0, s.value ("startBar", 0)), std::clamp (s.value ("bars", 4), 1, 64),
@@ -193,7 +197,9 @@ std::vector<int> chordAt (const MusicPlan& p, int bar, bool sevenths)
 }
 
 // --- Batería ------------------------------------------------------------------------------------------------------
-std::map<std::string, DrumPattern> drumPatterns (const MusicPlan& p, uint32_t seed)
+namespace
+{
+std::map<std::string, DrumPattern> drumPatternsBase (const MusicPlan& p, uint32_t seed)
 {
     std::map<std::string, DrumPattern> out;
     const double e = p.energy;
@@ -572,17 +578,113 @@ std::map<std::string, DrumPattern> drumPatterns (const MusicPlan& p, uint32_t se
     return out;
 }
 
+// --- 0.10 «Signature 2»: carácter por género sobre los patrones de siempre -------------------------------------------
+// No cambia qué golpes hay en el bombo ni en la caja principal: cambia CÓMO se tocan (acentos del charles, notas
+// fantasma, dinámica del bombo) y añade detalles propios del género. Los kits 2.0 tienen tres capas de fuerza por
+// pieza, así que un acento no es solo más volumen: cambia el timbre.
+void polishPattern (const MusicPlan& p, DrumPattern& d, const std::string& key, uint32_t seed)
+{
+    const std::string& g = p.genre;
+    Rand r (seed ^ hashStr (key) ^ 0x51627u);
+    const int n = d.steps;
+    auto& kick = d.lanes[(size_t) kKick];
+    auto& snare = d.lanes[(size_t) kSnare];
+    auto& hat = d.lanes[(size_t) kHat];
+    const bool sparse = key == "intro" || key == "break" || key == "end";
+    // Bombo: el del primer tiempo manda; los demás, algo por debajo; los que caen «a contratiempo», más suaves.
+    for (int st = 0; st < n; ++st)
+        if (kick[(size_t) st] > 0)
+            kick[(size_t) st] = clampVel (st % 16 == 0 ? 120 : st % 4 == 0 ? 108 : st % 2 == 0 ? 100 : 92);
+    if (key == "end") return;
+    // Charles: figura de acentos por género.
+    for (int st = 0; st < n; ++st)
+    {
+        int& v = hat[(size_t) st];
+        if (v <= 0) continue;
+        const int q = st % 16;
+        double a;
+        if (g == "trap" || g == "darkhiphop") a = q % 4 == 0 ? 104 : q % 2 == 0 ? 80 : 62;               // negras marcadas, semicorcheas ligeras
+        else if (g == "reggaeton") a = (q == 0 || q == 3 || q == 6 || q == 8 || q == 11 || q == 14) ? 98 : 66; // sigue el 3-3-2 del dembow
+        else if (hipHopFamily (g)) a = q % 4 == 2 ? 100 : q % 4 == 0 ? 84 : 56;                          // corchea a contratiempo arriba (cabeceo)
+        else a = q % 4 == 2 ? 100 : q % 4 == 0 ? 78 : 60;                                                // pop y electrónica: contratiempo abierto
+        v = clampVel (a + r.range (-3, 3));
+        if (d.rollAt (kHat, st) > 1) v = clampVel (v - 8); // los redobles no deben saltar por encima del resto
+    }
+    if (sparse) return;
+    // Notas fantasma de caja (muy suaves) en los géneros con «bolsillo»: antes del 2.º y del 4.º tiempo o tras ellos.
+    if (hipHopFamily (g) || g == "pop")
+    {
+        const int cand[4] = { 7, 9, 15, 3 };
+        int added = 0;
+        for (int c : cand)
+        {
+            if (added >= (g == "jazzrap" || g == "boombap" ? 2 : 1)) break;
+            for (int st = c; st < n; st += 16)
+                if (snare[(size_t) st] == 0 && kick[(size_t) st] == 0 && r.chance (0.75)) { snare[(size_t) st] = clampVel (30 + r.range (-4, 6)); ++added; }
+        }
+    }
+    // Caja principal: 2.º tiempo algo por debajo del 4.º (empuja hacia el final del compás).
+    for (int st = 0; st < n; ++st)
+        if (snare[(size_t) st] >= 60) snare[(size_t) st] = clampVel (st % 16 == 12 ? 118 : st % 16 == 4 ? 110 : snare[(size_t) st]);
+    // Trap: un redoble de charles al final del compás si no hay ninguno (la firma del género).
+    if ((g == "trap" || g == "darkhiphop") && (key == "main" || key == "var"))
+    {
+        bool any = false;
+        for (int st = 0; st < n; ++st) any = any || d.rollAt (kHat, st) > 1;
+        if (! any && ! d.rolls.empty()) { const int st = n - 2; if (hat[(size_t) st] == 0) hat[(size_t) st] = 70; d.rolls[(size_t) kHat][(size_t) st] = 3; }
+    }
+}
+
+// Humanización de la fuerza: diferencia pequeña y fija por golpe (no aleatoria en cada reproducción).
+void humanizePattern (const MusicPlan& p, DrumPattern& d, const std::string& key, uint32_t seed)
+{
+    if (p.humanize <= 0) return;
+    Rand r (seed ^ hashStr (key) ^ 0x48554Du);
+    const int amp = (int) std::lround (p.humanize * 9.0);
+    for (auto& lane : d.lanes)
+        for (int& v : lane)
+        {
+            const int j = r.range (-amp, amp); // se consume siempre: activar un golpe no cambia la humanización de los demás
+            if (v > 0) v = clampVel (v + j);
+        }
+}
+} // namespace
+
+std::map<std::string, DrumPattern> drumPatterns (const MusicPlan& p, uint32_t seed)
+{
+    auto out = drumPatternsBase (p, seed);
+    if (p.style >= 2) for (auto& [key, pat] : out) polishPattern (p, pat, key, seed);
+    if (p.humanize > 0) for (auto& [key, pat] : out) humanizePattern (p, pat, key, seed);
+    return out;
+}
+
+std::string sectionKind (const SongSection& s)
+{
+    if (s.name.rfind ("Verso", 0) == 0) return "A";
+    if (s.name == "Coro") return "B";
+    if (s.name.rfind ("Coro", 0) == 0) return "Final"; // segundo coro en adelante: el más intenso
+    if (s.name == "Puente") return "Break";
+    return s.name;
+}
+
 std::vector<DrumSlot> drumLayout (const MusicPlan& p, const SongSection& s)
 {
-    (void) p;
     std::vector<DrumSlot> v;
     auto add = [&] (const char* key, int bars, const std::string& name) { if (bars > 0) v.push_back ({ key, bars, name }); };
     const int n = s.bars;
-    if (s.name == "Intro") add ("intro", n, s.name);
-    else if (s.name == "Break") add ("break", n, s.name);
-    else if (s.name == "Cierre") add ("end", n, s.name);
-    else if (s.name == "A") { add ("main", n - 1, s.name); add ("fill", n > 1 ? 1 : 0, "Remate"); if (n == 1) add ("main", 1, s.name); }
-    else if (s.name == "B" || s.name == "Final")
+    if (p.style >= 2 && n >= 8)
+    {
+        // Secciones largas: frases de 4 compases. El verso respira (variación en el 4.º compás, remate al final); el
+        // coro entra con platillo, mantiene la variación y vuelve a marcar la mitad.
+        const std::string kind = sectionKind (s);
+        if (kind == "A") { add ("main", 3, s.name); add ("var", 1, s.name); add ("main", n - 5, s.name); add ("fill", 1, "Remate"); return v; }
+        if (kind == "B" || kind == "Final") { add ("varCrash", 1, s.name); add ("var", 3, s.name); add ("varCrash", 1, s.name); add ("var", n - 6, s.name); add ("fill", 1, "Remate"); return v; }
+    }
+    if (sectionKind (s) == "Intro") add ("intro", n, s.name);
+    else if (sectionKind (s) == "Break") add ("break", n, s.name);
+    else if (sectionKind (s) == "Cierre") add ("end", n, s.name);
+    else if (sectionKind (s) == "A") { add ("main", n - 1, s.name); add ("fill", n > 1 ? 1 : 0, "Remate"); if (n == 1) add ("main", 1, s.name); }
+    else if (sectionKind (s) == "B" || sectionKind (s) == "Final")
     {
         if (n == 1) add ("varCrash", 1, s.name);
         else { add ("varCrash", 1, s.name); add ("var", n - 2, s.name); add ("fill", 1, "Remate"); }
@@ -613,8 +715,8 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
     const double e = sectionEnergy (p, s);
     const Tick bar = (Tick) bpb * kPpq;
     const std::string& g = p.genre;
-    if (s.name == "Intro" && ! hipHopFamily (g)) return v; // el bajo entra con la sección principal
-    if (s.name == "Cierre") { note (v, nearestPc (p.keyRoot, 36), 108, 0, bar - S); return v; } // tónica que se apaga
+    if (sectionKind (s) == "Intro" && ! hipHopFamily (g)) return v; // el bajo entra con la sección principal
+    if (sectionKind (s) == "Cierre") { note (v, nearestPc (p.keyRoot, 36), 108, 0, bar - S); return v; } // tónica que se apaga
     for (int b = 0; b < s.bars; ++b)
     {
         const int absBar = s.startBar + b;
@@ -622,7 +724,7 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         const auto next = chordPcs (p, absBar + 1, false);
         const int root = nearestPc (ch[0], 36), fifth = nearestPc (ch[2], root + 7), nextRoot = nearestPc (next[0], root);
         const Tick t0 = b * bar;
-        const bool sparse = s.name == "Break" || e < -0.5;
+        const bool sparse = sectionKind (s) == "Break" || e < -0.5;
         if (g == "trap")
         {
             // 808: nota larga en el primer bombo; a veces una segunda nota ligada (octava o quinta) que hace glide.
@@ -648,7 +750,7 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         else if (g == "hiphop")
         {
             // Bajo cálido en los bombos, con nota de paso cromática/diatónica hacia el siguiente acorde.
-            if (s.name == "Intro") { note (v, root, 84, t0, bar - 2 * S); continue; }
+            if (sectionKind (s) == "Intro") { note (v, root, 84, t0, bar - 2 * S); continue; }
             note (v, root, 108, t0, 6 * S);
             if (! sparse) note (v, r.chance (0.5) ? root : fifth, 96, t0 + 7 * S, 3 * S);
             note (v, root, 100, t0 + 10 * S, 3 * S);
@@ -658,7 +760,7 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         else if (g == "boombap")
         {
             // Bajo seco sobre los bombos (0, 7, 10): notas cortas, huecos, a veces la octava baja. Nada de legato.
-            if (s.name == "Intro") continue;
+            if (sectionKind (s) == "Intro") continue;
             note (v, root, 112, t0, 3 * S);
             if (! sparse && r.chance (0.6)) note (v, r.chance (0.4) ? root - 12 >= 24 ? root - 12 : root : root, 98, t0 + 7 * S, 2 * S);
             note (v, r.chance (0.7) ? root : fifth, 104, t0 + 10 * S, 3 * S);
@@ -668,7 +770,7 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         {
             // Bajo «caminando» en negras: raíz, nota del acorde, quinta u octava y aproximación cromática a la raíz
             // siguiente. Intensidad alternada (el 1 y el 3 un poco más fuertes).
-            if (s.name == "Intro") { note (v, root, 80, t0, 8 * S); continue; }
+            if (sectionKind (s) == "Intro") { note (v, root, 80, t0, 8 * S); continue; }
             const auto ch4 = chordPcs (p, absBar, true);
             const int third = nearestPc (ch4[1], root + 4), sev = nearestPc (ch4[3], root + 10);
             const int walk[4] = { root, r.chance (0.5) ? third : sev - 12 >= 28 ? sev - 12 : third, r.chance (0.6) ? fifth : root + 12,
@@ -679,7 +781,7 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         else if (g == "darkhiphop")
         {
             // Sub largo en la raíz durante medio compás, silencio y una caída de octava o aproximación al final.
-            if (s.name == "Intro") { note (v, nearestPc (p.keyRoot, 36), 96, t0, bar - S); continue; }
+            if (sectionKind (s) == "Intro") { note (v, nearestPc (p.keyRoot, 36), 96, t0, bar - S); continue; }
             if (bassGroove == 1 && ! sparse) { note (v, root, 114, t0, 11 * S); note (v, root + 12, 96, t0 + 12 * S, 3 * S); continue; }
             if (bassGroove == 2 && ! sparse) { note (v, root, 114, t0, 6 * S); note (v, fifth, 100, t0 + 7 * S, 3 * S); note (v, root, 104, t0 + 12 * S, 3 * S); continue; }
             note (v, root, 114, t0, 9 * S);
@@ -753,8 +855,8 @@ std::vector<MidiNote> chordPart (const MusicPlan& p, const SongSection& s, Rand&
         const Tick t0 = b * bar;
         if (pad)
         {
-            const int vel = s.name == "Break" || s.name == "Intro" || s.name == "Cierre" ? 78 : 66;
-            if (padStyle == 1 && s.name != "Cierre") // dos ataques por compás: pulso lento que respira
+            const int vel = sectionKind (s) == "Break" || sectionKind (s) == "Intro" || sectionKind (s) == "Cierre" ? 78 : 66;
+            if (padStyle == 1 && sectionKind (s) != "Cierre") // dos ataques por compás: pulso lento que respira
             {
                 for (int k : vc) note (v, k, vel, t0, bar / 2 - S / 2);
                 for (int k : vc) note (v, k, vel - 8, t0 + bar / 2, bar / 2 - S / 2);
@@ -763,7 +865,7 @@ std::vector<MidiNote> chordPart (const MusicPlan& p, const SongSection& s, Rand&
             continue;
         }
         auto hitAll = [&] (int step, int len, double vel) { for (int k : vc) note (v, k, vel + r.range (-4, 4), t0 + step * S, len * S - S / 4); };
-        if (g == "jazzrap" && s.name != "Cierre" && s.name != "Intro")
+        if (g == "jazzrap" && sectionKind (s) != "Cierre" && sectionKind (s) != "Intro")
         {
             // Teclas soul: acorde con novena, cuerdas escalonadas (ligero rasgueo) y anticipación del acorde siguiente.
             std::vector<int> nine = vc;
@@ -773,15 +875,15 @@ std::vector<MidiNote> chordPart (const MusicPlan& p, const SongSection& s, Rand&
             if (comp == 1) { for (int st : { 0, 8 }) for (size_t i = 0; i < nine.size(); ++i) note (v, nine[i], 74 + r.range (-5, 5), t0 + st * S + (Tick) i * (S / 8), 6 * S); continue; }
             if (comp == 2) { for (int st : { 0, 6 }) for (size_t i = 0; i < nine.size(); ++i) note (v, nine[i], (st ? 70 : 80) + r.range (-5, 5), t0 + st * S + (Tick) i * (S / 8), (st ? 8 : 5) * S); continue; } // «Charleston»
             for (size_t i = 0; i < nine.size(); ++i) note (v, nine[i], 78 + r.range (-5, 5), t0 + (Tick) i * (S / 8), 9 * S);
-            if (e > -0.5 && s.name != "Break")
+            if (e > -0.5 && sectionKind (s) != "Break")
             {
                 const auto nx = voiceLead (chordPcs (p, s.startBar + b + 1, true), vc, 64, 57, 74);
                 for (int k : nx) note (v, k, 70 + r.range (-4, 4), t0 + 14 * S + S / 3, 2 * S - S / 3);
             }
             continue;
         }
-        if (s.name == "Cierre") { hitAll (0, 15, 92); continue; }
-        if (s.name == "Intro" || s.name == "Break" || e < -0.5) { hitAll (0, 15, 74); continue; }
+        if (sectionKind (s) == "Cierre") { hitAll (0, 15, 92); continue; }
+        if (sectionKind (s) == "Intro" || sectionKind (s) == "Break" || e < -0.5) { hitAll (0, 15, 74); continue; }
         if (g == "reggaeton")
         {
             static const std::vector<int> c0 { 0, 3, 6, 10, 14 }, c1 { 0, 3, 6, 8, 11, 14 }, c2 { 2, 6, 10, 14 };
@@ -831,8 +933,8 @@ std::vector<MidiNote> melodyPart (const MusicPlan& p, const SongSection& s, uint
     const double e = sectionEnergy (p, s);
     const Tick bar = (Tick) bpb * kPpq;
     const std::string& g = p.genre;
-    if (s.name == "Intro" && g != "electronic") return v;
-    if (s.name == "Cierre")
+    if (sectionKind (s) == "Intro" && g != "electronic") return v;
+    if (sectionKind (s) == "Cierre")
     {
         // La melodía se posa en la tónica y la deja sonar.
         note (v, nearestPc (p.keyRoot, melodyCenter (g)), 96, 0, bar - S);
@@ -840,8 +942,8 @@ std::vector<MidiNote> melodyPart (const MusicPlan& p, const SongSection& s, uint
     }
     // A y Final comparten motivo (reconocible); B tiene el suyo. En el Final el motivo vuelve reforzado: las notas de
     // los tiempos fuertes se doblan una octava arriba (misión 0.6: que el final se sienta como la llegada).
-    const bool lift = s.name == "Final";
-    Rand r (seed ^ (s.name == "B" ? 0xB0B0u : 0xA0A0u));
+    const bool lift = sectionKind (s) == "Final";
+    Rand r (seed ^ (sectionKind (s) == "B" ? 0xB0B0u : 0xA0A0u));
     const auto sc = scale (p);
     const int center = nearestPc (p.keyRoot, melodyCenter (g));
     const int lo = center - 7, hi = center + 12;
@@ -886,7 +988,7 @@ std::vector<MidiNote> melodyPart (const MusicPlan& p, const SongSection& s, uint
         if (roll && orn.chance (ornProb)) evs.push_back ({ st, -1 });
     }
     const int phrases = std::max (1, s.bars / 2);
-    const bool thin = s.name == "Break";
+    const bool thin = sectionKind (s) == "Break";
     for (int ph = 0; ph < phrases; ++ph)
     {
         const int barBase = ph * 2;
@@ -940,6 +1042,96 @@ std::vector<MidiNote> melodyPart (const MusicPlan& p, const SongSection& s, uint
 }
 } // namespace
 
+// --- 0.10 «Signature 2»: relación bajo-bombo, espacio para la voz y humanización ------------------------------------
+namespace
+{
+// Bombos de cada compás de la sección (paso 0..15), según los patrones y el reparto que usa la batería del plan.
+std::vector<std::vector<int>> kickStepsPerBar (const MusicPlan& p, const SongSection& s)
+{
+    const auto seedIt = p.seeds.find ("drums");
+    auto pats = drumPatterns (p, seedIt != p.seeds.end() ? seedIt->second : 11u);
+    const auto var = p.variants.find ("drums");
+    if (var != p.variants.end() && var->second != 0) for (auto& [key, pat] : pats) mutatePattern (p, pat, var->second, key);
+    std::vector<std::vector<int>> out;
+    for (const auto& slot : drumLayout (p, s))
+    {
+        const auto it = pats.find (slot.patternKey);
+        for (int b = 0; b < slot.bars; ++b)
+        {
+            std::vector<int> steps;
+            if (it != pats.end())
+                for (int st = 0; st < 16 && st < it->second.steps; ++st)
+                    if (it->second.lanes[(size_t) kKick][(size_t) st] > 0) steps.push_back (st);
+            out.push_back (steps);
+        }
+    }
+    return out;
+}
+
+void signature2Notes (const MusicPlan& p, const std::string& part, const SongSection& s, std::vector<MidiNote>& v, int bpb)
+{
+    const Tick bar = (Tick) bpb * kPpq;
+    const std::string& g = p.genre;
+    const std::string kind = sectionKind (s);
+    if (part == "bass" && bpb == 4 && g != "jazzrap" && g != "electronic")
+    {
+        // El bajo y el bombo golpean juntos: una nota a un paso de un bombo se mueve a él (sin cambiar dónde termina)
+        // y la que coincide con un bombo se acentúa. El bajo caminado (jazz rap) y el de contratiempo (electrónica)
+        // son otra idea musical y no se tocan.
+        const auto kicks = kickStepsPerBar (p, s);
+        for (auto& n : v)
+        {
+            const int b = (int) (n.start / bar);
+            if (b < 0 || b >= (int) kicks.size() || n.start % S != 0) continue;
+            const int st = (int) ((n.start % bar) / S);
+            const auto& k = kicks[(size_t) b];
+            const auto has = [&] (int x) { return std::find (k.begin(), k.end(), x) != k.end(); };
+            if (has (st)) { n.velocity = clampVel (n.velocity + 6); continue; }
+            const int to = has (st + 1) && st + 1 < 16 ? st + 1 : has (st - 1) ? st - 1 : -1;
+            if (to < 0) continue;
+            const Tick newStart = (Tick) b * bar + (Tick) to * S, end = n.start + n.length;
+            bool clash = false; // no pisar otra nota que ya empieza ahí
+            for (const auto& o : v) clash = clash || (&o != &n && o.start == newStart);
+            if (clash || end - newStart < S / 2) continue;
+            n.start = newStart;
+            n.length = end - newStart;
+            n.velocity = clampVel (n.velocity + 4);
+        }
+    }
+    if (part == "melody" && kind == "A")
+    {
+        // Verso: la melodía pregunta y deja hueco (segunda mitad de los compases pares) para la voz; el coro va completo.
+        v.erase (std::remove_if (v.begin(), v.end(), [&] (const MidiNote& n)
+        {
+            const int b = (int) (n.start / bar);
+            return b % 2 == 1 && n.start % bar >= bar / 2;
+        }), v.end());
+        for (auto& n : v) n.velocity = clampVel (n.velocity - 8);
+    }
+    if ((part == "chords" || part == "pad") && kind == "Final")
+        for (auto& n : v) n.velocity = clampVel (n.velocity + 5); // el último coro, un punto más arriba
+}
+
+// Humanización de las notas: adelanto o retraso pequeño (hasta ~14 ticks = 9-12 ms según el tempo) y diferencia de
+// fuerza. Es fija para una semilla dada: la misma canción suena igual cada vez. El bajo se mueve la mitad (el grave
+// desajustado con el bombo se oye como error, no como «tocado a mano»).
+void humanizeNotes (const MusicPlan& p, const std::string& part, const SongSection& s, std::vector<MidiNote>& v, uint32_t seed, int bpb)
+{
+    Rand r (seed ^ hashStr (part) ^ (hashStr (s.name) * 131u) ^ (uint32_t) s.startBar ^ 0x48554Du);
+    const double k = std::clamp ((double) p.humanize, 0.0, 1.0) * (part == "bass" ? 0.5 : 1.0);
+    const int dt = (int) std::lround (14.0 * k), dv = (int) std::lround (12.0 * k);
+    const Tick total = (Tick) s.bars * bpb * kPpq;
+    for (auto& n : v)
+    {
+        const int jt = r.range (-dt, dt), jv = r.range (-dv, dv);
+        const Tick start = std::clamp<Tick> (n.start + jt, 0, std::max<Tick> (0, total - 1));
+        n.length = std::max<Tick> (S / 4, n.length - (start - n.start));
+        n.start = start;
+        n.velocity = clampVel (n.velocity + jv);
+    }
+}
+} // namespace
+
 std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, const SongSection& s, uint32_t seed, int bpb)
 {
     Rand r (seed ^ hashStr (part) ^ (hashStr (s.name) * 31u) ^ (uint32_t) s.startBar);
@@ -950,6 +1142,8 @@ std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, co
     else if (part == "melody") v = melodyPart (p, s, seed, bpb);
     const auto var = p.variants.find (part);
     if (var != p.variants.end() && var->second != 0) mutateNotes (p, part, v, var->second ^ (hashStr (s.name) * 97u) ^ (uint32_t) s.startBar, bpb);
+    if (p.style >= 2) signature2Notes (p, part, s, v, bpb);
+    if (p.humanize > 0) humanizeNotes (p, part, s, v, seed, bpb);
     sortNotes (v);
     return v;
 }
@@ -1059,10 +1253,11 @@ std::vector<std::vector<int>> progressionBank (const std::string& g)
     return {};
 }
 
-MusicPlan defaultPlan (const std::string& genre)
+MusicPlan defaultPlan (const std::string& genre, int style)
 {
     MusicPlan p;
     p.genre = genre;
+    p.style = style >= 2 ? 2 : 1;
     p.sections = { { "Intro", 0, 2, -0.6f }, { "A", 2, 4, 0.0f }, { "B", 6, 4, 0.3f }, { "Break", 10, 2, -0.5f }, { "Final", 12, 4, 0.5f },
                    { "Cierre", 16, 1, -0.2f } }; // misión 0.6: la canción termina (acorde de tónica que se apaga), no se corta
     p.seeds = { { "drums", 11 }, { "bass", 23 }, { "chords", 37 }, { "melody", 41 }, { "pad", 53 } };
@@ -1075,6 +1270,13 @@ MusicPlan defaultPlan (const std::string& genre)
     else if (genre == "jazzrap") { p.keyRoot = 5; p.minor = false; p.progression = { 1, 4, 0, 5 }; }   // Solm9 - Do9 - Fa(maj7)9 - Rem9 (ii-V-I-vi)
     else if (genre == "darkhiphop") { p.keyRoot = 0; p.minor = true; p.progression = { 0, 0, 5, 1 }; } // Dom - Dom - Lab - Re°
     else return MusicPlan();
+    if (p.style >= 2)
+    {
+        // «Signature 2»: forma de canción (Intro, Verso, Coro, Verso 2, Coro 2, Cierre) con frases de 8 compases.
+        p.sections = { { "Intro", 0, 4, -0.6f }, { "Verso", 4, 8, -0.1f }, { "Coro", 12, 8, 0.45f }, { "Verso 2", 20, 8, 0.0f },
+                       { "Coro 2", 28, 8, 0.55f }, { "Cierre", 36, 1, -0.2f } };
+        p.humanize = 0.4f;
+    }
     return p;
 }
 } // namespace composer

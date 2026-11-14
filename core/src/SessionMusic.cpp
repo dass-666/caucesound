@@ -1,6 +1,7 @@
 // Session: instrumentos, patrones de batería, clips MIDI, bucle y plantillas de género (fase 1.2).
 #include "cs/Composer.h"
 #include "cs/Instruments.h"
+#include "cs/Packs.h"
 #include "cs/FxChains.h"
 #include "cs/Session.h"
 
@@ -650,6 +651,50 @@ const std::vector<GenreDef>& genreDefs()
     return d;
 }
 
+// --- 0.10 «Signature 2»: los sonidos de los paquetes 2.0 para cada estilo -------------------------------------------
+// Cada entrada cambia el sonido de un papel si su paquete está instalado; si no lo está, la pista conserva el
+// sintetizador de la plantilla de siempre (la canción se crea igual, y el resultado lo dice). Los ajustes de volumen se
+// calibraron midiendo cada papel respecto a la batería para conservar el balance de la 0.6 (cs_render --compare10).
+struct Sig2Sound { const char* role; const char* key; float trimDb; };
+struct Sig2Def
+{
+    const char* id;
+    const char* kit;      // kit de muestras ("" = se queda el kit sintetizado)
+    float drumsTrimDb;
+    float laneDb[kDrumLanes];
+    std::vector<Sig2Sound> sounds;
+};
+const std::vector<Sig2Def>& sig2Defs()
+{
+    static const std::vector<Sig2Def> d = {
+        // Ajustes medidos el 2026-11-14 con cs_render --compare10 (RMS de cada papel a solas, canción entera, misma
+        // composición con sintetizador y con muestras). Los teclados y el colchón de muestras salen entre 14 y 21 dB más
+        // fuertes que los sintetizadores a igual fader: sin este ajuste tres estilos recortaban la mezcla.
+        { "trap", "cauce.drums.two:midnight-trap", -0.5f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.two:808-punch", -6.0f }, { "pad", "cauce.keys.two:night-pad", -15.5f } } },
+        { "reggaeton", "cauce.drums.two:calle-reggaeton", 0.0f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.two:808-short", -5.5f }, { "pad", "cauce.keys.two:night-pad", -15.0f } } },
+        { "hiphop", "cauce.drums.two:organic-hiphop", 0.5f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.two:warm-sub", -4.0f }, { "chords", "cauce.keys.two:warm-ep", -21.0f } } },
+        { "boombap", "cauce.drums.two:crate-boombap", 1.0f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.electric:electric-bass", -1.5f }, { "chords", "cauce.keys.two:warm-ep", -18.0f } } },
+        { "jazzrap", "cauce.drums.two:soul-pocket", -3.0f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.electric:electric-bass", -1.0f }, { "chords", "cauce.keys.two:warm-ep", -14.0f } } },
+        { "darkhiphop", "cauce.drums.two:midnight-trap", -1.0f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.two:808-punch", -0.5f }, { "pad", "cauce.keys.two:night-pad", -14.5f } } },
+        { "pop", "cauce.drums.two:organic-hiphop", -0.5f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "bass", "cauce.bass.electric:electric-bass", -1.0f }, { "chords", "cauce.keys.two:glass-pluck", -19.0f }, { "pad", "cauce.keys.two:night-pad", -15.5f } } },
+        { "electronic", "", 0.0f, { 0, 0, 0, 0, 0, 0, 0, 0 },
+          { { "chords", "cauce.keys.two:glass-pluck", -20.0f }, { "pad", "cauce.keys.two:night-pad", -16.0f } } },
+    };
+    return d;
+}
+const Sig2Def* findSig2 (const std::string& id)
+{
+    for (const auto& g : sig2Defs()) if (id == g.id) return &g;
+    return nullptr;
+}
+
 const GenreDef* findGenre (const std::string& id)
 {
     for (const auto& g : genreDefs()) if (id == g.id) return &g;
@@ -739,11 +784,16 @@ void Session::composeTrackLocked (TrackModel& t, const MusicPlan& plan, const st
 
 void Session::applyTemplateLocked (const std::string& templateId)
 {
-    const GenreDef* def = findGenre (templateId);
+    // "trap@2" = el estilo trap en modo «Signature 2» (0.10). Sin sufijo, la plantilla de siempre, sin ningún cambio.
+    const size_t at = templateId.find ('@');
+    const int style = at != std::string::npos && templateId.substr (at + 1) == "2" ? 2 : 1;
+    const GenreDef* def = findGenre (templateId.substr (0, at));
+    const Sig2Def* sig = def && style == 2 ? findSig2 (def->id) : nullptr;
+    lastTemplateNotes.clear();
     proj.templateId = def ? def->id : "empty";
     const Tick bar = (Tick) kPpq * proj.beatsPerBar;
-    proj.loopStart = 2 * bar; // bucle preparado sobre la sección A (desactivado)
-    proj.loopEnd = 6 * bar;
+    proj.loopStart = (sig ? 4 : 2) * bar; // bucle preparado sobre la sección A o el primer verso (desactivado)
+    proj.loopEnd = (sig ? 12 : 6) * bar;
     if (! def)
     {
         proj.loopStart = 0;
@@ -752,7 +802,7 @@ void Session::applyTemplateLocked (const std::string& templateId)
         return;
     }
     proj.bpm = def->bpm;
-    MusicPlan plan = composer::defaultPlan (def->id);
+    MusicPlan plan = composer::defaultPlan (def->id, sig ? 2 : 1);
 
     // Bus de reverb compartido (se crea antes para poder enviar a él).
     addTrack ("Reverb", "bus");
@@ -791,7 +841,8 @@ void Session::applyTemplateLocked (const std::string& templateId)
             DrumPattern p = it->second;
             p.id = newId ("pat");
             static const std::map<std::string, std::string> names = { { "intro", "Intro" }, { "main", "A" }, { "var", "B" }, { "varCrash", "B + crash" }, { "fill", "Remate" }, { "break", "Break" }, { "end", "Cierre" } };
-            p.name = names.at (key);
+            static const std::map<std::string, std::string> names2 = { { "intro", "Intro" }, { "main", "Verso" }, { "var", "Coro" }, { "varCrash", "Coro + platillo" }, { "fill", "Remate" }, { "break", "Puente" }, { "end", "Cierre" } };
+            p.name = (sig ? names2 : names).at (key);
             plan.patternIds[key] = p.id;
             d.patterns.push_back (p);
         }
@@ -811,6 +862,24 @@ void Session::applyTemplateLocked (const std::string& templateId)
             }
         }
         d.volumeDb = def->drumsDb;
+        if (sig && sig->kit[0])
+        {
+            InstalledPack pack;
+            PackInstrument info;
+            nlohmann::json st2 = st;
+            st2["sampleKit"] = sig->kit;
+            auto inst = std::dynamic_pointer_cast<Instrument> (createProcessor ("cs.drums"));
+            bool ok = packLibrary().findInstrument (sig->kit, pack, info) && info.kind == "drumkit" && inst;
+            if (ok)
+            {
+                st2["sampleKitVersion"] = pack.manifest.version;
+                for (int l = 0; l < kDrumLanes; ++l) st2["vol" + std::to_string (l)] = sig->laneDb[l];
+                ok = inst->loadState (st2.dump());
+                if (ok) { inst->prepare (proj.sampleRate, 1024); ok = samplerStatus (inst.get()).loaded; }
+            }
+            if (ok) { d.instrument.state = inst->saveState(); d.volumeDb = def->drumsDb + sig->drumsTrimDb; }
+            else lastTemplateNotes.push_back (std::string ("Batería: falta el kit ") + sig->kit + "; se usa el kit sintetizado");
+        }
         d.sends[busId] = def->drumsSend;
         // Compresión suave de «pegamento» en la batería (más pegada sin aplastar los transitorios).
         ProcessorPtr comp = configured ("cs.compressor", { { "thresholdDb", -14 }, { "ratio", 2.5f }, { "attackMs", 18 }, { "releaseMs", 120 }, { "makeupDb", 1.5f } });
@@ -837,6 +906,25 @@ void Session::applyTemplateLocked (const std::string& templateId)
             s.midiClips.push_back (c);
         }
         s.volumeDb = part.volDb;
+        if (sig)
+            for (const auto& snd : sig->sounds)
+            {
+                if (std::string (snd.role) != part.role) continue;
+                InstalledPack pack;
+                PackInstrument info;
+                auto inst = std::dynamic_pointer_cast<Instrument> (createProcessor ("cs.sampler"));
+                bool ok = packLibrary().findInstrument (snd.key, pack, info) && info.kind == "melodic" && inst;
+                if (ok) ok = inst->loadState (nlohmann::json { { "instrument", snd.key }, { "packVersion", pack.manifest.version } }.dump());
+                if (ok) { inst->prepare (proj.sampleRate, 1024); ok = samplerStatus (inst.get()).loaded; }
+                if (ok)
+                {
+                    s.instrument.type = "cs.sampler";
+                    s.instrument.state = inst->saveState();
+                    s.instrument.preset = snd.key;
+                    s.volumeDb = part.volDb + snd.trimDb;
+                }
+                else lastTemplateNotes.push_back (std::string (part.name) + ": falta " + snd.key + "; se usa el sintetizador");
+            }
         s.pan = part.pan;
         if (part.send > 0) s.sends[busId] = part.send;
         if (std::string (part.role) == "melody")
@@ -883,7 +971,8 @@ std::set<std::string> musicalEvents (const TrackModel& t)
 {
     std::set<std::string> e;
     for (const auto& c : t.midiClips)
-        for (const auto& n : c.notes) e.insert (std::to_string (c.start) + "|" + std::to_string (n.start) + "|" + std::to_string (n.key));
+        // El inicio se redondea a 1/16 de negra: la humanización (0.10, hasta 14 ticks) no cuenta como otra nota.
+        for (const auto& n : c.notes) e.insert (std::to_string (c.start) + "|" + std::to_string ((n.start + 30) / 60) + "|" + std::to_string (n.key));
     for (const auto& p : t.patterns)
         for (size_t l = 0; l < p.lanes.size(); ++l)
             for (size_t s = 0; s < p.lanes[l].size(); ++s)
@@ -1080,6 +1169,34 @@ OpResult Session::regenerateBeat (uint32_t seed)
         }
         return touched;
     });
+}
+
+// 0.10: cuánto se «toca a mano» (0 = cuadrado, 1 = máximo). Vuelve a escribir las partes generadas sin candado con las
+// mismas semillas: las notas son las mismas, cambian su colocación fina y su fuerza. Se puede deshacer.
+OpResult Session::setHumanize (float amount)
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    if (! std::isfinite (amount)) return OpResult::fail ("valor no válido");
+    MusicPlan plan;
+    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan)) return OpResult::fail ("este proyecto no tiene plan musical");
+    plan.humanize = std::clamp (amount, 0.0f, 1.0f);
+    pushUndo();
+    for (auto& t : proj.tracks)
+    {
+        auto it = plan.roles.find (t.id);
+        if (it == plan.roles.end()) continue;
+        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+        composeTrackLocked (t, plan, it->second);
+    }
+    proj.music = plan.toJson();
+    return finishEditLocked();
+}
+
+std::vector<std::string> Session::templateNotes() const
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    return lastTemplateNotes;
 }
 
 OpResult Session::setPartLocked (const std::string& trackId, bool locked)

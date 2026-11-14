@@ -150,6 +150,10 @@ public:
     // Respeta las pistas bloqueadas. Una sola entrada de deshacer: deshacer/rehacer sirve para comparar versiones.
     OpResult varyPart (const std::string& part, uint32_t seed, float energy = 0, bool setEnergy = false);
     OpResult setPartLocked (const std::string& trackId, bool locked);
+    // 0.10 «Signature 2»: humanización de las partes generadas (0..1) y avisos de la última plantilla creada (sonidos
+    // de paquete que faltaban y se sustituyeron por el sintetizador). createProject admite "<estilo>@2".
+    OpResult setHumanize (float amount);
+    std::vector<std::string> templateNotes() const;
     // 0.8 — Variar: conserva la identidad de la parte (misma semilla base, mismos acordes) y solo cambia detalles
     // (charles, notas fantasma, saltos de octava, alguna nota del motivo). Un paso de deshacer. part: como varyPart.
     OpResult mutatePart (const std::string& part, uint32_t seed);
@@ -306,6 +310,7 @@ private:
     std::shared_ptr<Instrument> instrumentFor (const TrackModel& t);
     void applyLoopLocked();
     void applyTemplateLocked (const std::string& templateId);
+    std::vector<std::string> lastTemplateNotes; // 0.10: sonidos de «Signature 2» que faltaban al crear (se usó el sintetizador)
     void composeTrackLocked (TrackModel& t, const MusicPlan& plan, const std::string& role);
     // Aplica una variación con reintentos y medición del cambio (0.9.2). apply recompone las pistas con la semilla
     // del intento y devuelve los ids tocados; minChange es el cambio medio mínimo para aceptarla.
