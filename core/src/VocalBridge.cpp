@@ -59,6 +59,9 @@ bool Params::fromJson (const std::string& text, Params& out)
 
 #ifndef CS_WITH_VOCALSHIFT
 std::shared_ptr<AudioProcessor> createLiveInsertPoC() { return nullptr; }
+bool liveInsertOverloaded (const AudioProcessor*) { return false; }
+void setLiveOverloadThreshold (double) {}
+std::string benchLiveInsert (double) { return "{\"ok\":false,\"error\":\"VocalShift no está en esta compilación\"}"; }
 bool available() { return false; }
 std::vector<PresetInfo> presets() { return {}; }
 std::string process (const AudioData&, Frame, Frame, const Params&, const Sink&, std::atomic<float>*, const std::atomic<bool>*, Stats*, double)
@@ -219,6 +222,8 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
 // --- 0.9.2: prueba de concepto de inserción en vivo ----------------------------------------------------------------
 namespace
 {
+std::atomic<double> gOverloadThreshold { 0.5 };
+
 class VocalShiftLivePoC final : public AudioProcessor
 {
 public:
@@ -227,21 +232,37 @@ public:
     {
         // Puede reservar memoria: el motor lo llama en el hilo de control al construir el grafo, nunca en el de audio.
         rate = sr;
-        chain.prepare (sr, 2, std::max (64, maxBlock));
+        block = std::max (64, maxBlock);
+        chain.prepare (sr, 2, block);
         applyParams();
-        chain.prepare (sr, 2, std::max (64, maxBlock)); // «clava» los suavizados en el valor inicial (como offline)
+        chain.prepare (sr, 2, block); // «clava» los suavizados en el valor inicial (como offline)
         applyParams();
         chain.reset();
         latency = chain.latencySamples();
+        for (auto& d : dry) d.assign ((size_t) std::max (1, latency), 0.0f);
+        for (auto& d : dryOut) d.assign ((size_t) block, 0.0f);
+        dryPos = 0;
+        fadeStep = (float) (1.0 / (0.010 * sr)); // 10 ms
     }
-    void reset() override { chain.reset(); }
+    void reset() override
+    {
+        chain.reset();
+        for (auto& d : dry) std::fill (d.begin(), d.end(), 0.0f);
+        dryPos = 0;
+        // Volver a pulsar Play (o saltar) rearma la protección: el motor reinicia las inserciones en ese momento.
+        ema = 0; hot = 0; wet = 1.0f;
+        tripped.store (false, std::memory_order_relaxed);
+    }
     int latencySamples() const override { return latency; }
     int tailSamples() const override { return (int) (1.5 * rate); }
     void process (float* const* io, int numChannels, int numFrames) override
     {
-        if (dirty.exchange (false, std::memory_order_acq_rel)) applyParams(); // tiempo real: solo copia ajustes
-        if (numChannels >= 2) chain.process (io, 2, numFrames);
-        else if (numChannels == 1) { float* two[2] = { io[0], io[0] }; chain.process (two, 1, numFrames); }
+        for (int done = 0; done < numFrames; done += block)
+        {
+            const int n = std::min (block, numFrames - done);
+            float* part[2] = { io[0] + done, (numChannels >= 2 ? io[1] : io[0]) + done };
+            processBlock (part, numChannels >= 2 ? 2 : 1, n);
+        }
     }
     std::vector<ParameterInfo> parameters() const override
     {
@@ -256,8 +277,45 @@ public:
         dirty.store (true, std::memory_order_release);
     }
     float getParameter (int index) const override { return index >= 0 && index < 5 ? values[index].load() : 0.0f; }
+    bool overloaded() const { return tripped.load (std::memory_order_relaxed); }
+    long overloads() const { return trips.load (std::memory_order_relaxed); }
 
 private:
+    // Protección contra sobrecarga (0.10): si el efecto, él solo, gasta de forma sostenida más de la mitad del tiempo
+    // real, deja de procesar y pasa la señal SECA con el mismo retardo (la pista sigue alineada por el PDC), con un
+    // fundido de 10 ms para que el cambio no haga clic. Se rearma al volver a pulsar Play. Es preferible perder el
+    // efecto a que toda la canción se entrecorte.
+    void processBlock (float* const* io, int ch, int n)
+    {
+        if (dirty.exchange (false, std::memory_order_acq_rel)) applyParams(); // tiempo real: solo copia ajustes
+        // Línea de retardo de la señal seca (siempre al día, cuesta una copia).
+        const int len = (int) dry[0].size();
+        for (int c = 0; c < 2; ++c)
+        {
+            const float* in = io[c < ch ? c : 0];
+            int p = dryPos;
+            for (int i = 0; i < n; ++i) { dryOut[(size_t) c][(size_t) i] = dry[(size_t) c][(size_t) p]; dry[(size_t) c][(size_t) p] = in[i]; if (++p >= len) p = 0; }
+        }
+        dryPos = (dryPos + n) % len;
+        const bool off = tripped.load (std::memory_order_relaxed);
+        if (! off || wet > 0.0f)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            if (ch >= 2) chain.process (io, 2, n);
+            else { float* two[2] = { io[0], io[0] }; chain.process (two, 1, n); }
+            const double load = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count() / ((double) n / rate);
+            ema = 0.8 * ema + 0.2 * load;
+            hot = ema > gOverloadThreshold.load (std::memory_order_relaxed) ? hot + 1 : 0;
+            if (! off && hot >= 8) { tripped.store (true, std::memory_order_relaxed); trips.fetch_add (1, std::memory_order_relaxed); }
+        }
+        if (! tripped.load (std::memory_order_relaxed) && wet >= 1.0f) return;
+        const float target = tripped.load (std::memory_order_relaxed) ? 0.0f : 1.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            wet = target > wet ? std::min (target, wet + fadeStep) : std::max (target, wet - fadeStep);
+            for (int c = 0; c < ch; ++c) io[c][i] = wet * io[c][i] + (1.0f - wet) * dryOut[(size_t) c][(size_t) i];
+        }
+    }
     void applyParams()
     {
         Params p;
@@ -267,12 +325,78 @@ private:
     }
     ::vs::VocalChain chain;
     double rate = 48000;
-    int latency = 0;
+    int latency = 0, block = 1024, dryPos = 0, hot = 0;
+    double ema = 0;
+    float wet = 1.0f, fadeStep = 0.002f;
+    std::vector<float> dry[2], dryOut[2];
     std::atomic<float> values[5] { { 7.0f }, { 65.0f }, { 70.0f }, { 1.0f }, { -12.0f } };
-    std::atomic<bool> dirty { false };
+    std::atomic<bool> dirty { false }, tripped { false };
+    std::atomic<long> trips { 0 };
 };
 } // namespace
 
 std::shared_ptr<AudioProcessor> createLiveInsertPoC() { return std::make_shared<VocalShiftLivePoC>(); }
+bool liveInsertOverloaded (const AudioProcessor* p) { const auto* v = dynamic_cast<const VocalShiftLivePoC*> (p); return v && v->overloaded(); }
+void setLiveOverloadThreshold (double fractionOfRealTime) { gOverloadThreshold.store (fractionOfRealTime); }
+
+// Medición para decidir si el efecto en vivo cabe en un teléfono (se ejecuta en el hilo de control, sin audio): procesa
+// 'seconds' de una voz sintética en bloques de 192 frames, como el callback del teléfono, y mide el coste medio, el
+// peor bloque y la ráfaga del arranque (lo que cuesta cebar el efecto al pulsar Play).
+std::string benchLiveInsert (double seconds)
+{
+    nlohmann::json out = { { "ok", false } };
+    auto fx = createLiveInsertPoC();
+    if (! fx) { out["error"] = "VocalShift no está en esta compilación"; return out.dump(); }
+    const double sr = 48000.0;
+    const int block = 192;
+    fx->prepare (sr, 1024);
+    seconds = std::clamp (seconds, 1.0, 30.0);
+    const int blocks = (int) (seconds * sr / block);
+    std::vector<float> l ((size_t) block), r ((size_t) block);
+    float* io[2] = { l.data(), r.data() };
+    double ph = 0, total = 0, worst = 0;
+    long n = 0;
+    auto fill = [&] (int count)
+    {
+        for (int i = 0; i < count; ++i, ++n)
+        {
+            const double t = (double) n / sr;
+            ph += 2.0 * 3.14159265358979 * 196.0 * (1.0 + 0.01 * std::sin (2 * 3.14159265358979 * 5.0 * t)) / sr;
+            double v = 0;
+            for (int h = 1; h <= 8; ++h) v += std::sin (ph * h) / h;
+            l[(size_t) i] = r[(size_t) i] = (float) (0.25 * v * (0.5 - 0.5 * std::cos (2 * 3.14159265358979 * std::fmod (t, 0.5) / 0.5)));
+        }
+    };
+    for (int b = 0; b < blocks; ++b)
+    {
+        fill (block);
+        const auto t0 = std::chrono::steady_clock::now();
+        fx->process (io, 2, block);
+        const double dt = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+        total += dt;
+        if (b > 8) worst = std::max (worst, dt);
+    }
+    // Ráfaga de arranque: reinicio + (calentamiento + latencia) frames seguidos, como Engine::primeLatentTracks.
+    const int prime = fx->latencySamples() + std::min (fx->latencySamples(), (int) sr / 4);
+    const auto t0 = std::chrono::steady_clock::now();
+    fx->reset();
+    for (int done = 0; done < prime; done += block) { fill (block); fx->process (io, 2, block); }
+    const double burst = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
+    const double blockSec = block / sr;
+    out = { { "ok", true }, { "seconds", seconds }, { "latencyMs", 1000.0 * fx->latencySamples() / sr },
+            { "cpuPercentOfOneCore", std::round (1000.0 * total / (blocks * blockSec)) / 10.0 },
+            { "worstBlockPercent", std::round (1000.0 * worst / blockSec) / 10.0 },
+            { "startBurstMs", std::round (10000.0 * burst) / 10.0 }, { "blockMs", std::round (10000.0 * blockSec) / 10.0 },
+            { "protectionTripped", liveInsertOverloaded (fx.get()) },
+#if defined(__aarch64__)
+            { "arch", "arm64" },
+#elif defined(__x86_64__)
+            { "arch", "x86-64" },
+#else
+            { "arch", "otra" },
+#endif
+    };
+    return out.dump();
+}
 #endif
 } // namespace cs::vocal

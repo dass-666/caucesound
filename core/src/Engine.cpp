@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <thread>
 #if defined(__SSE__) || defined(_M_X64)
 #include <xmmintrin.h>
 #endif
@@ -83,8 +84,27 @@ void Engine::collectGarbage()
     while (trash.pop (&g, 1) == 1) delete g;
 }
 
+bool Engine::settle (int timeoutMs)
+{
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + std::chrono::milliseconds (std::max (0, timeoutMs));
+    const uint32_t beat = blocksSeen.load (std::memory_order_relaxed);
+    while (pending.load (std::memory_order_acquire) != nullptr)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        // Sin latido en 20 ms el audio está parado (o no hay hilo de audio, como en las herramientas offline): no
+        // tiene sentido retener al hilo de control; el grafo anterior se liberará cuando el audio vuelva a procesar.
+        const bool silent = blocksSeen.load (std::memory_order_relaxed) == beat && now - start >= std::chrono::milliseconds (20);
+        if (now >= deadline || silent) { collectGarbage(); return false; }
+        std::this_thread::sleep_for (std::chrono::milliseconds (1));
+    }
+    collectGarbage();
+    return true;
+}
+
 void Engine::adoptPendingGraph()
 {
+    blocksSeen.fetch_add (1, std::memory_order_relaxed);
     RenderGraph* g = pending.exchange (nullptr, std::memory_order_acq_rel);
     if (! g) return;
     // Con el transporte en marcha, si el plan de eventos de un instrumento cambió, puede faltar el Note Off de una
@@ -272,6 +292,71 @@ void Engine::addSends (const TrackRT& t, const float* l, const float* r, int n, 
     }
 }
 
+// Suma a tl/tr (desde 'offset') el audio de los clips de la pista entre 'from' y 'from + count'. Devuelve si había clips.
+bool Engine::renderClipAudio (const TrackRT& t, Frame from, int count, float* tl, float* tr, int offset)
+{
+    bool any = false;
+    const Frame to = from + count;
+    for (const auto& c : t.clips)
+    {
+        if (c.start >= to) break; // ordenados por inicio
+        const Frame cEnd = c.start + c.length;
+        if (cEnd <= from || ! c.data) continue;
+        const Frame a0 = std::max (from, c.start), a1 = std::min (to, cEnd);
+        const AudioData& d = *c.data;
+        const Frame srcFrames = d.numFrames();
+        const float* s0 = d.channels[0].data();
+        const float* s1 = d.numChannels() > 1 ? d.channels[1].data() : s0;
+        for (Frame x = a0; x < a1; ++x)
+        {
+            const Frame rel = x - c.start;
+            const Frame src = c.sourceOffset + rel;
+            if (src < 0 || src >= srcFrames) continue;
+            float gn = c.gain;
+            if (rel < c.fadeIn) gn *= (float) rel / (float) c.fadeIn;
+            if (c.fadeOut > 0 && rel >= c.length - c.fadeOut) gn *= (float) (c.length - 1 - rel) / (float) c.fadeOut;
+            const int i = offset + (int) (x - from);
+            tl[i] += s0[src] * gn;
+            tr[i] += s1[src] * gn;
+        }
+        any = true;
+    }
+    return any;
+}
+
+// 0.10 (experimental, solo afecta a pistas con inserciones que declaran latencia; hoy, únicamente la prueba de concepto
+// oculta de VocalShift en vivo). El PDC hace que una pista con latencia L lea su contenido L frames por delante. Al
+// pulsar Play o al saltar, las inserciones están vacías (o, peor, guardan audio del punto anterior): sin esto, los
+// primeros L frames tras el arranque salían en silencio y, tras un salto, sonaba una cola del sitio anterior. Aquí se
+// reinician y se «ceban» con el audio de [pos - calentamiento, pos + L) descartando la salida, de modo que el primer
+// bloque audible ya es el contenido de 'pos'. Cuesta procesar (calentamiento + L) frames de golpe en ese bloque: es
+// una ráfaga de CPU que hay que medir en el teléfono (ver docs/VOCALSHIFT_LIVE_STUDY.md). Las notas MIDI de pistas de
+// instrumento con latencia no se ceban (se procesaría silencio).
+void Engine::primeLatentTracks (const RenderGraph* g, Frame position)
+{
+    if (! g) return;
+    float* tl = trackL.data();
+    float* tr = trackR.data();
+    for (const auto& t : g->tracks)
+    {
+        if (t.busIndex >= 0 || t.latency <= 0 || t.inserts.empty()) continue;
+        for (const auto& fx : t.inserts) fx->reset();
+        const Frame to = position + t.latency;
+        Frame from = position - std::min<Frame> (t.latency, (Frame) rate / 4);
+        while (from < to)
+        {
+            const int n = (int) std::min<Frame> (maxBlock, to - from);
+            std::fill (tl, tl + n, 0.0f);
+            std::fill (tr, tr + n, 0.0f);
+            renderClipAudio (t, from, n, tl, tr, 0);
+            float* io[2] = { tl, tr };
+            for (const auto& fx : t.inserts) fx->process (io, 2, n);
+            from += n;
+        }
+        primesOut.fetch_add (1, std::memory_order_relaxed);
+    }
+}
+
 void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, float* L, float* R, int n)
 {
     std::fill (L, L + n, 0.0f);
@@ -357,31 +442,7 @@ void Engine::renderBlock (const RenderGraph* g, Frame position, bool rolling, fl
         // activo, la lectura adelantada también da la vuelta (y suelta sus notas en su propio punto de reinicio).
         auto renderContent = [&] (Frame from, int count, int offset)
         {
-            const Frame to = from + count;
-            for (const auto& c : t.clips)
-            {
-                if (c.start >= to) break; // ordenados por inicio
-                const Frame cEnd = c.start + c.length;
-                if (cEnd <= from || ! c.data) continue;
-                const Frame a0 = std::max (from, c.start), a1 = std::min (to, cEnd);
-                const AudioData& d = *c.data;
-                const Frame srcFrames = d.numFrames();
-                const float* s0 = d.channels[0].data();
-                const float* s1 = d.numChannels() > 1 ? d.channels[1].data() : s0;
-                for (Frame x = a0; x < a1; ++x)
-                {
-                    const Frame rel = x - c.start;
-                    const Frame src = c.sourceOffset + rel;
-                    if (src < 0 || src >= srcFrames) continue;
-                    float gn = c.gain;
-                    if (rel < c.fadeIn) gn *= (float) rel / (float) c.fadeIn;
-                    if (c.fadeOut > 0 && rel >= c.length - c.fadeOut) gn *= (float) (c.length - 1 - rel) / (float) c.fadeOut;
-                    const int i = offset + (int) (x - from);
-                    tl[i] += s0[src] * gn;
-                    tr[i] += s1[src] * gn;
-                }
-                any = true;
-            }
+            any = renderClipAudio (t, from, count, tl, tr, offset) || any;
             if (t.instrument) { renderInstrument (t, from, true, tl + offset, tr + offset, count, offset); any = true; }
         };
         if (t.busIndex >= 0) {}
@@ -498,7 +559,7 @@ void Engine::process (const float* input, int inChannels, float* output, int out
     adoptPendingGraph();
     const RenderGraph* g = active;
     const Frame s = seekRequest.exchange (-1, std::memory_order_acq_rel);
-    if (s >= 0) { pos = s; notesOff (g, false); }
+    if (s >= 0) { pos = s; notesOff (g, false); needPrime = true; }
     drainLive (g);
 
     float mPeak = 0.0f;
@@ -519,6 +580,7 @@ void Engine::process (const float* input, int inChannels, float* output, int out
         if (counting && (Frame) n > countInLeft) n = (int) countInLeft;
         const bool rolling = transportOn && ! counting;
         if (prevRolling && ! rolling) notesOff (g, false); // stop: las notas pasan a release
+        if (rolling && (! prevRolling || needPrime)) { primeLatentTracks (g, pos); needPrime = false; } // arranque o salto
         prevRolling = rolling;
         const bool looping = rolling && loopOn.load (std::memory_order_relaxed) && ! recording.load (std::memory_order_relaxed);
         const Frame lEnd = loopEnd.load (std::memory_order_relaxed);
@@ -675,6 +737,7 @@ bool Engine::renderOffline (Frame from, float* left, float* right, Frame frames,
             for (const auto& fx : t.inserts) fx->reset();
             if (t.instrument) t.instrument->reset();
         }
+    primeLatentTracks (g, from); // sin esto la exportación perdía los primeros L frames de una pista con latencia
     blockLooping = false; // la exportación es lineal
     Frame done = 0;
     while (done < frames)

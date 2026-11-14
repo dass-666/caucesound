@@ -59,6 +59,33 @@ contarla y mide solo `process()`.
 Coste estimado: 1-2 sesiones de trabajo una vez exista la medición del teléfono. **Recomendación:** hacerlo después de
 que Diego valide la 0.9.2 en el teléfono, no antes.
 
+## Avance de la 0.10 (sigue experimental y oculto)
+
+Esto trata de **procesar una pista ya grabada mientras suena la canción**. No es monitorización del micrófono: con
+150 ms de latencia no sirve para oírse al cantar, y eso no ha cambiado.
+
+Lo que se encontró y se corrigió (todo en x86-64, con una voz sintética; nada en un teléfono):
+
+| Problema | Causa | Qué se hizo | Prueba |
+|---|---|---|---|
+| Al pulsar Play en mitad de una frase, los primeros 150 ms de la pista procesada salían en silencio | El PDC ya leía 150 ms por delante, pero el efecto arrancaba vacío | El motor «ceba» las pistas con latencia al arrancar: procesa por adelantado el tramo anterior y descarta esa salida (`Engine::primeLatentTracks`) | Nivel de los primeros 150 ms: −15,4 dB, igual que en reproducción continua (antes, silencio). Diferencia con la reproducción continua a partir de 300 ms: −49,8 dB |
+| Al saltar durante la reproducción sonaba una cola del sitio anterior | El efecto guardaba 150 ms de audio del punto de origen | En cada salto se reinicia y se ceba de nuevo | Salto a una zona vacía: −180 dB en los 200 ms siguientes |
+| La exportación perdía el principio de una pista con latencia | Mismo motivo | La exportación también ceba | Primeros 100 ms a −0,1 dB del original |
+| Cambiar parámetros mientras suena | Sin medir hasta ahora | Se midió: el motor de VocalShift ya suaviza los cambios | Seis cambios (tono, segunda voz, nivel, magia, carácter): el mayor salto entre muestras es 0,7-0,9 veces el de la señal estable. No hay clics; **si el cambio suena natural hay que escucharlo** |
+| Sobrecarga | No había protección | Si el efecto gasta de forma sostenida más de la mitad del tiempo real, pasa a la señal seca con el mismo retardo (sigue alineada) con un fundido de 10 ms. Se rearma al volver a pulsar Play | Señal seca exacta (−120 dB de diferencia), sin clic |
+| Demasiadas instancias | Sin límite | Máximo 2 por proyecto y solo en pistas de audio, detrás de un interruptor de pruebas (`setExperimental`), apagado por defecto y sin botón en la app | El tercero se rechaza; el catálogo sigue sin ofrecerlo |
+
+**Coste del arranque (lo que queda por resolver):** cebar 300 ms de audio de golpe tardó 6,4-10 ms en x86-64, y un
+bloque de audio dura 4 ms. Es decir, el bloque del arranque ya se pasa de tiempo en un ordenador. En un teléfono será
+peor (inferencia: 3-6 veces). Consecuencia probable: un pequeño corte justo al pulsar Play o al saltar cuando hay una
+pista con VocalShift en vivo. Soluciones posibles, sin implementar: repartir el cebado en varios bloques mientras el
+transporte está parado, o arrancar con la pista seca y fundir al efecto.
+
+**Medición en el teléfono:** Ajustes → «Diagnóstico (experimental)» → «Medir VocalShift en vivo (5 s)». No activa el
+efecto ni toca el proyecto: procesa una voz sintética en bloques de 192 muestras y enseña el porcentaje de un núcleo,
+el peor bloque y lo que cuesta el arranque. En x86-64 dio 2,8 % de un núcleo, peor bloque 8 % y arranque de 10 ms.
+Con esas tres cifras del Samsung se decide si se activa, con cuántas instancias y si hace falta repartir el arranque.
+
 ## Catálogo futuro (estudio; nada de esto se anuncia en la app)
 
 El navegador de plugins de la 0.9.2 separa tres tipos de herramientas, y conviene mantener esa separación:

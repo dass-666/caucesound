@@ -122,6 +122,15 @@ fun VariationsPanel(
             if (i != level && enabled) vary("all", listOf(-0.6f, 0f, 0.6f)[i]) // la misma intensidad no es una versión nueva
         }, Modifier.fillMaxWidth())
 
+        // 0.10: cuánto se «toca a mano». Mismas notas, con pequeñas diferencias de colocación y de fuerza. Se deshace.
+        Text(tr("Humanizar (toque a mano)", "Humanize (played feel)"), color = Palette.TextFaint, fontSize = 12.sp)
+        val feel = when { plan.humanize < 0.15f -> 0; plan.humanize < 0.6f -> 1; else -> 2 }
+        Segmented(listOf(tr("Cuadrado", "Tight"), "Natural", tr("Suelto", "Loose")), feel, { i ->
+            if (i != feel && enabled) actions.setHumanize(listOf(0f, 0.4f, 0.8f)[i])
+        }, Modifier.fillMaxWidth().testTag("humanize"))
+        Text(tr("Vuelve a escribir las partes sin candado con las mismas notas. Si retocaste una pista a mano, bloquéala antes.",
+            "Rewrites unlocked parts with the same notes. If you edited a track by hand, lock it first."), color = Palette.TextFaint, fontSize = 11.sp)
+
         Text(tr("Comparar", "Compare"), color = Palette.TextFaint, fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CauceButton(tr("Versión anterior", "Previous"), actions::undo, Modifier.weight(1f).testTag("variation_previous"), enabled = state.canUndo && enabled, icon = Icons.AutoMirrored.Filled.Undo)

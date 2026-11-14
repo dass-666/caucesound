@@ -251,7 +251,19 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
 
         if (cmd == "state") return s.stateJson();
         if (cmd == "listProjects") return json { { "ok", true }, { "projects", listProjects (str ("root")) } }.dump();
-        if (cmd == "createProject") return result (s.createProject (str ("folder"), str ("name"), 48000, str ("template"))).dump();
+        if (cmd == "createProject")
+        {
+            // 0.10: "style": 2 (o "template": "trap@2") crea la plantilla en modo «Signature 2». Sin eso, la de siempre.
+            std::string tpl = str ("template");
+            if (q.value ("style", 1) == 2 && tpl.find ('@') == std::string::npos && ! tpl.empty() && tpl != "empty") tpl += "@2";
+            json j = result (s.createProject (str ("folder"), str ("name"), 48000, tpl));
+            if (j.value ("ok", false)) j["notes"] = s.templateNotes();
+            return j.dump();
+        }
+        // 0.10, experimental: medición de VocalShift en vivo (no toca el proyecto ni el audio) e interruptor de pruebas.
+        if (cmd == "benchLiveVocal") return vocal::benchLiveInsert (num ("seconds", 5));
+        if (cmd == "setExperimental") { s.setExperimentalLiveVocal (q.value ("liveVocal", false)); return json { { "ok", true }, { "liveVocal", s.experimentalLiveVocal() } }.dump(); }
+        if (cmd == "setHumanize") return result (s.setHumanize ((float) num ("amount"))).dump();
         if (cmd == "catalog") return catalog().dump();
         if (cmd == "packs") return json { { "ok", true }, { "packs", packsJson() } }.dump();
         if (cmd == "configurePacks")
@@ -303,6 +315,7 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             return result (s.applyAutoMix (ch)).dump();
         }
         if (cmd == "autoMixRevert") return result (s.revertAutoMix()).dump();
+        if (cmd == "autoMixCompare") { const OpResult r = s.compareAutoMix(); json j = result (r); if (r.ok) { j["showing"] = r.id; j.erase ("id"); } return j.dump(); }
         if (cmd == "setSamplerInstrument") return result (s.setSamplerInstrument (str ("trackId"), str ("key"))).dump();
         if (cmd == "setDrumSampleKit") return result (s.setDrumSampleKit (str ("trackId"), str ("key"))).dump();
         if (cmd == "previewInstrument")

@@ -64,7 +64,13 @@ std::set<std::string> trackEvents (const json& st, const std::string& trackId)
                     const auto& lanes = p.at ("lanes");
                     for (size_t l = 0; l < lanes.size(); ++l)
                         for (size_t s = 0; s < lanes[l].size(); ++s)
-                            if (lanes[l][s].get<int>() > 0) e.insert (p.value ("id", std::string()) + "|" + std::to_string (l) + "|" + std::to_string (s));
+                            if (lanes[l][s].get<int>() > 0)
+                            {
+                                // Un redoble (varios golpes dentro del paso) es otro sonido: cuenta como cambio.
+                                int roll = 0;
+                                if (p.contains ("rolls") && l < p.at ("rolls").size() && s < p.at ("rolls")[l].size()) roll = p.at ("rolls")[l][s].get<int>();
+                                e.insert (p.value ("id", std::string()) + "|" + std::to_string (l) + "|" + std::to_string (s) + "|" + std::to_string (roll));
+                            }
                 }
     }
     return e;
@@ -299,4 +305,42 @@ TEST (record_without_backing_silences_beat_and_click_only_during_the_take)
     const auto play = r.run (120);
     CHECK_MSG (rms (play) > 1e-3, "después de grabar, el beat vuelve a sonar");
     CHECK (r.cmd ({ { "cmd", "stop" } }).value ("ok", false));
+}
+
+// 0.10 — La CI encontró que «Variar» una sola parte podía cambiar menos del 15 % con algunas semillas (la interfaz
+// las elige al azar; las pruebas anteriores usaban semillas fijas). En la 0.9.2 pasaba en 38 de 400 pulsaciones en
+// Reggaetón, casi siempre la batería: ocho intentos de una sola pasada no bastaban. Aquí se recorre la secuencia de la
+// interfaz (Variar todo, Regenerar, y cada botón de Variar y Rehacer) con muchas semillas en los ocho estilos.
+TEST (variations_reach_the_minimum_change_with_many_seeds)
+{
+    uint32_t rng = 12345;
+    auto next = [&] { rng = rng * 1664525u + 1013904223u; return (long long) (rng % 0xFFFFFFFEu) + 1; };
+    int total = 0, deep = 0;
+    for (const auto& style : kStyles)
+    {
+        int fails = 0;
+        for (int rep = 0; rep < 12; ++rep)
+        {
+            Rig r ("seeds010_" + style);
+            CHECK (r.create (style).value ("ok", false));
+            r.cmd ({ { "cmd", "mutatePart" }, { "part", "all" }, { "seed", next() } });
+            r.cmd ({ { "cmd", "regenerateBeat" }, { "seed", next() } });
+            for (const char* c : { "mutatePart", "varyPart" })
+                for (const auto& p : kParts)
+                {
+                    const json before = r.state();
+                    std::string id;
+                    for (const auto& [i, role] : rolesOf (before)) if (role == p) id = i;
+                    if (id.empty()) continue;
+                    const long long seed = next();
+                    const json res = r.cmd ({ { "cmd", c }, { "part", p }, { "seed", seed } });
+                    const double ch = change (trackEvents (before, id), trackEvents (r.state(), id));
+                    ++total;
+                    if (res.value ("variation", json::object()).value ("attempts", 1) > 8) ++deep;
+                    if (ch < 0.15) { ++fails; CHECK_MSG (false, style + "/" + c + "/" + p + " semilla " + std::to_string (seed) + ": cambio " + std::to_string (ch)); }
+                }
+        }
+        CHECK_MSG (fails == 0, style);
+    }
+    MEASURE ("%d pulsaciones con semillas distintas, todas con cambio >= 15 %%; %d necesitaron más de una pasada", total, deep);
 }

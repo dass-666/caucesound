@@ -105,6 +105,16 @@ class SoundBrowserTest {
         assertEquals(6, catalog.samplerParams.size)
     }
 
+    @Test fun factory_pack_check_names_what_the_build_promised_and_is_missing() {
+        val ids = "cauce.signature.drums,cauce.bass.lab,cauce.bass.electric"
+        assertEquals(emptyList<String>(), com.caucesound.app.data.FactoryPackCheck.missing(ids, packs))
+        assertEquals(emptyList<String>(), com.caucesound.app.data.FactoryPackCheck.missing("", emptyList())) // debug sin paquetes
+        assertEquals(listOf("cauce.bass.lab"), com.caucesound.app.data.FactoryPackCheck.missing(ids, packs.filter { it.id != "cauce.bass.lab" }))
+        // Un paquete incompleto (falta un archivo) cuenta como ausente.
+        val broken = packs.map { if (it.id == "cauce.bass.electric") it.copy(complete = false) else it }
+        assertEquals(listOf("cauce.bass.electric"), com.caucesound.app.data.FactoryPackCheck.missing(ids, broken))
+    }
+
     @Test fun filters_search_categories_genres_and_kind() {
         val all = packs.flatMap { it.instruments }
         assertEquals(listOf("drums", "bass"), SoundBrowserFilter.categories(all)) // solo familias con contenido instalado

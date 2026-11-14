@@ -58,6 +58,8 @@ object Cmd {
     fun routeDrumLane(trackId: String, lane: Int, own: Boolean) = c("routeDrumLane", "trackId" to trackId, "lane" to lane, "own" to own)
     fun mutatePart(part: String, seed: Long) = c("mutatePart", "part" to part, "seed" to seed)
     fun regenerateBeat(seed: Long) = c("regenerateBeat", "seed" to seed)
+    fun benchLiveVocal(seconds: Int) = c("benchLiveVocal", "seconds" to seconds)
+    fun setHumanize(amount: Float) = c("setHumanize", "amount" to amount.toDouble())
     fun setPartLocked(trackId: String, on: Boolean) = c("setPartLocked", "trackId" to trackId, "on" to on)
     fun setSwing(trackId: String, patternId: String, swing: Float) = c("setSwing", "trackId" to trackId, "patternId" to patternId, "swing" to swing.toDouble())
     fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) =
@@ -136,4 +138,5 @@ object Cmd {
         changes.forEach { put(JSONObject().put("trackId", it.trackId).put("volumeDb", it.suggestedVolumeDb.toDouble()).put("pan", it.suggestedPan.toDouble())) }
     })
     fun autoMixRevert() = c("autoMixRevert")
+    fun autoMixCompare() = c("autoMixCompare")
 }

@@ -1,0 +1,90 @@
+{
+  "lockVersion": 1,
+  "comment": "Paquetes de fábrica que DEBE contener un APK preview/release. Lo comprueba Gradle (verifyFactoryPacks). maxTotalBytes (40 MiB) es el presupuesto acordado en la 0.10: seis paquetes, 37001550 bytes.",
+  "maxTotalBytes": 41943040,
+  "packs": [
+    {
+      "id": "cauce.bass.electric",
+      "version": "1.0.0",
+      "license": "CC0-1.0",
+      "manifestSha256": "5d1873a563aa2bd34ebf6b811cc785ebfae7090dcea5326679e7d9a4b7b1e08b",
+      "files": 45,
+      "bytes": 8664825,
+      "instruments": [
+        "electric-bass"
+      ],
+      "zipSha256": "9b255a6116c4d8a8e57b59c6a30e3d4d54b358a612c6c53afee673ca286d3120"
+    },
+    {
+      "id": "cauce.bass.lab",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content",
+      "manifestSha256": "f7b18978b0991226c05b1da2c8a7364d7307fb46dc591ec905394f7ad9d5de48",
+      "files": 13,
+      "bytes": 1651631,
+      "instruments": [
+        "808-lab",
+        "deep-sub"
+      ],
+      "zipSha256": "fe443508782e9bc3357cf008ba505165d044e81a322720c2ebff76433ec2a102"
+    },
+    {
+      "id": "cauce.bass.two",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content",
+      "manifestSha256": "5b98621e0d4fe1734dcc8debe98d9bba9dad43c19ff357281941da2f8e3ed05a",
+      "files": 33,
+      "bytes": 3437494,
+      "instruments": [
+        "808-punch",
+        "808-short",
+        "warm-sub"
+      ],
+      "zipSha256": "55c3e9c07bcbedf140b2c6c81e5610575bcb289770c1e7fe595c46e780fa66ee"
+    },
+    {
+      "id": "cauce.drums.two",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content AND CC0-1.0",
+      "manifestSha256": "290a3dcf1ff8ab143d1d4e3bcf5f0c624d9fad0b3580c5a268be91d160ea35c3",
+      "files": 203,
+      "bytes": 9369180,
+      "instruments": [
+        "crate-boombap",
+        "midnight-trap",
+        "calle-reggaeton",
+        "organic-hiphop",
+        "soul-pocket"
+      ],
+      "zipSha256": "f4af42a405ea97919cf46bdf42c9678b188e1062fe79dd09734c71952d117d4d"
+    },
+    {
+      "id": "cauce.keys.two",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content",
+      "manifestSha256": "adc16243f45cff6c53720f83f0ea1d4b6b8984f818131f70e16bee34f1c4216d",
+      "files": 55,
+      "bytes": 7791685,
+      "instruments": [
+        "warm-ep",
+        "night-pad",
+        "glass-pluck"
+      ],
+      "zipSha256": "84cfcff942cddd0cf40c551e9cd75d08ada1b6eae1461f7a7269d4e9e55de0f0"
+    },
+    {
+      "id": "cauce.signature.drums",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content AND CC0-1.0",
+      "manifestSha256": "5e1b4848ec1336a57080e4bbf7f789be93da4390c2fde430742e441e5af2ecae",
+      "files": 130,
+      "bytes": 6086735,
+      "instruments": [
+        "raw-boombap",
+        "dark-trap",
+        "latin-pulse"
+      ],
+      "zipSha256": "93b54e641822ff56a6bc4f0be343b47800341b11f8f67520d49b9a5888466cd1"
+    }
+  ]
+}

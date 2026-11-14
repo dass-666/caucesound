@@ -115,7 +115,10 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
         while (projects.any { it.name == "$base $n" }) n++
         return "$base $n"
     }
-    fun createNow(tpl: String) { actions.create(autoName(tpl), tpl) }
+    // 0.10: «Signature 2» es un modo opcional de las plantillas (arreglo con verso y coro, y sonidos 2.0). Apagado, se
+    // crea la plantilla de siempre, sin ningún cambio.
+    var signature2 by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    fun createNow(tpl: String) { actions.create(autoName(tpl), if (signature2 && tpl != "empty") "$tpl@2" else tpl) }
     // El botón «Nueva canción» se encoge a solo icono al bajar por la lista, para no tapar el menú de los proyectos.
     val listState = rememberLazyListState()
     val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
@@ -170,6 +173,21 @@ fun HomeScreen(projects: List<ProjectSummary>, templates: List<TemplateInfo>, me
                 }
             }
             item { SectionTitle(tr("Nueva canción", "New song")) }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Surface)
+                        .clickable { signature2 = !signature2 }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("signature2_toggle"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(tr("Signature 2 (en pruebas)", "Signature 2 (beta)"), fontWeight = FontWeight.SemiBold)
+                        Text(tr("Verso y coro, baterías con más carácter y sonidos nuevos. Apagado: las plantillas de siempre.",
+                            "Verse and chorus, drums with more character and new sounds. Off: the classic templates."),
+                            color = Palette.TextDim, style = MaterialTheme.typography.bodySmall)
+                    }
+                    androidx.compose.material3.Switch(signature2, { signature2 = it }, modifier = Modifier.testTag("signature2_switch"))
+                }
+            }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(allTemplates) { id ->
@@ -280,7 +298,7 @@ private fun TemplateCard(id: String, info: TemplateInfo?, onClick: () -> Unit) {
         Modifier.width(140.dp).height(128.dp).clip(shape).background(Palette.Surface)
             .background(Brush.linearGradient(listOf(colors[0].copy(alpha = 0.55f), colors[0].copy(alpha = 0.08f))))
             .border(1.dp, colors[0].copy(alpha = 0.45f), shape)
-            .clickable(onClick = onClick, onClickLabel = tr("Crear canción", "Create song")).padding(14.dp),
+            .clickable(onClick = onClick, onClickLabel = tr("Crear canción", "Create song")).padding(14.dp).testTag("template_$id"),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -80,3 +80,30 @@ mudas y sus datos intactos.
 
 Se regeneran con `cauce_packs <VCSL> <salida> [drums|bass|piano|ebass] [Black And Blue Basses]`
 (`desktop/tools/packbuilder/PackBuilder.cpp`). Las muestras de terceros no están en git.
+
+## Compilaciones reproducibles (0.10)
+
+Hasta la 0.9.2 un APK compilado sin `CAUCE_PACKS` salía sin sonidos de fábrica y sin ningún aviso. Desde la 0.10:
+
+- `packs/factory-packs.lock.json` (en git) registra los paquetes que **debe** llevar un APK preview o release: id,
+  versión, licencia, SHA-256 del manifiesto y del ZIP, instrumentos que usan los proyectos guardados y un tope de
+  tamaño (`maxTotalBytes`) para que el APK no crezca sin decidirlo.
+- `python3 tools/factory_packs.py prepare <carpeta con los ZIP> <salida>` comprueba el SHA-256 de cada ZIP y deja la
+  carpeta con la forma exacta que espera Gradle (`<salida>/packs/<id>/`).
+- La tarea Gradle `verifyFactoryPacks` se ejecuta antes de `assemblePreview` y `assembleRelease` y **detiene la
+  compilación** si falta `CAUCE_PACKS`, falta un paquete o un archivo, un SHA-256 o un tamaño no coinciden, hay un
+  archivo no declarado o un paquete sin registrar, falta la licencia o `PROVENANCE.md`, una fuente no declara origen y
+  licencia, desaparece un instrumento que los proyectos guardados usan, o se supera el tope de tamaño.
+- Tras empaquetar, `verifyPreviewApkPacks` abre el APK y comprueba que cada archivo está dentro con su tamaño.
+- La variante debug (pruebas y CI) sí se compila sin paquetes; si se le pasan, se verifican igual.
+- La app recibe en `BuildConfig.FACTORY_PACKS` lo que la compilación promete y, si al arrancar no lo encuentra
+  completo, lo dice en el explorador de sonidos en lugar de mostrar una biblioteca vacía.
+
+Los ids y las versiones de los paquetes existentes no cambian: los proyectos guardados siguen abriendo igual.
+
+## Uso fuera de Android (por ejemplo, un DAW web)
+
+El paquete no depende de Android: es una carpeta con un manifiesto JSON, mapas SFZ y WAV PCM. El esquema formal del
+manifiesto está en `docs/schemas/cauce-pack.schema.json` (JSON Schema 2020-12) para que otro reproductor pueda
+validarlo sin leer el código C++. Para un navegador hace falta: leer el manifiesto, verificar los SHA-256 (Web Crypto),
+interpretar el subconjunto de SFZ documentado arriba y decodificar WAV. No se ha integrado ningún proyecto externo.

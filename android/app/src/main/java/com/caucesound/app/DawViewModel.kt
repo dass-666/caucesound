@@ -8,6 +8,7 @@ import com.caucesound.app.audio.AudioDecoder
 import com.caucesound.app.audio.AudioGuard
 import com.caucesound.app.audio.NativeEngine
 import com.caucesound.app.data.Cmd
+import com.caucesound.app.data.LiveBench
 import com.caucesound.app.data.CommandResult
 import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.ProjectSummary
@@ -163,6 +164,10 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
             val folder = File(projectsRoot, "p_" + System.currentTimeMillis())
             val r = call(Cmd.createProject(folder.absolutePath, safe, template))
             if (!r.ok) { toast(r.error ?: ""); return@launch }
+            // 0.10: si a «Signature 2» le faltaba algún sonido de paquete, el motor usó el sintetizador y lo dice.
+            r.raw.optJSONArray("notes")?.takeIf { it.length() > 0 }?.let {
+                toast(tr("Faltan sonidos de Signature 2: se usaron los sintetizadores. ", "Signature 2 sounds missing: synths were used. ") + it.optString(0))
+            }
             if (template == "empty") for (i in 1..4) call(Cmd.addTrack(defaultTrackName(i)))
             call(Cmd.save())
             onProjectOpened()
@@ -371,6 +376,19 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun varyPart(part: String, seed: Long, energy: Float?) =
         variation(Cmd.varyPart(part, seed, energy), if (energy != null) tr("Cambiando la intensidad…", "Changing intensity…") else tr("Rehaciendo…", "Redoing…"))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
+    override fun setHumanize(amount: Float) = edit(Cmd.setHumanize(amount))
+
+    /** 0.10: resultado de la medición de VocalShift en vivo (null = sin medir, "…" = midiendo). Solo diagnóstico. */
+    private val _liveBench = MutableStateFlow<String?>(null)
+    val liveBench: StateFlow<String?> = _liveBench
+    fun runLiveBench() {
+        if (_liveBench.value == "…") return
+        _liveBench.value = "…"
+        viewModelScope.launch {
+            val r = call(Cmd.benchLiveVocal(5))
+            _liveBench.value = if (!r.ok) (r.error ?: "error") else LiveBench.describe(r.raw)
+        }
+    }
     override fun mutatePart(part: String, seed: Long) = variation(Cmd.mutatePart(part, seed), tr("Creando una variación…", "Creating a variation…"))
     override fun regenerateBeat(seed: Long) = variation(Cmd.regenerateBeat(seed), tr("Componiendo otra idea…", "Composing another idea…"))
 
@@ -644,6 +662,9 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     private val _autoMixRevertable = MutableStateFlow(false)
     val autoMixRevertable: StateFlow<Boolean> = _autoMixRevertable.asStateFlow()
     override fun autoMixRevert() = edit(Cmd.autoMixRevert()) { _autoMixRevertable.value = false; toast(tr("Mezcla anterior recuperada", "Previous mix restored")) }
+    override fun autoMixCompare() = edit(Cmd.autoMixCompare()) { r ->
+        toast(if (r.raw.optString("showing") == "before") tr("Suena la mezcla ANTERIOR", "Playing the PREVIOUS mix") else tr("Suena la mezcla de AUTOMIX", "Playing the AUTOMIX mix"))
+    }
     fun dismissAutoMix() { _autoMix.value = com.caucesound.app.data.AutoMixUi() }
 
     // --- Sonidos Cauce (misión 0.9) ------------------------------------------------------------------------------
@@ -659,7 +680,12 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         val user = File(packsDir, "user").apply { mkdirs() }
         withContext(Dispatchers.IO) { runCatching { com.caucesound.app.audio.FactoryPacks.install(app.assets, factory) } }
         val json = withContext(control) { NativeEngine.command(Cmd.configurePacks(factory.absolutePath, user.absolutePath)) }
-        _sounds.value = _sounds.value.copy(packs = com.caucesound.app.data.PackParser.packs(json))
+        val packs = com.caucesound.app.data.PackParser.packs(json)
+        // La compilación declara qué sonidos trae: si no están (APK mal construido, copia interrumpida, poco espacio)
+        // se dice con claridad en vez de dejar al usuario con una biblioteca vacía sin explicación.
+        val missing = com.caucesound.app.data.FactoryPackCheck.missing(com.caucesound.app.BuildConfig.FACTORY_PACKS, packs)
+        _sounds.value = _sounds.value.copy(packs = packs, missingFactory = missing)
+        if (missing.isNotEmpty()) toast(tr("Faltan sonidos de fábrica (${missing.size}). Reinstala la app o libera espacio.", "Factory sounds are missing (${missing.size}). Reinstall the app or free up space."))
     }
 
     private suspend fun refreshPacks() {

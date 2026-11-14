@@ -1,0 +1,43 @@
+Idiophones/Struck Idiophones/Claps/Clap_rr1.wav
+Idiophones/Struck Idiophones/Claps/Clap_rr2.wav
+Idiophones/Struck Idiophones/Claps/Clap_rr3.wav
+Idiophones/Struck Idiophones/Claps/Clap_rr4.wav
+Idiophones/Struck Idiophones/Claps/Clap_rr5.wav
+Idiophones/Struck Idiophones/Claps/Clap_rr6.wav
+Idiophones/Struck Idiophones/Guiro/Guiro_Hit_rr1_Mid.wav
+Idiophones/Struck Idiophones/Guiro/Guiro_Hit_rr2_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v1_rr1_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v1_rr2_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v2_rr1_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v2_rr2_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr2_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v4_rr1_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v4_rr2_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav
+Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr2_Mid.wav
+Idiophones/Struck Idiophones/Shaker, Small/Mid_ShakerDouble_Down_rr1.wav
+Idiophones/Struck Idiophones/Shaker, Small/Mid_ShakerDouble_Down_rr2.wav
+Idiophones/Struck Idiophones/Shaker, Small/Mid_ShakerDouble_Up_rr1.wav
+Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_f1.wav
+Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_mp1.wav
+Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v1_rr1_Mid.wav
+Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v1_rr2_Mid.wav
+Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v2_rr1_Mid.wav
+Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v2_rr2_Mid.wav
+Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v3_rr1_Mid.wav
+Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v3_rr2_Mid.wav
+Membranophones/Struck Membranophones/Conga/Conga_HitN_v1_rr1_Sum.wav
+Membranophones/Struck Membranophones/Conga/Conga_HitN_v1_rr2_Sum.wav
+Membranophones/Struck Membranophones/Conga/Conga_HitN_v2_rr1_Sum.wav
+Membranophones/Struck Membranophones/Conga/Conga_HitN_v2_rr2_Sum.wav
+Membranophones/Struck Membranophones/Conga/Conga_HitN_v3_rr1_Sum.wav
+Membranophones/Struck Membranophones/Conga/Conga_HitN_v3_rr2_Sum.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v3_rr1_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v3_rr2_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v6_rr1_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v6_rr2_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v9_rr1_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v9_rr2_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 3/Snare4_Xstick_v2_rr1_Mid.wav
+Membranophones/Struck Membranophones/Snare Drum, Modern 3/Snare4_Xstick_v2_rr2_Mid.wav

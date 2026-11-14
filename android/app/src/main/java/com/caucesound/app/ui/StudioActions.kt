@@ -73,6 +73,7 @@ interface StudioActions {
     /** Nueva versión de una parte (o de todas con "all"); seed 0 = recomponer con la semilla guardada. */
     fun varyPart(part: String, seed: Long, energy: Float? = null) {}
     fun setPartLocked(trackId: String, locked: Boolean) {}
+    fun setHumanize(amount: Float) {}
     fun mutatePart(part: String, seed: Long) {}
     fun regenerateBeat(seed: Long) {}
     /** 0.9.2: escuchar la versión actual desde el comienzo de la parte principal (o seguir si ya suena). */
@@ -139,6 +140,7 @@ interface StudioActions {
     /** AutoMix (0.9, reglas): pide sugerencias de faders (no cambia nada) / devuelve la mezcla anterior. */
     fun autoMixSuggest() {}
     fun autoMixRevert() {}
+    fun autoMixCompare() {}
 }
 
 enum class Panel { ARRANGE, RACK, DRUMS, PIANO, SYNTH, MIXER, FX, VARY, VOCAL, SOLO, SOUNDS }

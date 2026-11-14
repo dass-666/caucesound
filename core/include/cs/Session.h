@@ -32,6 +32,7 @@ struct AutoMixSuggestion
     std::string trackId, name, role, reason;
     float measuredDb = -120;   // RMS de la pista sola (antes del máster) en el tramo analizado
     float targetDb = -120;     // objetivo según su papel, relativo a la batería
+    float referenceDb = -120;  // 0.10: con qué se compara (la batería; para la caja, el bombo a solas)
     float volumeDb = 0, suggestedVolumeDb = 0;
     float pan = 0, suggestedPan = 0;
     bool change = false;
@@ -150,6 +151,14 @@ public:
     // Respeta las pistas bloqueadas. Una sola entrada de deshacer: deshacer/rehacer sirve para comparar versiones.
     OpResult varyPart (const std::string& part, uint32_t seed, float energy = 0, bool setEnergy = false);
     OpResult setPartLocked (const std::string& trackId, bool locked);
+    // 0.10 «Signature 2»: humanización de las partes generadas (0..1) y avisos de la última plantilla creada (sonidos
+    // de paquete que faltaban y se sustituyeron por el sintetizador). createProject admite "<estilo>@2".
+    // 0.10, experimental: permite añadir "cs.vocalshift.live" (VocalShift durante la reproducción) con addInsert. Apagado
+    // por defecto; la app no lo enciende. Ver docs/VOCALSHIFT_LIVE_STUDY.md.
+    void setExperimentalLiveVocal (bool on) { std::lock_guard<std::recursive_mutex> l (mtx); expLiveVocal = on; }
+    bool experimentalLiveVocal() const { std::lock_guard<std::recursive_mutex> l (mtx); return expLiveVocal; }
+    OpResult setHumanize (float amount);
+    std::vector<std::string> templateNotes() const;
     // 0.8 — Variar: conserva la identidad de la parte (misma semilla base, mismos acordes) y solo cambia detalles
     // (charles, notas fantasma, saltos de octava, alguna nota del motivo). Un paso de deshacer. part: como varyPart.
     OpResult mutatePart (const std::string& part, uint32_t seed);
@@ -254,6 +263,9 @@ public:
     OpResult applyAutoMix (const std::vector<MixChange>& changes);
     OpResult revertAutoMix();
     bool canRevertAutoMix() const;
+    // 0.10: compara de oído sin perder nada: alterna entre la mezcla anterior y la de AutoMix (id = "before" o
+    // "automix" según la que queda sonando). Los cambios admiten además "<id batería>#snare" y "@master".
+    OpResult compareAutoMix();
 
     // --- Tempo / metrónomo ---------------------------------------------------------------------------------------
     OpResult setTempo (double bpm, int beatsPerBar);
@@ -306,6 +318,8 @@ private:
     std::shared_ptr<Instrument> instrumentFor (const TrackModel& t);
     void applyLoopLocked();
     void applyTemplateLocked (const std::string& templateId);
+    bool expLiveVocal = false;
+    std::vector<std::string> lastTemplateNotes; // 0.10: sonidos de «Signature 2» que faltaban al crear (se usó el sintetizador)
     void composeTrackLocked (TrackModel& t, const MusicPlan& plan, const std::string& role);
     // Aplica una variación con reintentos y medición del cambio (0.9.2). apply recompone las pistas con la semilla
     // del intento y devuelve los ids tocados; minChange es el cambio medio mínimo para aceptarla.
@@ -333,6 +347,7 @@ private:
     std::map<std::string, std::shared_ptr<Instrument>> instrumentInstances; // por id de pista
     std::vector<ProjectModel> undoStack, redoStack;
     std::string lastVariation; // informe JSON de la última variación (0.9.2)
+    int attemptDepth = 1;      // pasadas de variación del intento en curso (0.10)
     std::string paramGestureKey; // parámetro del gesto abierto ("" = ninguno)
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
@@ -352,6 +367,10 @@ private:
     void clearPreviewLocked();
     void applyPreviewLocked (const std::string& projectId, VocalPreview&& p);
     std::shared_ptr<Instrument> previewInstrument;
+    bool autoMixShowsBefore = false;
+    float autoMixValueLocked (const std::string& id, bool& ok);
+    void autoMixSetLocked (const MixChange& c);
+    void swapAutoMixLocked();
     std::vector<MixChange> autoMixBefore; // faders previos a la última aplicación de AutoMix // voz de prueba del navegador (nunca en el proyecto)
     std::string previewKey;
     std::string listenMatchClip; // clip que se escucha a volumen igualado ("" = ninguno); nunca se guarda

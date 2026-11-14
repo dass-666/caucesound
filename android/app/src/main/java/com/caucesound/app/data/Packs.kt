@@ -139,11 +139,37 @@ data class SoundUi(
     val removeAsk: Pair<PackInfo, List<String>>? = null,
     /** Importación en curso. */
     val importing: Boolean = false,
+    /** Paquetes de fábrica que esta compilación promete y que no están instalados completos (0.10). */
+    val missingFactory: List<String> = emptyList(),
 ) {
     val instruments: List<PackInstrumentInfo> get() = packs.flatMap { it.instruments }
     fun instrument(key: String): PackInstrumentInfo? = instruments.firstOrNull { it.key == key }
     fun packOf(key: String): PackInfo? = packs.firstOrNull { key.startsWith(it.id + ":") }
 }
 
+/** Qué paquetes de fábrica prometidos por la compilación (BuildConfig.FACTORY_PACKS) faltan o están incompletos. */
+object FactoryPackCheck {
+    fun missing(expected: String, installed: List<PackInfo>): List<String> =
+        expected.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            .filter { id -> installed.none { it.id == id && it.factory && it.complete } }
+}
+
 /** Sonidos instalados, accesibles desde cualquier panel (nombres de kits de muestras en el Rack, etc.). */
 val LocalSounds = androidx.compose.runtime.staticCompositionLocalOf { SoundUi() }
+
+/** 0.10: texto del diagnóstico de VocalShift en vivo (comando benchLiveVocal). Es una medición, no una promesa. */
+object LiveBench {
+    fun describe(j: org.json.JSONObject): String {
+        val cpu = j.optDouble("cpuPercentOfOneCore", 0.0)
+        val worst = j.optDouble("worstBlockPercent", 0.0)
+        val burst = j.optDouble("startBurstMs", 0.0)
+        val block = j.optDouble("blockMs", 4.0)
+        val verdict = when {
+            j.optBoolean("protectionTripped") || worst >= 100 -> com.caucesound.app.ui.tr("No cabe: algún bloque tardó más que el tiempo real.", "Does not fit: some block took longer than real time.")
+            cpu >= 25 || worst >= 60 -> com.caucesound.app.ui.tr("Muy justo: una instancia como mucho, con riesgo de cortes.", "Very tight: one instance at most, with a risk of dropouts.")
+            else -> com.caucesound.app.ui.tr("Cabe con margen en esta medición (falta probarlo con una canción sonando).", "Fits with headroom in this measurement (still needs testing with a song playing).")
+        }
+        return "CPU ${"%.1f".format(cpu)} % · " + com.caucesound.app.ui.tr("peor bloque", "worst block") + " ${"%.0f".format(worst)} % · " +
+            com.caucesound.app.ui.tr("arranque", "start") + " ${"%.1f".format(burst)} ms (" + com.caucesound.app.ui.tr("bloque", "block") + " ${"%.1f".format(block)} ms) · ${j.optString("arch")}\n" + verdict
+    }
+}

@@ -4,6 +4,21 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Misión 0.10 «Sound Engine & Music Quality» (2026-11-14, rama `claude/mission-010-sound-engine`, basada en la 0.9.2 / PR #8)
+
+Detalle, mediciones y tabla de pruebas en MISSION_0.10.md. **Nada probado en teléfono y nadie ha escuchado los sonidos.**
+
+| Entrega | Implementado | Probado (nube) | Físico / oído |
+|---|---|---|---|
+| Prueba inestable del sampler: `close()` no esperaba a que el audio soltara el grafo anterior | `Engine::settle()` | 0 fallos de 40 en un núcleo; antes 30 de 30 | — |
+| «Variar» una parte cambiaba menos del 15 % con algunas semillas (defecto de la 0.9.2: 38 de 400 pulsaciones en Reggaetón) | Pasadas adicionales de variación cuando hace falta | `variations_reach_the_minimum_change_with_many_seeds` (864 pulsaciones) | Pendiente (**oído**) |
+| Signature Sounds 2.0: 5 kits de batería, 3 bajos, 3 teclados (síntesis propia y VCSL CC0) | Sí, tres paquetes nuevos | Carga, hashes, presupuesto de 40 MiB | Pendiente (**oído**) |
+| Plantillas «Signature 2» (opcionales, apagadas por defecto), Humanizar | Sí | `TestSignature2.cpp`: las ocho de siempre idénticas por huella; forma de canción, bajo con el bombo; `Signature2UiTest`, `Signature2EndToEndTest` | Pendiente (**oído**) |
+| VocalShift durante la reproducción | **Experimental y oculto**; cebado al Play/seek, protección de sobrecarga, diagnóstico en Ajustes | `TestVocalLive.cpp` (8) | No medido en ARM; ráfaga de arranque de 6-10 ms en x86 sin resolver |
+| AutoMix 2 (bombo/caja por estilo, sitio para la voz, graves, recortes, A/B) | Sí | `TestAutoMix2.cpp` (5) | Pendiente (**oído**); umbral de voz sin calibrar con voces reales |
+| Paquetes reproducibles (bloqueo con hashes, verificación en Gradle y dentro del APK) | Sí | `factory_packs…`, compilación del APK | — |
+| Guitarra acústica, rehacer Electric Bass | **No hecho** (sin fuente con licencia accesible) | — | — |
+
 # Hotfix 0.9.2 (2026-11-14, rama `claude/project-thread-sol38i`, basada en la 0.9.1 / PR #7)
 
 Detalle, causa real y mediciones en HOTFIX_0.9.2.md. Estudio de VocalShift en vivo en VOCALSHIFT_LIVE_STUDY.md.

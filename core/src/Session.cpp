@@ -601,6 +601,9 @@ void Session::close()
     engine.stop();
     engine.resetTransport();
     engine.publish (std::make_unique<RenderGraph>());
+    // Si el audio está en marcha adopta el grafo vacío en un bloque (pocos ms) y el proyecto cerrado se libera aquí,
+    // no al abrir el siguiente (que cargaría sus muestras con las del anterior aún en memoria).
+    engine.settle (60);
     open = false;
     dirty = false;
     pool.clear();
@@ -609,6 +612,7 @@ void Session::close()
     previewInstrument.reset();
     previewKey.clear();
     autoMixBefore.clear();
+    autoMixShowsBefore = false;
     undoStack.clear();
     redoStack.clear();
     proj = ProjectModel();

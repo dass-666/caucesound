@@ -1,6 +1,20 @@
-# Para retomar el trabajo (actualizado 2026-11-14, hotfix 0.9.2)
+# Para retomar el trabajo (actualizado 2026-11-14, misión 0.10)
 
-## Hotfix 0.9.2 (lo más reciente)
+## Misión 0.10 «Sound Engine & Music Quality» (lo más reciente)
+
+- **Rama**: `claude/mission-010-sound-engine`, basada en la 0.9.2 (`claude/project-thread-sol38i`, PR #8). PR borrador nuevo contra la rama de la 0.9.2. **Nada fusionado; los PR #1 a #8 no se tocaron.**
+- **APK**: `/mnt/project-files/caucesound/caucesound-0.10.0-sound-engine-preview.apk`, versionCode 15, misma firma Preview. Lleva seis paquetes de fábrica (37,0 MB; tope de 40 MiB en `packs/factory-packs.lock.json`).
+- **Paquetes**: ZIP y SHA256SUMS.txt en `/mnt/project-files/caucesound/paquetes-0.10/`. Preparar con `python3 tools/factory_packs.py prepare <zips> <out>` y compilar con `CAUCE_PACKS=<out>`. Los tres 2.0 se regeneran con `./build/cauce_packs <vcsl> <out> two` (VCSL con `tools/fetch_vcsl.sh`).
+- **Las pruebas del motor que usan paquetes** necesitan `CS_FACTORY_PACKS=<out>`; sin la variable se omiten con aviso.
+- **Signature 2**: `createProject` con `"<estilo>@2"` o `"style":2`. Apagado por defecto. Las ocho plantillas de siempre están congeladas por huella en `TestSignature2.cpp`: si esa prueba falla, se cambió el sonido de los proyectos anteriores.
+- **Recalibrar** si cambian plantillas o kits: `cs_render --compare10 <out> <paquetes>` (niveles de Signature 2) y `cs_render --automix <paquetes>/packs` (tablas de AutoMix 2).
+- **WAV comparativos**: `/mnt/project-files/caucesound/muestras-0.10/` (igualados en LUFS con `tools/loudness_match.py`). Nadie los ha escuchado.
+- **VocalShift en vivo** sigue oculto (`setExperimental {liveVocal}`), con diagnóstico en Ajustes. Pendiente: la ráfaga de cebado al Play/seek (6-10 ms en x86 frente a un bloque de 4 ms). No activar sin las cifras del Samsung.
+- **Guía física**: SAMSUNG_ACCEPTANCE_0.10.md. Nada probado en teléfono.
+- **No hecho**: guitarra acústica (sin fuente con licencia accesible) y rehacer el Electric Bass (falta la fuente Karoryfer en este entorno).
+- Detalle en MISSION_0.10.md, SIGNATURE_SOUNDS_2.md, AUTOMIX.md y VOCALSHIFT_LIVE_STUDY.md.
+
+## Hotfix 0.9.2
 
 - **Rama**: `claude/project-thread-sol38i`, basada en la 0.9.1 (`claude/project-thread-d4hr9u`, PR #7). PR borrador nuevo contra la rama de la 0.9.1. **Nada fusionado.**
 - **APK**: `/mnt/project-files/caucesound/caucesound-0.9.2-hotfix-preview.apk`, versionCode 14, misma firma, con paquetes (`CAUCE_PACKS`: descomprimir los 3 ZIP de `paquetes-0.9/`, sin el piano, en `<dir>/packs/<id>/` sin el sufijo de versión).

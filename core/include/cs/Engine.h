@@ -90,6 +90,11 @@ public:
     void prepare (int sampleRate, int maxBlock);
     void publish (std::unique_ptr<RenderGraph> graph);
     void collectGarbage();
+    // Espera (acotada) a que el hilo de audio adopte el último grafo publicado y libera los anteriores. Devuelve false
+    // si el audio no llegó a procesar en ese tiempo (flujo parado o hilo sin CPU): entonces el grafo anterior sigue
+    // vivo y se liberará en el siguiente publish()/settle(). Sin esto, cerrar un proyecto dejaba sus instrumentos y
+    // muestras en memoria hasta abrir el siguiente (0.10; ver TestSampler.cpp).
+    bool settle (int timeoutMs);
     int sampleRate() const { return rate; }
 
     TrackParams& trackParams (int slot) { return params[(size_t) slot]; }
@@ -136,6 +141,7 @@ public:
     float dspLoadAverage() const { return dspLoadAvg.load (std::memory_order_relaxed); }
     float takeDspLoadPeak() { return dspLoadPeak.exchange (0.0f, std::memory_order_relaxed); }
     long blocksOverBudget() const { return dspOver.load (std::memory_order_relaxed); }
+    long primeCount() const { return primesOut.load (std::memory_order_relaxed); }
     void reportXruns (long n) { hostXruns.store (n); }
     // Diagnóstico: frames procesados por process() desde el arranque (si no avanza, el callback no se ejecuta) y
     // pico del máster del último bloque con el transporte en marcha.
@@ -176,6 +182,7 @@ private:
     int rate = 48000, maxBlock = 0;
     std::vector<TrackParams> params;
     std::atomic<RenderGraph*> pending { nullptr };
+    std::atomic<uint32_t> blocksSeen { 0 }; // latido del hilo de audio: settle() no espera si el audio está parado
     RenderGraph* active = nullptr;
     SpscRing<RenderGraph*> trash { 256 };
 
@@ -200,6 +207,11 @@ private:
     std::atomic<long long> processedOut { 0 };
     std::atomic<uint32_t> liveEpoch { 0 }; // resetTransport() lo incrementa: se descartan eventos en vivo anteriores
     void noteDspLoad (double seconds, int frames);
+    // 0.10: cebado de las pistas con latencia al arrancar o saltar (ver Engine.cpp). primeCount() es para pruebas.
+    bool renderClipAudio (const TrackRT& t, Frame from, int count, float* tl, float* tr, int offset);
+    void primeLatentTracks (const RenderGraph* g, Frame position);
+    bool needPrime = false;
+    std::atomic<long> primesOut { 0 };
 
     std::atomic<bool> loopOn { false };
     std::atomic<Frame> loopStart { 0 }, loopEnd { 0 };

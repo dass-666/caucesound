@@ -58,6 +58,7 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewTimeline
@@ -276,6 +277,8 @@ fun StudioLayout(
                     active = panel == Panel.VARY || panel == Panel.SOLO, tint = Palette.Text, modifier = Modifier.testTag("open_variations"))
                 if (panel == Panel.MIXER) {
                     ToolButton(Icons.Default.AutoFixHigh, tr("AutoMix: sugerir volúmenes", "AutoMix: suggest levels"), actions::autoMixSuggest, tint = Palette.Cyan, modifier = Modifier.testTag("automix"))
+                    // 0.10: comparar de oído la mezcla anterior con la de AutoMix sin perder ninguna.
+                    if (autoMixRevertable) ToolButton(Icons.Default.SwapHoriz, tr("Comparar: mezcla anterior / AutoMix", "Compare: previous mix / AutoMix"), actions::autoMixCompare, tint = Palette.Cyan, modifier = Modifier.testTag("automix_compare"))
                     if (autoMixRevertable) ToolButton(Icons.Default.Restore, tr("Revertir AutoMix", "Revert AutoMix"), actions::autoMixRevert, tint = Palette.Warn, modifier = Modifier.testTag("automix_revert"))
                 }
                 ToolButton(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.undo), actions::undo, enabled = state.canUndo && !state.recording, tint = Palette.Text)

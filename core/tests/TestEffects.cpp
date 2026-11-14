@@ -388,9 +388,10 @@ TEST (pdc_export_matches_live_with_latent_insert)
     CHECK (diff == 0.0f);
 }
 
-// Seek con PDC: lejos del contenido, la alineación es exacta; justo antes (menos de L frames), la pista latente
-// pierde ese tramo (limitación documentada: no hay precarga). La prueba fija ambos comportamientos.
-TEST (pdc_after_seek_is_aligned_and_documents_the_preroll_gap)
+// Seek con PDC: lejos del contenido, la alineación es exacta. Justo antes (menos de L frames), hasta la 0.9.2 la pista
+// latente perdía ese tramo (no había precarga); desde la 0.10 el motor ceba las inserciones al arrancar y al saltar
+// (Engine::primeLatentTracks), así que también ahí suenan las dos pistas alineadas.
+TEST (pdc_after_seek_is_aligned_even_right_before_the_content)
 {
     auto a = std::make_shared<AudioData>();
     a->allocate (1, 4800);
@@ -415,13 +416,15 @@ TEST (pdc_after_seek_is_aligned_and_documents_the_preroll_gap)
     const auto far = playFrom (30000); // 18000 frames antes del impulso (> L)
     const auto pf = peaks (far, 0.1f);
     CHECK (pf.size() == 1 && pf[0] == 18000 && std::fabs (far[18000 * 2] - 1.0f) < 1e-6f);
-    const auto near = playFrom (46000); // 2000 frames antes (< L): solo suena la pista sin latencia
+    const auto near = playFrom (46000); // 2000 frames antes (< L): antes de la 0.10 faltaba el golpe de la pista latente
     const auto pn = peaks (near, 0.1f);
-    CHECK (pn.size() == 1 && pn[0] == 2000); // un solo golpe a 0,5: falta el de la pista latente
+    CHECK (pn.size() == 1 && pn[0] == 2000);
     float m = 0;
     for (size_t i = 0; i < near.size() / 2; ++i) m = std::max (m, std::fabs (near[i * 2]));
-    MEASURE ("PDC tras seek: alineada si el contenido está a más de %d frames; si no, solo suena la pista sin latencia (pico %.2f)", L, m);
-    CHECK (std::fabs (m - 0.5f) < 1e-6f);
+    MEASURE ("PDC tras seek a %d frames del contenido (latencia %d): las dos pistas suenan juntas (pico %.2f)", 2000, L, m);
+    CHECK (std::fabs (m - 1.0f) < 1e-6f);
+    const auto inside = playFrom (48000 + 100); // dentro del contenido: no reaparece el golpe que ya pasó
+    CHECK (peaks (inside, 0.1f).empty());
 }
 
 // Deshacer agrupado por gesto: muchos cambios seguidos del mismo parámetro (un giro de perilla) son una sola entrada;

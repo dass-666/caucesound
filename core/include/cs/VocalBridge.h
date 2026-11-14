@@ -69,6 +69,13 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
 // la compense leyendo el contenido por delante, y aplica los cambios de parámetros en el hilo de audio. Sirve para
 // medir alineación, reservas de memoria y CPU; ver docs/VOCALSHIFT_LIVE_STUDY.md. nullptr si no hay VocalShift.
 std::shared_ptr<class ::cs::AudioProcessor> createLiveInsertPoC();
+// 0.10 (experimental): protección contra sobrecarga de la inserción en vivo (pasa a señal seca alineada si el efecto
+// gasta de forma sostenida más de 'fractionOfRealTime' del tiempo real; por defecto 0,5), y una medición de CPU que
+// se puede lanzar en el teléfono (comando "benchLiveVocal"). Ver docs/VOCALSHIFT_LIVE_STUDY.md.
+bool liveInsertOverloaded (const ::cs::AudioProcessor* p);
+void setLiveOverloadThreshold (double fractionOfRealTime);
+std::string benchLiveInsert (double seconds);
+constexpr int kMaxLiveInserts = 2; // instancias simultáneas por proyecto mientras no haya medición en ARM
 
 constexpr double kMaxClipSeconds = 600.0; // límite de memoria/tiempo por toma (10 min)
 constexpr double kMaxTailSeconds = 4.0;

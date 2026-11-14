@@ -635,11 +635,103 @@ TEST (sampler_concurrent_kit_switching_and_project_changes_are_safe)
         s.close();
         engine.collectGarbage();
     }
+    // Causa del fallo intermitente (0.10): con el hilo de audio sin CPU, la prueba lo paraba antes de que adoptara el
+    // grafo vacío de close(), y el grafo anterior (con sus 3 instrumentos) seguía siendo el activo. No era una carrera:
+    // la prueba no esperaba a la adopción. settle() espera de forma acotada y es lo que usa close() en la app.
+    bool adopted = false;
+    for (int i = 0; i < 200 && ! adopted; ++i) adopted = engine.settle (100); // hasta 20 s si la máquina está saturada
+    CHECK (adopted);
     stop = true;
     audio.join();
     engine.collectGarbage();
     MEASURE ("instancias vivas tras cerrar: %d (antes %d)", Instrument::liveInstances(), baseline);
     CHECK (Instrument::liveInstances() == baseline);
+}
+
+TEST (closing_a_project_releases_its_instruments_once_audio_adopts_the_empty_graph)
+{
+    // Determinista, sin hilos: demuestra el mecanismo que causaba el fallo intermitente de la prueba anterior.
+    const std::string base = cstest::tempDir ("smp_release");
+    setupLibrary (base);
+    Engine engine;
+    engine.prepare (kSr, 256);
+    Session s (engine);
+    const int baseline = Instrument::liveInstances();
+    std::vector<float> out (512);
+    CHECK (s.createProject (base + "/p", "P", kSr).ok);
+    const auto d = s.addTrack ("Drums", "drums");
+    const auto k = s.addTrack ("Keys", "synth");
+    CHECK (s.setDrumSampleKit (d.id, "test.pack:kit").ok);
+    CHECK (s.setSamplerInstrument (k.id, "test.pack:keys").ok);
+    engine.process (nullptr, 0, out.data(), 2, 256); // el audio adopta el grafo del proyecto
+    CHECK (Instrument::liveInstances() > baseline);
+    s.close();
+    // El audio no ha procesado desde close(): el grafo del proyecto sigue activo y settle() lo dice sin bloquear.
+    CHECK (! engine.settle (200));
+    CHECK (Instrument::liveInstances() > baseline);
+    engine.process (nullptr, 0, out.data(), 2, 256); // un bloque: adopta el grafo vacío
+    CHECK (engine.settle (200));
+    MEASURE ("instancias tras cerrar y un bloque de audio: %d (antes %d)", Instrument::liveInstances(), baseline);
+    CHECK (Instrument::liveInstances() == baseline);
+}
+
+TEST (switching_projects_with_sampler_instruments_and_plugins_is_stable_and_releases_memory)
+{
+    // Tres proyectos guardados con kit de muestras, instrumento de muestras, inserciones y un bus con reverb. Con el
+    // audio en marcha se abren, se reproducen y se cierran 60 veces: tras cada cierre no queda ningún instrumento vivo
+    // y la salida nunca contiene valores no finitos.
+    const std::string base = cstest::tempDir ("smp_switch");
+    setupLibrary (base);
+    Engine engine;
+    engine.prepare (kSr, 256);
+    Session s (engine);
+    const int baseline = Instrument::liveInstances();
+    std::vector<std::string> folders;
+    for (int p = 0; p < 3; ++p)
+    {
+        const std::string f = base + "/sw" + std::to_string (p);
+        CHECK (s.createProject (f, "S", kSr, p == 0 ? "trap" : p == 1 ? "boombap" : "pop").ok);
+        const auto d = s.addTrack ("Drums2", "drums");
+        const auto k = s.addTrack ("Keys", "synth");
+        CHECK (s.setDrumSampleKit (d.id, "test.pack:kit").ok);
+        CHECK (s.setSamplerInstrument (k.id, "test.pack:keys").ok);
+        CHECK (s.addInsert (k.id, "cs.delay").ok);
+        CHECK (s.addInsert (k.id, p == 1 ? "cs.saturation" : "cs.compressor").ok);
+        const auto bus = s.addTrack ("Rev", "bus");
+        CHECK (s.addInsert (bus.id, "cs.reverb").ok);
+        CHECK (s.save().ok);
+        s.close();
+        folders.push_back (f);
+    }
+    std::atomic<bool> stop { false };
+    std::atomic<int> nonFinite { 0 };
+    std::thread audio ([&]
+    {
+        std::vector<float> out (512);
+        while (! stop.load())
+        {
+            engine.process (nullptr, 0, out.data(), 2, 256);
+            for (float v : out) if (! std::isfinite (v)) nonFinite.fetch_add (1);
+            std::this_thread::sleep_for (std::chrono::microseconds (300));
+        }
+    });
+    int notReleased = 0;
+    for (int i = 0; i < 60; ++i)
+    {
+        CHECK (s.openProject (folders[(size_t) i % folders.size()]).ok);
+        engine.play();
+        engine.sendLive (1, 0x90, 60, 100);
+        if (i % 3 == 0) std::this_thread::sleep_for (std::chrono::milliseconds (15));
+        s.close();
+        bool adopted = false;
+        for (int w = 0; w < 100 && ! adopted; ++w) adopted = engine.settle (100);
+        if (! adopted || Instrument::liveInstances() != baseline) ++notReleased;
+    }
+    stop = true;
+    audio.join();
+    MEASURE ("60 cambios de proyecto con sampler y plugins: %d cierres sin liberar, %d muestras no finitas", notReleased, nonFinite.load());
+    CHECK (notReleased == 0);
+    CHECK (nonFinite.load() == 0);
 }
 
 TEST (sampler_performance_offline_voices)
@@ -659,6 +751,57 @@ TEST (sampler_performance_offline_voices)
     const double audioSec = blocks * 256.0 / kSr;
     MEASURE ("32 voces estéreo: %.1f ms por segundo de audio (%.2f %% de un núcleo x86-64, sin medir en ARM)", 1000.0 * sec / audioSec, 100.0 * sec / audioSec);
     CHECK (sec / audioSec < 0.5);
+}
+
+// Paquetes de fábrica reales (no están en git): con CS_FACTORY_PACKS=<carpeta con packs/<id>/> se comprueba que el motor
+// verifica cada paquete del bloqueo, carga cada instrumento sin muestras ausentes y que una nota suena, sin valores no
+// finitos ni recortes. Sin la variable la prueba se omite (y lo dice).
+TEST (factory_packs_verify_load_and_sound_when_available)
+{
+    const char* dir = std::getenv ("CS_FACTORY_PACKS");
+    if (! dir || ! fs::is_directory (std::string (dir) + "/packs")) { MEASURE ("CS_FACTORY_PACKS no definido: prueba omitida"); return; }
+    const std::string user = cstest::tempDir ("smp_factory_user");
+    packLibrary().configure (std::string (dir) + "/packs", user);
+    const auto packs = packLibrary().list();
+    CHECK (! packs.empty());
+    int instruments = 0;
+    size_t bytes = 0;
+    for (const auto& p : packs)
+    {
+        std::vector<std::string> bad;
+        std::string err;
+        CHECK_MSG (p.complete, p.manifest.id + " incompleto");
+        CHECK_MSG (packLibrary().verify (p.manifest.id, bad, err), p.manifest.id + ": " + err + (bad.empty() ? "" : " " + bad.front()));
+        for (const auto& ins : p.manifest.instruments)
+        {
+            const std::string key = p.manifest.id + ":" + ins.id;
+            std::string e2;
+            auto prog = packLibrary().loadInstrument (key, kSr, e2);
+            CHECK_MSG (prog && prog->missingSamples.empty() && ! prog->regions.empty(), key + ": " + e2);
+            if (! prog) continue;
+            CHECK_MSG (prog->warnings.empty(), key + ": " + (prog->warnings.empty() ? "" : prog->warnings.front()));
+            bytes += prog->bytes();
+            ++instruments;
+            const std::vector<int> keys = ins.kind == "drumkit" ? std::vector<int> { 36, 37, 38, 39, 40, 41, 42, 43 } : std::vector<int> { ins.previewKey - 12, ins.previewKey, ins.previewKey + 7 };
+            for (int vel : { 40, 90, 127 })
+                for (int k : keys)
+                {
+                    SamplerEngine e; // un motor por nota: se mide cada golpe solo, no la suma con la cola del anterior
+                    e.prepare (prog, kSr);
+                    e.noteOn (k, vel);
+                    std::vector<float> L (4800, 0.0f), R (4800, 0.0f);
+                    for (int off = 0; off < 4800; off += 240) e.process (L.data() + off, R.data() + off, 240);
+                    float peak = 0;
+                    bool finite = true;
+                    for (size_t i = 0; i < L.size(); ++i) { finite = finite && std::isfinite (L[i]) && std::isfinite (R[i]); peak = std::max (peak, std::max (std::fabs (L[i]), std::fabs (R[i]))); }
+                    CHECK_MSG (finite, key + " no finito");
+                    CHECK_MSG (peak > 0.004f, key + " nota " + std::to_string (k) + " vel " + std::to_string (vel) + " en silencio");
+                    CHECK_MSG (peak <= 1.0f, key + " nota " + std::to_string (k) + " recorta: " + std::to_string (peak));
+                }
+        }
+    }
+    MEASURE ("paquetes de fábrica: %zu paquetes, %d instrumentos, %.1f MB de PCM en RAM si se cargan todos", packs.size(), instruments, bytes / 1048576.0);
+    packLibrary().configure ("", "");
 }
 
 // La interfaz Android usa solo la API JSON: listado, escucha, carga, uso en proyectos, borrado protegido.
