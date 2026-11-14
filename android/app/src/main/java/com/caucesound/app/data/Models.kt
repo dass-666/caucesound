@@ -43,7 +43,7 @@ data class PatternState(
  * Plan musical del compositor local (misión 0.4): qué parte genera cada pista, energía y pistas bloqueadas.
  * Solo existe en proyectos creados con las plantillas 0.4; en los anteriores es null y no se ofrecen variaciones.
  */
-data class MusicPlanState(val genre: String, val energy: Float, val roles: Map<String, String>, val locked: Set<String>, val keyRoot: Int = -1, val minor: Boolean = true) {
+data class MusicPlanState(val genre: String, val energy: Float, val roles: Map<String, String>, val locked: Set<String>, val keyRoot: Int = -1, val minor: Boolean = true, val revision: Int = 1) {
     fun hasPart(part: String) = roles.values.contains(part)
 }
 
@@ -286,7 +286,7 @@ object StateParser {
         m.optJSONObject("roles")?.let { r -> for (k in r.keys()) roles[k] = r.optString(k) }
         val locked = mutableSetOf<String>()
         m.optJSONArray("locked")?.let { a -> for (i in 0 until a.length()) locked += a.optString(i) }
-        return MusicPlanState(m.optString("genre"), m.optDouble("energy", 0.0).toFloat(), roles, locked, m.optInt("keyRoot", -1), m.optBoolean("minor", true))
+        return MusicPlanState(m.optString("genre"), m.optDouble("energy", 0.0).toFloat(), roles, locked, m.optInt("keyRoot", -1), m.optBoolean("minor", true), m.optInt("revision", 1))
     }
 }
 

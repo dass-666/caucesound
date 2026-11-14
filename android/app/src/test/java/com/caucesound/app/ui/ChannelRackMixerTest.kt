@@ -185,7 +185,8 @@ class ChannelRackMixerTest {
         // VocalShift aparece como proceso de clip (sin conexión), nunca como efecto en vivo. Esta voz no tiene grabación:
         // la entrada está, pero explica que primero hay que grabar o importar.
         compose.onNodeWithTag("pick_vocalshift").performScrollTo()
-        compose.onNodeWithText(tr("Graba o importa una voz", "Record or import a voice"), substring = true).assertExists()
+        compose.onNode(androidx.compose.ui.test.hasText(tr("Graba o importa una voz en esta pista primero", "Record or import a voice on this track first"), substring = true) and
+            androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag("effect_picker"))).assertExists()
     }
 
     @Test fun vocalshift_entry_processes_the_clip_offline() {

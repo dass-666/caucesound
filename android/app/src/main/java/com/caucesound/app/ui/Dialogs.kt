@@ -269,6 +269,14 @@ internal fun RecordModeSection(vm: DawViewModel, route: AudioGuard.Route) {
                 "Experimental and different on every phone: it may remove some of the beat but can also dull or warp the voice, and it is applied while recording (no unprocessed copy is kept). Try it on a short take."),
                 fontSize = 11.sp, color = Palette.TextDim)
         }
+        // 0.9.2: grabar sin acompañamiento (también se elige en el diálogo del botón rojo).
+        val solo by vm.recordSolo.collectAsState()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Grabar sin acompañamiento", "Record without backing"), Modifier.weight(1f), fontSize = 13.sp)
+            Switch(solo, { vm.setRecordSolo(it) }, modifier = Modifier.testTag("record_solo"))
+        }
+        Text(tr("Silencia el beat y el metrónomo solo mientras grabas. La mezcla no cambia.", "Mutes the beat and click only while recording. The mix is unchanged."),
+            fontSize = 11.sp, color = Palette.TextDim)
         Text(tr("Para comprobar una toma: pulsa S en la pista de voz y escúchala sola.", "To check a take: press S on the voice track and listen to it alone."),
             fontSize = 11.sp, color = Palette.TextFaint)
     }

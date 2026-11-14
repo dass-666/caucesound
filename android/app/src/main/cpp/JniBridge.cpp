@@ -1,6 +1,10 @@
 // Puente JNI mínimo: los comandos van como JSON a cs::handleCommand (el mismo contrato que usará iOS);
 // solo las consultas de alta frecuencia (posición, medidores, formas de onda) tienen funciones propias.
+#ifdef CS_HOST_JNI
+#include "HostAudioIO.h" // pruebas de extremo a extremo en la JVM (android/app/src/test/cpp)
+#else
 #include "AudioIO.h"
+#endif
 
 #include "cs/Api.h"
 #include "cs/Session.h"

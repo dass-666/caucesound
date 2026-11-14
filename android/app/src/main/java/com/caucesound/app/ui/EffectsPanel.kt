@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -116,7 +117,7 @@ fun InsertControls(ins: InsertState, catalog: Catalog, actions: StudioActions, c
     val info = catalog.effect(ins.type)
     // Valores locales mientras se gira la perilla (el estado del motor se refresca al soltar).
     val local = remember(ins) { mutableStateMapOf<String, Float>() }
-    Column {
+    Column(Modifier.testTag("insert_controls_${ins.id}")) {
         if (info == null) { Text(tr("Efecto no disponible en esta versión: se conserva en el proyecto sin sonar.", "Effect not available in this version: kept in the project, silent."), color = Palette.TextDim); return@Column }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             info.params.forEach { p ->

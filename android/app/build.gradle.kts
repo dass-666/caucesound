@@ -15,8 +15,8 @@ android {
         applicationId = "com.caucesound.app"
         minSdk = 26          // Android 8.0: AAudio disponible; Oboe elige AAudio u OpenSL ES según el dispositivo
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.9.1-signature-vocalshift"
+        versionCode = 14
+        versionName = "0.9.2-hotfix"
         manifestPlaceholders["appLabel"] = "CAUCESOUND"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // teléfonos actuales + emulador
@@ -90,6 +90,9 @@ android {
             if (project.hasProperty("screenshots")) t.systemProperty("roborazzi.test.record", "true")
             // Espejo opcional para descargar android-all en entornos sin acceso a Maven Central.
             System.getenv("ROBOLECTRIC_REPO_URL")?.let { t.systemProperty("robolectric.dependency.repo.url", it) }
+            // Hotfix 0.9.2: pruebas de extremo a extremo con el puente JNI real compilado para el ordenador
+            // (cmake -DCS_BUILD_HOST_JNI=ON). Sin la variable, EndToEndVariationsTest se salta.
+            System.getenv("CS_HOST_JNI_DIR")?.let { t.systemProperty("java.library.path", it); t.systemProperty("cs.hostJni", it) }
             t.maxHeapSize = "2g"
         }
     }

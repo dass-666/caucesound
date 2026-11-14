@@ -28,9 +28,20 @@ if (CS_BUILD_DESKTOP)
     target_link_libraries(cauce_packs PRIVATE cs_core)
 endif()
 
+# Hotfix 0.9.2: el puente JNI real (JniBridge.cpp) compilado para el ordenador, con un AudioIO sin Oboe. Lo cargan
+# las pruebas Robolectric de extremo a extremo (interfaz -> DawViewModel -> JNI -> motor -> estado). No va en el APK.
+option(CS_BUILD_HOST_JNI "Compilar libcaucesound para la JVM de escritorio (pruebas de la app)" OFF)
+if (CS_BUILD_HOST_JNI)
+    find_package(JNI REQUIRED)
+    add_library(caucesound SHARED android/app/src/main/cpp/JniBridge.cpp)
+    target_include_directories(caucesound PRIVATE ${JNI_INCLUDE_DIRS} android/app/src/test/cpp)
+    target_compile_definitions(caucesound PRIVATE CS_HOST_JNI=1)
+    target_link_libraries(caucesound PRIVATE cs_core)
+endif()
+
 if (CS_BUILD_TESTS)
     enable_testing()
-    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp core/tests/TestMusic.cpp core/tests/TestEffects.cpp core/tests/TestStress.cpp core/tests/TestArchive.cpp core/tests/TestQuality.cpp core/tests/TestFuzz.cpp core/tests/TestBus.cpp core/tests/TestSwitch.cpp core/tests/TestComposer.cpp core/tests/TestSolo.cpp core/tests/TestVocal.cpp core/tests/TestExport.cpp core/tests/TestSoloAlternatives.cpp core/tests/TestMixerPro.cpp core/tests/TestChannelRack.cpp core/tests/TestSampler.cpp)
+    add_executable(cs_core_tests core/tests/TestMain.cpp core/tests/TestCore.cpp core/tests/TestSession.cpp core/tests/TestMusic.cpp core/tests/TestEffects.cpp core/tests/TestStress.cpp core/tests/TestArchive.cpp core/tests/TestQuality.cpp core/tests/TestFuzz.cpp core/tests/TestBus.cpp core/tests/TestSwitch.cpp core/tests/TestComposer.cpp core/tests/TestSolo.cpp core/tests/TestVocal.cpp core/tests/TestExport.cpp core/tests/TestSoloAlternatives.cpp core/tests/TestMixerPro.cpp core/tests/TestChannelRack.cpp core/tests/TestSampler.cpp core/tests/TestVariations.cpp core/tests/TestVocalLive.cpp)
     target_link_libraries(cs_core_tests PRIVATE cs_core)
     add_test(NAME cs_core_tests COMMAND cs_core_tests)
     add_executable(cs_bench core/tests/Bench.cpp)

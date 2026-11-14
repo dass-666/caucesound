@@ -1,3 +1,4 @@
+#include "cs/VocalBridge.h"
 #include "cs/Processor.h"
 
 #include <nlohmann/json.hpp>
@@ -85,6 +86,8 @@ ProcessorPtr createProcessor (const std::string& typeId)
     if (typeId == "cs.synth") return createSynth();
     if (typeId == "cs.drums") return createDrums();
     if (typeId == "cs.sampler") return createSampler();
+    // 0.9.2: prueba de concepto oculta (no está en effectTypes(), así que ni el catálogo ni la interfaz la ofrecen).
+    if (typeId == "cs.vocalshift.live") return vocal::createLiveInsertPoC();
     return createEffect (typeId);
 }
 

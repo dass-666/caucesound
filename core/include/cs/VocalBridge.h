@@ -3,9 +3,11 @@
 // feat/urban-spatial; su único tercero es Signalsmith Stretch/Linear, MIT). Solo procesamiento OFFLINE: la cadena
 // tiene ~150 ms de latencia y no se ofrece como efecto en vivo. Nunca se llama desde el hilo de audio.
 #include "cs/AudioData.h"
+#include "cs/Processor.h"
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -61,6 +63,12 @@ using Sink = std::function<bool (const float* interleavedStereo, int frames)>;
 std::string process (const AudioData& in, Frame from, Frame length, const Params& p, const Sink& sink,
                      std::atomic<float>* progress, const std::atomic<bool>* cancel, Stats* stats, double tempoBpm = 0);
 // tempoBpm: tempo del proyecto para el eco sincronizado del motor espacial (0 = desconocido).
+
+// 0.9.2 — PRUEBA DE CONCEPTO (no visible en la app ni en el catálogo): VocalShift como inserción de tiempo real
+// ("cs.vocalshift.live"). Envuelve ::vs::VocalChain, declara su latencia (~150 ms) para que el PDC por pista del motor
+// la compense leyendo el contenido por delante, y aplica los cambios de parámetros en el hilo de audio. Sirve para
+// medir alineación, reservas de memoria y CPU; ver docs/VOCALSHIFT_LIVE_STUDY.md. nullptr si no hay VocalShift.
+std::shared_ptr<class ::cs::AudioProcessor> createLiveInsertPoC();
 
 constexpr double kMaxClipSeconds = 600.0; // límite de memoria/tiempo por toma (10 min)
 constexpr double kMaxTailSeconds = 4.0;

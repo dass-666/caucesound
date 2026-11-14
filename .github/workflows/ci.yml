@@ -29,6 +29,11 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "ndk;27.2.12479018" "cmake;3.31.6"
+      - name: Motor nativo para pruebas de extremo a extremo en la JVM (JniBridge real + audio simulado)
+        run: |
+          cmake -S . -B build-hostjni -G Ninja -DCMAKE_BUILD_TYPE=Release -DCS_BUILD_HOST_JNI=ON -DCS_BUILD_TESTS=OFF
+          cmake --build build-hostjni --target caucesound
+          echo "CS_HOST_JNI_DIR=$PWD/build-hostjni" >> "$GITHUB_ENV"
       - name: Compilar y probar
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug

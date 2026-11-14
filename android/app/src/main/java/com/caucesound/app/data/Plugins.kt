@@ -144,9 +144,35 @@ data class PluginUi(
     val analysis: BeatAnalysis? = null,
     val family: SoloFamily? = null,
     val export: DawExportUi? = null,
+    /** 0.9.2: última variación aceptada (Variar/Regenerar/Rehacer) y si hay una en curso. */
+    val variation: VariationReport? = null,
+    val variationWorking: String? = null,
 )
 
+/** Una parte que cambió en una variación: cuánto (0..1, proporción de notas o golpes distintos). */
+data class VariationPart(val trackId: String, val name: String, val role: String, val change: Float)
+
+/**
+ * Informe del motor tras Variar/Regenerar (0.9.2). revision = número de versión de la composición; parts = qué
+ * pistas cambiaron; skippedLocked = pistas que se respetaron por tener candado.
+ */
+data class VariationReport(
+    val op: String, val part: String, val revision: Int, val change: Float, val parts: List<VariationPart>,
+    val skippedLocked: List<String>, val attempts: Int,
+) {
+    /** Partes que cambiaron de verdad (más del 2 % de sus notas o golpes). */
+    val changed: List<VariationPart> get() = parts.filter { it.change > 0.02f }
+}
+
 object PluginParser {
+    fun variation(raw: JSONObject): VariationReport? {
+        val v = raw.optJSONObject("variation") ?: return null
+        val parts = v.optJSONArray("parts")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let {
+            VariationPart(it.optString("trackId"), it.optString("name"), it.optString("role"), it.optDouble("change", 0.0).toFloat()) } } } ?: emptyList()
+        val skipped = v.optJSONArray("skippedLocked")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList()
+        return VariationReport(v.optString("op"), v.optString("part"), v.optInt("revision", 1), v.optDouble("change", 0.0).toFloat(), parts, skipped, v.optInt("attempts", 1))
+    }
+
     fun vocalPresets(json: String): List<VocalPreset> {
         val a = JSONObject(json).optJSONArray("presets") ?: return emptyList()
         return (0 until a.length()).map { i -> a.getJSONObject(i).let { VocalPreset(it.getString("id"), it.optString("name"), it.optString("description"), VocalParams.fromJson(it.optJSONObject("params"))) } }

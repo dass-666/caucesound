@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace cs
 {
@@ -870,106 +871,215 @@ void Session::applyTemplateLocked (const std::string& templateId)
 }
 
 // --- Variaciones ----------------------------------------------------------------------------------------------
+// Hotfix 0.9.2: en el teléfono «Variar» y «Regenerar» parecían no hacer nada. El motor sí cambiaba las notas, pero
+// (1) la interfaz no confirmaba nada, (2) algunos cambios eran mínimos (Variar en Electrónica tocaba sobre todo el
+// bombo y el bajo, que el altavoz del teléfono casi no reproduce, y el Pad no cambiaba nunca) y (3) nada impedía que
+// una semilla diera un resultado casi idéntico. Ahora cada operación mide cuánto cambió cada parte (proporción de notas
+// o golpes distintos), reintenta con otra semilla derivada si el cambio no llega al mínimo y devuelve un informe que
+// la interfaz enseña («Versión 3: cambiaron Batería 24 %, Arp 61 %…»). Ver docs/HOTFIX_0.9.2.md.
+namespace
+{
+std::set<std::string> musicalEvents (const TrackModel& t)
+{
+    std::set<std::string> e;
+    for (const auto& c : t.midiClips)
+        for (const auto& n : c.notes) e.insert (std::to_string (c.start) + "|" + std::to_string (n.start) + "|" + std::to_string (n.key));
+    for (const auto& p : t.patterns)
+        for (size_t l = 0; l < p.lanes.size(); ++l)
+            for (size_t s = 0; s < p.lanes[l].size(); ++s)
+                if (p.lanes[l][s] > 0) e.insert (p.id + "|" + std::to_string (l) + "|" + std::to_string (s) + "|" + std::to_string (l < p.rolls.size() && s < p.rolls[l].size() ? p.rolls[l][s] : 0));
+    return e;
+}
+// 0 = idénticas, 1 = nada en común (1 - índice de Jaccard).
+double eventChange (const TrackModel& a, const TrackModel& b)
+{
+    const auto x = musicalEvents (a), y = musicalEvents (b);
+    if (x.empty() && y.empty()) return 0.0;
+    size_t inter = 0;
+    for (const auto& k : x) inter += y.count (k);
+    return 1.0 - (double) inter / (double) (x.size() + y.size() - inter);
+}
+uint32_t attemptSeed (uint32_t seed, int attempt)
+{
+    if (attempt == 0) return seed;
+    uint32_t s = seed ^ (0x9E3779B9u * (uint32_t) attempt);
+    s ^= s >> 16; s *= 0x7FEB352Du; s ^= s >> 15; // mezcla para que los intentos no se parezcan entre sí
+    return s ? s : 1u;
+}
+} // namespace
+
+std::string Session::lastVariationReport() const
+{
+    std::lock_guard<std::recursive_mutex> l (mtx);
+    return lastVariation;
+}
+
+OpResult Session::variationLocked (const char* op, const std::string& part, uint32_t seed, double minChange,
+                                   const std::function<std::vector<std::string> (MusicPlan&, uint32_t)>& apply)
+{
+    lastVariation.clear();
+    if (! open) return OpResult::fail ("no hay proyecto abierto");
+    MusicPlan plan0;
+    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan0))
+        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
+    std::vector<std::string> skipped; // pistas que tocaría pero están bloqueadas
+    for (const auto& t : proj.tracks)
+    {
+        auto it = plan0.roles.find (t.id);
+        if (it == plan0.roles.end() || (part != "all" && it->second != part)) continue;
+        if (std::find (plan0.locked.begin(), plan0.locked.end(), t.id) != plan0.locked.end()) skipped.push_back (t.name);
+    }
+    const ProjectModel before = proj;
+    constexpr int kAttempts = 8;
+    double bestScore = -1;
+    ProjectModel best;
+    MusicPlan bestPlan;
+    std::vector<std::pair<std::string, double>> bestParts; // id de pista -> cambio
+    int bestAttempt = 0;
+    bool anyTarget = false;
+    for (int a = 0; a < kAttempts; ++a)
+    {
+        proj = before;
+        MusicPlan plan = plan0;
+        const std::vector<std::string> touched = apply (plan, attemptSeed (seed, a));
+        if (touched.empty()) break; // nada que cambiar (todo bloqueado o borrado): no tiene sentido reintentar
+        anyTarget = true;
+        double sum = 0;
+        std::vector<std::pair<std::string, double>> parts;
+        for (const auto& id : touched)
+        {
+            const TrackModel* x = before.findTrack (id);
+            const TrackModel* y = proj.findTrack (id);
+            const double c = x && y ? eventChange (*x, *y) : 0.0;
+            parts.emplace_back (id, c);
+            sum += c;
+        }
+        const double score = sum / (double) touched.size();
+        if (score > bestScore) { bestScore = score; best = proj; bestPlan = plan; bestParts = parts; bestAttempt = a; }
+        if (score >= minChange) break;
+    }
+    proj = before;
+    if (! anyTarget) return OpResult::fail (skipped.empty() ? "no hay pistas generadas que cambiar (¿se borraron?)" : "todas las pistas de esa parte están bloqueadas: quita el candado para variarlas");
+    if (bestScore <= 0.0) return OpResult::fail ("no se encontró una versión distinta de la actual; prueba otra parte o «Regenerar»");
+    pushUndo();
+    proj = std::move (best);
+    bestPlan.revision = plan0.revision + 1;
+    proj.music = bestPlan.toJson();
+    json rep = { { "op", op }, { "part", part }, { "revision", bestPlan.revision }, { "attempts", bestAttempt + 1 },
+                 { "change", std::round (bestScore * 1000.0) / 1000.0 }, { "significant", bestScore >= minChange } };
+    json ps = json::array();
+    for (const auto& [id, c] : bestParts)
+    {
+        const TrackModel* t = proj.findTrack (id);
+        ps.push_back ({ { "trackId", id }, { "name", t ? t->name : id }, { "role", bestPlan.roles.count (id) ? bestPlan.roles.at (id) : "" },
+                        { "change", std::round (c * 1000.0) / 1000.0 } });
+    }
+    rep["parts"] = ps;
+    rep["skippedLocked"] = skipped;
+    lastVariation = rep.dump();
+    return finishEditLocked();
+}
+
 OpResult Session::varyPart (const std::string& part, uint32_t seed, float energy, bool setEnergy)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
-    if (! open) return OpResult::fail ("no hay proyecto abierto");
-    MusicPlan plan;
-    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan))
-        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
     static const std::vector<std::string> parts = { "drums", "bass", "chords", "melody", "pad" };
     if (part != "all" && std::find (parts.begin(), parts.end(), part) == parts.end()) return OpResult::fail ("parte desconocida: " + part);
     if (setEnergy && ! std::isfinite (energy)) return OpResult::fail ("energía no válida");
-    pushUndo();
-    if (setEnergy) plan.energy = std::clamp (energy, -1.0f, 1.0f);
-    int changed = 0;
-    for (auto& t : proj.tracks)
+    // Con semilla nueva («Rehacer una parte») se exige un cambio claro; solo energía: basta con que algo cambie.
+    const bool newSeed = seed != 0;
+    return variationLocked ("vary", part, newSeed ? seed : 1u, newSeed ? 0.25 : 0.0, [&] (MusicPlan& plan, uint32_t s)
     {
-        auto it = plan.roles.find (t.id);
-        if (it == plan.roles.end()) continue;
-        const std::string& role = it->second;
-        if (part != "all" && role != part) continue;
-        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
-        if (seed != 0) { plan.seeds[role] = part == "all" ? seed ^ fnv32 (role) : seed; plan.variants.erase (role); }
-        composeTrackLocked (t, plan, role);
-        ++changed;
-    }
-    if (changed == 0) { undoStack.pop_back(); return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)"); }
-    proj.music = plan.toJson();
-    return finishEditLocked();
+        std::vector<std::string> touched;
+        if (setEnergy) plan.energy = std::clamp (energy, -1.0f, 1.0f);
+        for (auto& t : proj.tracks)
+        {
+            auto it = plan.roles.find (t.id);
+            if (it == plan.roles.end()) continue;
+            const std::string role = it->second;
+            if (part != "all" && role != part) continue;
+            if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+            if (newSeed)
+            {
+                uint32_t ns = part == "all" ? s ^ fnv32 (role) : s;
+                if (role == "drums") // como en Regenerar: otra familia rítmica, no solo otros adornos
+                {
+                    const auto cur = plan.seeds.find (role);
+                    const int was = composer::drumGroove (cur != plan.seeds.end() ? cur->second : 11u);
+                    for (int k = 0; k < 64 && composer::drumGroove (ns) == was; ++k) ns = ns * 1664525u + 1013904223u;
+                }
+                plan.seeds[role] = ns;
+                plan.variants.erase (role);
+            }
+            composeTrackLocked (t, plan, role);
+            touched.push_back (t.id);
+        }
+        return touched;
+    });
 }
 
 OpResult Session::mutatePart (const std::string& part, uint32_t seed)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
-    if (! open) return OpResult::fail ("no hay proyecto abierto");
-    MusicPlan plan;
-    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan))
-        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
     static const std::vector<std::string> parts = { "drums", "bass", "chords", "melody", "pad" };
     if (part != "all" && std::find (parts.begin(), parts.end(), part) == parts.end()) return OpResult::fail ("parte desconocida: " + part);
     if (seed == 0) seed = 1;
-    pushUndo();
-    int changed = 0;
-    for (auto& t : proj.tracks)
+    // Variar conserva la identidad: se pide un cambio perceptible pero moderado (ver TestVariations.cpp).
+    return variationLocked ("mutate", part, seed, 0.15, [&] (MusicPlan& plan, uint32_t s)
     {
-        auto it = plan.roles.find (t.id);
-        if (it == plan.roles.end()) continue;
-        const std::string role = it->second;
-        if (part != "all" && role != part) continue;
-        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
-        plan.variants[role] = (seed ^ fnv32 (role)) | 1u;
-        composeTrackLocked (t, plan, role);
-        ++changed;
-    }
-    if (changed == 0) { undoStack.pop_back(); return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)"); }
-    proj.music = plan.toJson();
-    return finishEditLocked();
+        std::vector<std::string> touched;
+        for (auto& t : proj.tracks)
+        {
+            auto it = plan.roles.find (t.id);
+            if (it == plan.roles.end()) continue;
+            const std::string role = it->second;
+            if (part != "all" && role != part) continue;
+            if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+            plan.variants[role] = (s ^ fnv32 (role)) | 1u;
+            composeTrackLocked (t, plan, role);
+            touched.push_back (t.id);
+        }
+        return touched;
+    });
 }
 
 OpResult Session::regenerateBeat (uint32_t seed)
 {
     std::lock_guard<std::recursive_mutex> l (mtx);
-    if (! open) return OpResult::fail ("no hay proyecto abierto");
-    MusicPlan plan;
-    if (proj.music.empty() || ! MusicPlan::fromJson (proj.music, plan))
-        return OpResult::fail ("este proyecto no tiene plan musical (se creó antes de la versión 0.4 o vacío)");
     if (seed == 0) seed = 1;
-    // ¿Hay alguna parte armónica bloqueada? Entonces la progresión no cambia (lo bloqueado debe seguir encajando).
-    bool harmonyLocked = false, any = false;
-    for (const auto& [tid, role] : plan.roles)
+    return variationLocked ("regenerate", "all", seed, 0.40, [&] (MusicPlan& plan, uint32_t s)
     {
-        const bool lk = std::find (plan.locked.begin(), plan.locked.end(), tid) != plan.locked.end();
-        if (lk && role != "drums") harmonyLocked = true;
-        if (! lk && proj.findTrack (tid)) any = true;
-    }
-    if (! any) return OpResult::fail ("no hay pistas que cambiar (¿bloqueadas o borradas?)");
-    pushUndo();
-    if (! harmonyLocked)
-    {
-        auto bank = composer::progressionBank (plan.genre);
-        bank.erase (std::remove (bank.begin(), bank.end(), plan.progression), bank.end());
-        if (! bank.empty()) plan.progression = bank[(size_t) (seed % (uint32_t) bank.size())];
-    }
-    for (auto& t : proj.tracks)
-    {
-        auto it = plan.roles.find (t.id);
-        if (it == plan.roles.end()) continue;
-        const std::string role = it->second;
-        if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
-        uint32_t ns = (seed * 2654435761u) ^ fnv32 (role) ^ 0xBEA7u;
-        if (role == "drums") // la batería regenerada cambia siempre de familia rítmica (no solo de adornos)
+        std::vector<std::string> touched;
+        // ¿Hay alguna parte armónica bloqueada? Entonces la progresión no cambia (lo bloqueado debe seguir encajando).
+        bool harmonyLocked = false;
+        for (const auto& [tid, role] : plan.roles)
+            if (role != "drums" && std::find (plan.locked.begin(), plan.locked.end(), tid) != plan.locked.end()) harmonyLocked = true;
+        if (! harmonyLocked)
         {
-            const auto cur = plan.seeds.find (role);
-            const int was = composer::drumGroove (cur != plan.seeds.end() ? cur->second : 11u);
-            for (int k = 0; k < 64 && composer::drumGroove (ns) == was; ++k) ns = ns * 1664525u + 1013904223u;
+            auto bank = composer::progressionBank (plan.genre);
+            bank.erase (std::remove (bank.begin(), bank.end(), plan.progression), bank.end());
+            if (! bank.empty()) plan.progression = bank[(size_t) (s % (uint32_t) bank.size())];
         }
-        plan.seeds[role] = ns;
-        plan.variants.erase (role);
-        composeTrackLocked (t, plan, role);
-    }
-    proj.music = plan.toJson();
-    return finishEditLocked();
+        for (auto& t : proj.tracks)
+        {
+            auto it = plan.roles.find (t.id);
+            if (it == plan.roles.end()) continue;
+            const std::string role = it->second;
+            if (std::find (plan.locked.begin(), plan.locked.end(), t.id) != plan.locked.end()) continue;
+            uint32_t ns = (s * 2654435761u) ^ fnv32 (role) ^ 0xBEA7u;
+            if (role == "drums") // la batería regenerada cambia siempre de familia rítmica (no solo de adornos)
+            {
+                const auto cur = plan.seeds.find (role);
+                const int was = composer::drumGroove (cur != plan.seeds.end() ? cur->second : 11u);
+                for (int k = 0; k < 64 && composer::drumGroove (ns) == was; ++k) ns = ns * 1664525u + 1013904223u;
+            }
+            plan.seeds[role] = ns;
+            plan.variants.erase (role);
+            composeTrackLocked (t, plan, role);
+            touched.push_back (t.id);
+        }
+        return touched;
+    });
 }
 
 OpResult Session::setPartLocked (const std::string& trackId, bool locked)

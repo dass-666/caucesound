@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -54,7 +55,10 @@ fun partName(part: String): String = when (part) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: Boolean = false) {
+fun VariationsPanel(
+    state: ProjectState, actions: StudioActions, soloAvailable: Boolean = false,
+    plugins: com.caucesound.app.data.PluginUi = com.caucesound.app.data.PluginUi(), playing: Boolean = false,
+) {
     val plan = state.music
     if (plan == null && soloAvailable) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -77,10 +81,13 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
         actions.varyPart(part, seed, energy)
     }
     val parts = listOf("drums", "bass", "chords", "melody", "pad").filter { plan.hasPart(it) }
+    val working = plugins.variationWorking
+    val enabled = working == null
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(tr("Variaciones", "Variations"), fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Text(tr("Todo queda como notas y patrones que puedes editar. Solo cambian las pistas sin candado: bloquea las que hayas retocado a mano.",
             "Everything stays as notes and patterns you can edit. Only unlocked tracks change: lock the ones you edited by hand."), color = Palette.TextDim, fontSize = 12.sp)
+        VersionCard(plan.revision, state.canUndo, state.canRedo, plugins.variation?.takeIf { it.revision == plan.revision }, working, playing, actions)
 
         // Misión 0.8: dos acciones con intención distinta. VARIAR retoca la idea actual (misma progresión y motivo,
         // con cambios pequeños); REGENERAR propone otra idea del mismo estilo, tono y tempo.
@@ -88,10 +95,10 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
             Text(tr("Variar", "Vary"), fontWeight = FontWeight.Bold)
             Text(tr("Conserva tu idea: mismos acordes y motivo, con detalles nuevos (adornos, golpes, inversiones).",
                 "Keeps your idea: same chords and motif, with new details (fills, hits, voicings)."), color = Palette.TextDim, fontSize = 12.sp)
-            CauceButton(tr("Variar todo", "Vary everything"), { actions.mutatePart("all", newSeed()) }, Modifier.fillMaxWidth().testTag("mutate_all"), kind = ButtonKind.Primary, icon = Icons.Default.AutoAwesome)
+            CauceButton(tr("Variar todo", "Vary everything"), { actions.mutatePart("all", newSeed()) }, Modifier.fillMaxWidth().testTag("mutate_all"), kind = ButtonKind.Primary, icon = Icons.Default.AutoAwesome, enabled = enabled)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 parts.forEach { part ->
-                    PillToggle(partName(part), false, { actions.mutatePart(part, newSeed()) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("mutate_$part"))
+                    PillToggle(partName(part), false, { if (enabled) actions.mutatePart(part, newSeed()) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("mutate_$part"))
                 }
             }
         }
@@ -99,12 +106,12 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
             Text(tr("Regenerar", "Regenerate"), fontWeight = FontWeight.Bold)
             Text(tr("Otra idea del mismo estilo, tono y tempo: acordes, groove, bajo y melodía nuevos. Lo bloqueado se queda (y si bloqueas una parte armónica, los acordes no cambian).",
                 "Another idea in the same style, key and tempo: new chords, groove, bass and melody. Locked parts stay (and if a harmonic part is locked, the chords don't change)."), color = Palette.TextDim, fontSize = 12.sp)
-            CauceButton(tr("Regenerar beat", "Regenerate beat"), { actions.regenerateBeat(newSeed()) }, Modifier.fillMaxWidth().testTag("regenerate_beat"), icon = Icons.Default.AutoAwesome)
+            CauceButton(tr("Regenerar beat", "Regenerate beat"), { actions.regenerateBeat(newSeed()) }, Modifier.fillMaxWidth().testTag("regenerate_beat"), icon = Icons.Default.AutoAwesome, enabled = enabled)
             Text(tr("Rehacer una sola parte (mismos acordes)", "Redo one part only (same chords)"), color = Palette.TextFaint, fontSize = 12.sp)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                PillToggle(tr("Todas", "All"), false, { vary("all") }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_all"))
+                PillToggle(tr("Todas", "All"), false, { if (enabled) vary("all") }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_all"))
                 parts.forEach { part ->
-                    PillToggle(partName(part), false, { vary(part) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_$part"))
+                    PillToggle(partName(part), false, { if (enabled) vary(part) }, color = Palette.Violet, height = 40.dp, modifier = Modifier.testTag("vary_$part"))
                 }
             }
         }
@@ -112,13 +119,13 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
         Text(tr("Intensidad", "Intensity"), color = Palette.TextFaint, fontSize = 12.sp)
         val level = when { plan.energy < -0.2f -> 0; plan.energy > 0.2f -> 2; else -> 1 }
         Segmented(listOf(tr("Más tranquila", "Calmer"), "Normal", tr("Más enérgica", "More energy")), level, { i ->
-            vary("all", listOf(-0.6f, 0f, 0.6f)[i])
+            if (i != level && enabled) vary("all", listOf(-0.6f, 0f, 0.6f)[i]) // la misma intensidad no es una versión nueva
         }, Modifier.fillMaxWidth())
 
         Text(tr("Comparar", "Compare"), color = Palette.TextFaint, fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CauceButton(tr("Versión anterior", "Previous"), actions::undo, Modifier.weight(1f), enabled = state.canUndo, icon = Icons.AutoMirrored.Filled.Undo)
-            CauceButton(tr("Versión nueva", "Newer"), actions::redo, Modifier.weight(1f), enabled = state.canRedo, icon = Icons.AutoMirrored.Filled.Redo)
+            CauceButton(tr("Versión anterior", "Previous"), actions::undo, Modifier.weight(1f).testTag("variation_previous"), enabled = state.canUndo && enabled, icon = Icons.AutoMirrored.Filled.Undo)
+            CauceButton(tr("Versión nueva", "Newer"), actions::redo, Modifier.weight(1f).testTag("variation_next"), enabled = state.canRedo && enabled, icon = Icons.AutoMirrored.Filled.Redo)
         }
         Text(tr("Pulsa Play y alterna: cada variación es un paso de deshacer.", "Press Play and switch: each variation is one undo step."), color = Palette.TextFaint, fontSize = 11.sp)
         if (lastSeed != 0L) Text(tr("Semilla de la última variación: $lastSeed", "Last variation seed: $lastSeed"), color = Palette.TextFaint, fontSize = 11.sp)
@@ -143,6 +150,50 @@ fun VariationsPanel(state: ProjectState, actions: StudioActions, soloAvailable: 
             }
         }
         if (soloAvailable) SoloAiEntry(actions)
+    }
+}
+
+/**
+ * Hotfix 0.9.2: lo que faltaba en el teléfono. Dice qué versión suena, qué cambió en la última variación (y qué se
+ * respetó por el candado), muestra que se está trabajando y ofrece escucharla sin salir del panel.
+ */
+@Composable
+private fun VersionCard(
+    revision: Int, canUndo: Boolean, canRedo: Boolean, report: com.caucesound.app.data.VariationReport?, working: String?, playing: Boolean,
+    actions: StudioActions,
+) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.SurfaceHigh).padding(12.dp).testTag("variation_status"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (working != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Palette.Violet)
+                Text(working, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("variation_working"))
+            }
+            return@Column
+        }
+        val title = when {
+            revision <= 1 && !canUndo -> tr("Versión 1 (original)", "Version 1 (original)")
+            canRedo -> tr("Versión $revision · estás escuchando una anterior", "Version $revision · you're on an earlier one")
+            else -> tr("Versión $revision", "Version $revision")
+        }
+        Text(title, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("variation_revision"))
+        if (report != null) {
+            val changed = report.changed
+            Text(
+                if (changed.isEmpty()) tr("Sin cambios en las notas.", "No note changes.")
+                else tr("Cambió: ", "Changed: ") + changed.joinToString(", ") { "${it.name} ${(it.change * 100).toInt()} %" },
+                color = Palette.TextDim, fontSize = 12.sp, modifier = Modifier.testTag("variation_changes"),
+            )
+            if (report.skippedLocked.isNotEmpty())
+                Text(tr("Sin tocar por el candado: ", "Kept by lock: ") + report.skippedLocked.joinToString(", "), color = Palette.TextFaint, fontSize = 12.sp)
+        } else if (revision <= 1) {
+            Text(tr("Pulsa Variar o Regenerar: aquí verás qué cambió.", "Tap Vary or Regenerate: you'll see what changed here."), color = Palette.TextFaint, fontSize = 12.sp)
+        }
+        if (playing) Text(tr("Sonando: los cambios se oyen al momento.", "Playing: changes are heard right away."), color = Palette.Accent, fontSize = 12.sp)
+        else CauceButton(tr("Escuchar", "Listen"), actions::listenVariation, Modifier.fillMaxWidth().testTag("listen_variation"),
+            kind = ButtonKind.Primary, icon = Icons.Default.PlayArrow, height = 44.dp)
     }
 }
 

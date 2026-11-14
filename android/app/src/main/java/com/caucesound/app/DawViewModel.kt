@@ -13,6 +13,7 @@ import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.ProjectSummary
 import com.caucesound.app.data.StateParser
 import com.caucesound.app.data.Catalog
+import com.caucesound.app.data.SAMPLE_RATE
 import com.caucesound.app.data.NoteState
 import com.caucesound.app.ui.tr
 import com.caucesound.app.ui.Panel
@@ -326,7 +327,7 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun record() {
         viewModelScope.launch {
             val s = _state.value ?: return@launch
-            val armed = s.tracks.firstOrNull { it.armed } ?: run { toast(str(R.string.msg_arm_track)); return@launch }
+            val armed = s.tracks.firstOrNull { it.armed && it.isAudio } ?: s.tracks.firstOrNull { it.armed } ?: run { toast(str(R.string.msg_arm_track)); return@launch }
             applyRecordModeNow() // perfil del micrófono y atenuación antes de abrir la entrada
             if (!withContext(control) { NativeEngine.setInputEnabled(true) }) { toast(str(R.string.msg_mic_failed)); return@launch }
             guard.requestFocus()
@@ -367,10 +368,50 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     override fun setSwing(trackId: String, patternId: String, swing: Float) = edit(Cmd.setSwing(trackId, patternId, swing))
     override fun setPatternLanes(trackId: String, patternId: String, lanes: List<List<Int>>) = edit(Cmd.setPatternLanes(trackId, patternId, lanes))
     override fun setRoll(trackId: String, patternId: String, lane: Int, step: Int, roll: Int) = edit(Cmd.setRoll(trackId, patternId, lane, step, roll))
-    override fun varyPart(part: String, seed: Long, energy: Float?) = edit(Cmd.varyPart(part, seed, energy))
+    override fun varyPart(part: String, seed: Long, energy: Float?) =
+        variation(Cmd.varyPart(part, seed, energy), if (energy != null) tr("Cambiando la intensidad…", "Changing intensity…") else tr("Rehaciendo…", "Redoing…"))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
-    override fun mutatePart(part: String, seed: Long) = edit(Cmd.mutatePart(part, seed))
-    override fun regenerateBeat(seed: Long) = edit(Cmd.regenerateBeat(seed))
+    override fun mutatePart(part: String, seed: Long) = variation(Cmd.mutatePart(part, seed), tr("Creando una variación…", "Creating a variation…"))
+    override fun regenerateBeat(seed: Long) = variation(Cmd.regenerateBeat(seed), tr("Componiendo otra idea…", "Composing another idea…"))
+
+    /**
+     * Hotfix 0.9.2: Variar/Regenerar ya no son una edición muda. Se muestra que se está trabajando, el motor devuelve
+     * un informe (versión y partes cambiadas) que la interfaz enseña y se confirma con un mensaje. Si el motor no pudo
+     * crear una versión distinta (todo bloqueado, parte sin cambios posibles) el mensaje lo explica.
+     */
+    private fun variation(cmd: String, working: String) {
+        if (_plugins.value.variationWorking != null) return // ignora pulsaciones repetidas mientras trabaja
+        _plugins.value = _plugins.value.copy(variationWorking = working)
+        viewModelScope.launch {
+            try {
+                val r = call(cmd)
+                refresh()
+                if (!r.ok) { toast(r.error ?: tr("No se pudo crear la variación", "Could not create the variation")); return@launch }
+                val rep = com.caucesound.app.data.PluginParser.variation(r.raw)
+                _plugins.value = _plugins.value.copy(variation = rep)
+                val names = rep?.changed?.joinToString(", ") { it.name } ?: ""
+                val playing = withContext(control) { NativeEngine.isPlaying() }
+                toast(
+                    tr("Versión ${rep?.revision ?: ""} lista", "Version ${rep?.revision ?: ""} ready") + (if (names.isNotEmpty()) tr(": cambió $names", ": changed $names") else "") +
+                        if (playing) tr(". Ya la estás escuchando.", ". You're hearing it now.") else tr(". Pulsa Escuchar.", ". Tap Listen.")
+                )
+            } finally {
+                _plugins.value = _plugins.value.copy(variationWorking = null)
+            }
+        }
+    }
+
+    override fun listenVariation() {
+        viewModelScope.launch {
+            val s = _state.value ?: return@launch
+            if (withContext(control) { NativeEngine.isPlaying() }) return@launch
+            // Desde el comienzo de la sección A (compás 3): la intro tiene pocas partes y se oiría poco el cambio.
+            val bars = if (s.music != null) 2 else 0
+            val frame = (bars * s.beatsPerBar * 60.0 * SAMPLE_RATE / s.bpm).toLong()
+            call(Cmd.seek(frame))
+            play()
+        }
+    }
 
     // --- Plugins: VocalShift y Solo AI ---------------------------------------------------------------------------
     private fun clearPluginUi() {
@@ -545,9 +586,39 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
     }
     fun setEchoCancel(on: Boolean) { _echoCancel.value = on; prefs.edit().putBoolean("echoCancel", on).apply(); applyRecordMode() }
     fun setDuckDb(db: Float) { _duckDb.value = db.coerceIn(-24f, 0f); prefs.edit().putFloat("duckDb", _duckDb.value).apply(); applyRecordMode() }
+    // 0.9.2 — «Grabar sin acompañamiento»: el beat y el metrónomo se callan SOLO durante la toma (setRecordDuck -120
+    // en el motor). No cambia faders, mutes ni el proyecto; la cuenta previa sigue sonando. Preferencia del teléfono.
+    private val _recordSolo = MutableStateFlow(prefs.getBoolean("recordSolo", false))
+    val recordSolo: StateFlow<Boolean> = _recordSolo
+    fun setRecordSolo(on: Boolean) { _recordSolo.value = on; prefs.edit().putBoolean("recordSolo", on).apply() }
     private suspend fun applyRecordModeNow() {
         withContext(control) { NativeEngine.setEchoCancel(_speakerMode.value && _echoCancel.value) }
-        call(Cmd.setRecordDuck(if (_speakerMode.value) _duckDb.value.toDouble() else 0.0))
+        call(Cmd.setRecordDuck(if (_recordSolo.value) -120.0 else if (_speakerMode.value) _duckDb.value.toDouble() else 0.0))
+    }
+
+    /** ¿Hay una pista de audio armada? Si no, la interfaz ofrece crearla (grabación con un toque, 0.9.2). */
+    fun hasArmedTrack(): Boolean = _state.value?.tracks?.any { it.armed && it.isAudio } == true
+
+    /**
+     * Grabación con un toque (0.9.2, mismo enfoque que «Idea rápida»): sin pista armada, crea una pista de voz armada
+     * (o arma la elegida) y empieza a grabar. solo = sin acompañamiento. El modo multipista no cambia: con una pista ya
+     * armada, el botón rojo graba directamente como siempre.
+     */
+    fun recordQuick(existingTrackId: String?, solo: Boolean, trackName: String) {
+        setRecordSolo(solo)
+        viewModelScope.launch {
+            val s = _state.value ?: return@launch
+            val id = existingTrackId ?: run {
+                val n = s.tracks.count { it.isAudio } + 1
+                val r = call(Cmd.addTrack(if (n <= 1) trackName else "$trackName $n", "audio"))
+                if (!r.ok || r.id == null) { toast(r.error ?: tr("No se pudo crear la pista", "Could not create the track")); refresh(); return@launch }
+                r.id
+            }
+            call(Cmd.setArmed(id, true))
+            refresh()
+            _selectedTrack.value = id
+            record()
+        }
     }
     private fun applyRecordMode() { viewModelScope.launch { applyRecordModeNow() } }
     override fun toggleFavoritePreset(presetId: String) {

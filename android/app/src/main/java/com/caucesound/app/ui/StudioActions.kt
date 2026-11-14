@@ -75,6 +75,8 @@ interface StudioActions {
     fun setPartLocked(trackId: String, locked: Boolean) {}
     fun mutatePart(part: String, seed: Long) {}
     fun regenerateBeat(seed: Long) {}
+    /** 0.9.2: escuchar la versión actual desde el comienzo de la parte principal (o seguir si ya suena). */
+    fun listenVariation() {}
 
     // --- Plugins integrados (misión 0.5). Procesos offline: nunca en el hilo de audio. ---
     /** VocalShift: procesa el clip con estos parámetros. El resultado entra como versión procesada (no destructivo). */

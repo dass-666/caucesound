@@ -157,6 +157,11 @@ public:
     // sin candado y, si ninguna pista armónica (bajo, acordes, melodía, pad) está bloqueada, otra progresión del
     // estilo. Lo bloqueado no cambia. Un paso de deshacer.
     OpResult regenerateBeat (uint32_t seed);
+    // 0.9.2 — informe JSON de la última variación aceptada (varyPart, mutatePart, regenerateBeat): versión, qué
+    // partes cambiaron y cuánto (0..1, proporción de notas/golpes distintos), cuáles se saltaron por candado y cuántos
+    // intentos hicieron falta. Las tres operaciones reintentan con semillas derivadas hasta que el cambio sea
+    // significativo; si no lo consiguen fallan sin tocar el proyecto (ver docs/HOTFIX_0.9.2.md).
+    std::string lastVariationReport() const;
     // Solo AI (SessionSolo.cpp). soloRequest prepara la petición (tonalidad y acordes del plan o, sin plan, de la
     // tonalidad dada; si falta, falla con "key_required"). addSoloTrack añade el resultado como pista nueva.
     OpResult soloRequest (int startBar, int bars, int keyRoot, bool minor, solo::MelodyRequest& out) const;
@@ -302,6 +307,10 @@ private:
     void applyLoopLocked();
     void applyTemplateLocked (const std::string& templateId);
     void composeTrackLocked (TrackModel& t, const MusicPlan& plan, const std::string& role);
+    // Aplica una variación con reintentos y medición del cambio (0.9.2). apply recompone las pistas con la semilla
+    // del intento y devuelve los ids tocados; minChange es el cambio medio mínimo para aceptarla.
+    OpResult variationLocked (const char* op, const std::string& part, uint32_t seed, double minChange,
+                              const std::function<std::vector<std::string> (MusicPlan&, uint32_t)>& apply);
     TrackModel* instrumentTrack (const std::string& trackId, const char* kind, OpResult& err);
     void applyMixerParams();
     OpResult loadSourceLocked (const SourceRef& ref, bool* ok);
@@ -323,6 +332,7 @@ private:
     std::map<std::string, ProcessorPtr> insertInstances;
     std::map<std::string, std::shared_ptr<Instrument>> instrumentInstances; // por id de pista
     std::vector<ProjectModel> undoStack, redoStack;
+    std::string lastVariation; // informe JSON de la última variación (0.9.2)
     std::string paramGestureKey; // parámetro del gesto abierto ("" = ninguno)
     std::unique_ptr<Recorder> recorder;
     std::string recordingSourceId, recordingTrackId;
