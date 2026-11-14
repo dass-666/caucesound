@@ -2,6 +2,7 @@
 #include "cs/Composer.h"
 #include "cs/Instruments.h"
 #include "cs/Packs.h"
+#include "cs/VocalBridge.h"
 #include "cs/FxChains.h"
 #include "cs/Session.h"
 
@@ -73,7 +74,16 @@ OpResult Session::addInsert (const std::string& trackId, const std::string& type
     if (! t) return OpResult::fail ("pista no encontrada");
     if (t->inserts.size() >= 8) return OpResult::fail ("máximo 8 efectos por pista");
     const auto types = effectTypes();
-    if (std::find (types.begin(), types.end(), type) == types.end()) return OpResult::fail ("efecto desconocido: " + type);
+    if (type == "cs.vocalshift.live" && expLiveVocal)
+    {
+        // 0.10, experimental (apagado por defecto y sin botón en la app): solo en pistas de audio y con un máximo de
+        // instancias, porque su coste en ARM no está medido. Sin el interruptor sigue siendo «desconocido».
+        if (t->kind != "audio") return OpResult::fail ("VocalShift en vivo (experimental) solo se puede usar en pistas de audio");
+        int count = 0;
+        for (const auto& tr : proj.tracks) for (const auto& i : tr.inserts) count += i.type == type;
+        if (count >= vocal::kMaxLiveInserts) return OpResult::fail ("máximo " + std::to_string (vocal::kMaxLiveInserts) + " VocalShift en vivo por proyecto (experimental)");
+    }
+    else if (std::find (types.begin(), types.end(), type) == types.end()) return OpResult::fail ("efecto desconocido: " + type);
     ProcessorPtr fx = createProcessor (type);
     if (! fx) return OpResult::fail ("efecto no disponible");
     // PDC: el motor compensa la latencia de las inserciones en pistas, no en buses. Hasta que eso exista con pruebas,

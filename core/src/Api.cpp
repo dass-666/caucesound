@@ -260,6 +260,9 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
             if (j.value ("ok", false)) j["notes"] = s.templateNotes();
             return j.dump();
         }
+        // 0.10, experimental: medición de VocalShift en vivo (no toca el proyecto ni el audio) e interruptor de pruebas.
+        if (cmd == "benchLiveVocal") return vocal::benchLiveInsert (num ("seconds", 5));
+        if (cmd == "setExperimental") { s.setExperimentalLiveVocal (q.value ("liveVocal", false)); return json { { "ok", true }, { "liveVocal", s.experimentalLiveVocal() } }.dump(); }
         if (cmd == "setHumanize") return result (s.setHumanize ((float) num ("amount"))).dump();
         if (cmd == "catalog") return catalog().dump();
         if (cmd == "packs") return json { { "ok", true }, { "packs", packsJson() } }.dump();

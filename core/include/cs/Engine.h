@@ -141,6 +141,7 @@ public:
     float dspLoadAverage() const { return dspLoadAvg.load (std::memory_order_relaxed); }
     float takeDspLoadPeak() { return dspLoadPeak.exchange (0.0f, std::memory_order_relaxed); }
     long blocksOverBudget() const { return dspOver.load (std::memory_order_relaxed); }
+    long primeCount() const { return primesOut.load (std::memory_order_relaxed); }
     void reportXruns (long n) { hostXruns.store (n); }
     // Diagnóstico: frames procesados por process() desde el arranque (si no avanza, el callback no se ejecuta) y
     // pico del máster del último bloque con el transporte en marcha.
@@ -206,6 +207,11 @@ private:
     std::atomic<long long> processedOut { 0 };
     std::atomic<uint32_t> liveEpoch { 0 }; // resetTransport() lo incrementa: se descartan eventos en vivo anteriores
     void noteDspLoad (double seconds, int frames);
+    // 0.10: cebado de las pistas con latencia al arrancar o saltar (ver Engine.cpp). primeCount() es para pruebas.
+    bool renderClipAudio (const TrackRT& t, Frame from, int count, float* tl, float* tr, int offset);
+    void primeLatentTracks (const RenderGraph* g, Frame position);
+    bool needPrime = false;
+    std::atomic<long> primesOut { 0 };
 
     std::atomic<bool> loopOn { false };
     std::atomic<Frame> loopStart { 0 }, loopEnd { 0 };

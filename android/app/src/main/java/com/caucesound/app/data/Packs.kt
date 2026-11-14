@@ -156,3 +156,20 @@ object FactoryPackCheck {
 
 /** Sonidos instalados, accesibles desde cualquier panel (nombres de kits de muestras en el Rack, etc.). */
 val LocalSounds = androidx.compose.runtime.staticCompositionLocalOf { SoundUi() }
+
+/** 0.10: texto del diagnóstico de VocalShift en vivo (comando benchLiveVocal). Es una medición, no una promesa. */
+object LiveBench {
+    fun describe(j: org.json.JSONObject): String {
+        val cpu = j.optDouble("cpuPercentOfOneCore", 0.0)
+        val worst = j.optDouble("worstBlockPercent", 0.0)
+        val burst = j.optDouble("startBurstMs", 0.0)
+        val block = j.optDouble("blockMs", 4.0)
+        val verdict = when {
+            j.optBoolean("protectionTripped") || worst >= 100 -> com.caucesound.app.ui.tr("No cabe: algún bloque tardó más que el tiempo real.", "Does not fit: some block took longer than real time.")
+            cpu >= 25 || worst >= 60 -> com.caucesound.app.ui.tr("Muy justo: una instancia como mucho, con riesgo de cortes.", "Very tight: one instance at most, with a risk of dropouts.")
+            else -> com.caucesound.app.ui.tr("Cabe con margen en esta medición (falta probarlo con una canción sonando).", "Fits with headroom in this measurement (still needs testing with a song playing).")
+        }
+        return "CPU ${"%.1f".format(cpu)} % · " + com.caucesound.app.ui.tr("peor bloque", "worst block") + " ${"%.0f".format(worst)} % · " +
+            com.caucesound.app.ui.tr("arranque", "start") + " ${"%.1f".format(burst)} ms (" + com.caucesound.app.ui.tr("bloque", "block") + " ${"%.1f".format(block)} ms) · ${j.optString("arch")}\n" + verdict
+    }
+}

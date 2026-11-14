@@ -298,7 +298,7 @@ private fun TemplateCard(id: String, info: TemplateInfo?, onClick: () -> Unit) {
         Modifier.width(140.dp).height(128.dp).clip(shape).background(Palette.Surface)
             .background(Brush.linearGradient(listOf(colors[0].copy(alpha = 0.55f), colors[0].copy(alpha = 0.08f))))
             .border(1.dp, colors[0].copy(alpha = 0.45f), shape)
-            .clickable(onClick = onClick, onClickLabel = tr("Crear canción", "Create song")).padding(14.dp),
+            .clickable(onClick = onClick, onClickLabel = tr("Crear canción", "Create song")).padding(14.dp).testTag("template_$id"),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

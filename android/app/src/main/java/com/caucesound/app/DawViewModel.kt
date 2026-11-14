@@ -8,6 +8,7 @@ import com.caucesound.app.audio.AudioDecoder
 import com.caucesound.app.audio.AudioGuard
 import com.caucesound.app.audio.NativeEngine
 import com.caucesound.app.data.Cmd
+import com.caucesound.app.data.LiveBench
 import com.caucesound.app.data.CommandResult
 import com.caucesound.app.data.ProjectState
 import com.caucesound.app.data.ProjectSummary
@@ -376,6 +377,18 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         variation(Cmd.varyPart(part, seed, energy), if (energy != null) tr("Cambiando la intensidad…", "Changing intensity…") else tr("Rehaciendo…", "Redoing…"))
     override fun setPartLocked(trackId: String, locked: Boolean) = edit(Cmd.setPartLocked(trackId, locked))
     override fun setHumanize(amount: Float) = edit(Cmd.setHumanize(amount))
+
+    /** 0.10: resultado de la medición de VocalShift en vivo (null = sin medir, "…" = midiendo). Solo diagnóstico. */
+    private val _liveBench = MutableStateFlow<String?>(null)
+    val liveBench: StateFlow<String?> = _liveBench
+    fun runLiveBench() {
+        if (_liveBench.value == "…") return
+        _liveBench.value = "…"
+        viewModelScope.launch {
+            val r = call(Cmd.benchLiveVocal(5))
+            _liveBench.value = if (!r.ok) (r.error ?: "error") else LiveBench.describe(r.raw)
+        }
+    }
     override fun mutatePart(part: String, seed: Long) = variation(Cmd.mutatePart(part, seed), tr("Creando una variación…", "Creating a variation…"))
     override fun regenerateBeat(seed: Long) = variation(Cmd.regenerateBeat(seed), tr("Componiendo otra idea…", "Composing another idea…"))
 

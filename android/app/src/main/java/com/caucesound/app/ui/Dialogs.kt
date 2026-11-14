@@ -230,6 +230,18 @@ internal fun SettingsDialog(vm: DawViewModel, s: ProjectState, requestMic: (() -
                 Text(if (speakers) tr("Con bocinas la monitorización se apaga: el micrófono volvería a sonar por el altavoz y se acoplaría.",
                     "With speakers, monitoring is off: the microphone would play through the speaker and feed back.")
                     else stringResource(R.string.monitoring_note), fontSize = 11.sp, color = Palette.TextDim)
+                // 0.10: medición para decidir si VocalShift podrá funcionar durante la reproducción en este teléfono.
+                // No activa nada: procesa unos segundos de una voz sintética y enseña cuánto procesador gasta.
+                Spacer(Modifier.height(12.dp))
+                val bench by vm.liveBench.collectAsState()
+                Text(tr("Diagnóstico (experimental)", "Diagnostics (experimental)"), fontWeight = FontWeight.SemiBold)
+                Text(tr("Mide cuánto procesador gastaría VocalShift en vivo en este teléfono. No cambia tu proyecto ni activa el efecto. Hazlo con la música parada.",
+                    "Measures how much CPU live VocalShift would use on this phone. It doesn't change your project or enable the effect. Run it with playback stopped."),
+                    fontSize = 11.sp, color = Palette.TextDim)
+                TextButton(onClick = { vm.runLiveBench() }, enabled = bench != "…", modifier = Modifier.testTag("live_bench")) {
+                    Text(tr("Medir VocalShift en vivo (5 s)", "Measure live VocalShift (5 s)"))
+                }
+                bench?.let { Text(it, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Palette.TextDim, modifier = Modifier.testTag("live_bench_result")) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
