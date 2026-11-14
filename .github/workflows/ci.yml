@@ -1,10 +1,20 @@
 name: CI
+# Auditoría de la 0.10: cada commit de una rama con PR lanzaba la CI dos veces (push + pull_request), unas dos horas de
+# máquina por commit. Ahora: una sola ejecución por PR (y en main al fusionar), se cancela la anterior de la misma
+# rama si llega un commit nuevo, el token solo puede leer el repositorio y ningún trabajo puede quedarse colgado.
 on:
   push:
+    branches: [main]
   pull_request:
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
 jobs:
   core:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with: { submodules: true } # Solo AI (third_party/solo-ai-studio, commit fijado)
@@ -20,6 +30,7 @@ jobs:
           ./build-asan/cs_core_tests
   android:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with: { submodules: true } # Solo AI (third_party/solo-ai-studio, commit fijado)

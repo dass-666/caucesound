@@ -8,6 +8,7 @@
 
 #include "cs/Api.h"
 #include "cs/Session.h"
+#include "cs/Utf.h"
 
 #include <jni.h>
 
@@ -29,13 +30,24 @@ Native& native()
     return *n;
 }
 
+// Cadenas por UTF-16 (GetStringChars / NewString) y conversión propia a UTF-8 estricto: las variantes «UTF» de JNI
+// usan UTF-8 modificado, que rompe el JSON con cualquier emoji (ver cs/Utf.h).
 std::string str (JNIEnv* env, jstring s)
 {
     if (! s) return {};
-    const char* c = env->GetStringUTFChars (s, nullptr);
-    std::string r (c ? c : "");
-    if (c) env->ReleaseStringUTFChars (s, c);
+    const jsize n = env->GetStringLength (s);
+    const jchar* c = env->GetStringChars (s, nullptr);
+    if (! c) return {};
+    static_assert (sizeof (jchar) == sizeof (char16_t), "jchar debe ser UTF-16");
+    std::string r = cs::utf16ToUtf8 (reinterpret_cast<const char16_t*> (c), (size_t) n);
+    env->ReleaseStringChars (s, c);
     return r;
+}
+
+jstring jstr (JNIEnv* env, const std::string& utf8)
+{
+    const std::u16string u = cs::utf8ToUtf16 (utf8);
+    return env->NewString (reinterpret_cast<const jchar*> (u.data()), (jsize) u.size());
 }
 } // namespace
 
@@ -49,14 +61,14 @@ JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_setEchoCan
 
 JNIEXPORT jstring JNICALL Java_com_caucesound_app_audio_NativeEngine_audioStatus (JNIEnv* env, jobject)
 {
-    return env->NewStringUTF (native().audio.statusJson().c_str());
+    return jstr (env, native().audio.statusJson());
 }
 
 JNIEXPORT jstring JNICALL Java_com_caucesound_app_audio_NativeEngine_command (JNIEnv* env, jobject, jstring json)
 {
     Native& n = native();
     const std::string r = cs::handleCommand (n.session, n.engine, str (env, json));
-    return env->NewStringUTF (r.c_str());
+    return jstr (env, r);
 }
 
 JNIEXPORT jlong JNICALL Java_com_caucesound_app_audio_NativeEngine_position (JNIEnv*, jobject) { return (jlong) native().engine.position(); }
@@ -70,15 +82,15 @@ JNIEXPORT jboolean JNICALL Java_com_caucesound_app_audio_NativeEngine_liveMidi (
     return native().engine.sendLive ((int) slot, (uint8_t) status, (uint8_t) (d1 & 0x7F), (uint8_t) (d2 & 0x7F));
 }
 
-// [master, pista0, pista1, ...] picos lineales del último bloque
+// [master, pista0, pista1, ...] picos lineales: el máximo desde la llamada anterior (no solo el último bloque)
 JNIEXPORT jfloatArray JNICALL Java_com_caucesound_app_audio_NativeEngine_meters (JNIEnv* env, jobject, jint numTracks)
 {
     Native& n = native();
     const int count = std::max (0, std::min ((int) numTracks, cs::kMaxTracks));
     jfloatArray arr = env->NewFloatArray (count + 1);
     std::vector<float> v ((size_t) count + 1);
-    v[0] = n.engine.masterPeak();
-    for (int i = 0; i < count; ++i) v[(size_t) i + 1] = n.engine.trackParams (i).peak.load (std::memory_order_relaxed);
+    v[0] = n.engine.takeMasterPeak();
+    for (int i = 0; i < count; ++i) v[(size_t) i + 1] = n.engine.takeTrackPeak (i);
     env->SetFloatArrayRegion (arr, 0, count + 1, v.data());
     return arr;
 }

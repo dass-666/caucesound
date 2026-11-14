@@ -4,6 +4,22 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Auditoría de la 0.10 y correcciones 0.10.1 (2026-11-14, rama `claude/project-thread-cc9x6c`, basada en la 0.10 / PR #9)
+
+Auditoría técnica independiente del motor, la app, la CI y la seguridad del repositorio, con cuatro defectos corregidos
+y demostrados con pruebas. **Nada probado en teléfono** (lo último que se probó en un teléfono fue la 0.6.0).
+
+| Defecto encontrado | Evidencia en la 0.10 | Corrección | Prueba |
+|---|---|---|---|
+| Los medidores enseñaban solo el pico del último bloque de audio (~4 ms) y la interfaz lee cada ~16 ms: se perdían 3 de cada 4 bloques y el indicador de saturación podía no encenderse | 17 de 500 lecturas marcaban menos de la mitad del pico real | Pico retenido hasta que la interfaz lo lee (`Engine::takeMasterPeak`, `takeTrackPeak`) | `audit_meters_hold_the_peak_between_reads`, `JniBridgeEndToEndTest` |
+| «Exportar mezcla» renderizaba la canción entera en memoria sin tope: un clip arrastrado por error a 45 min reservaba 1,3 GB y bloqueaba el motor 22 s (medido) | Sonda de la auditoría | Tope de 20 min con mensaje claro, igual que el paquete para DAW | `audit_mix_export_refuses_absurd_length_before_allocating` |
+| Importar un audio muy largo lo cargaba entero (archivo + float + remuestreo) | Lectura del código (sin tope) | Se mira la cabecera (`probeWav`) y se rechaza por encima de 20 min antes de reservar memoria | `audit_import_refuses_very_long_audio_from_the_header` |
+| El puente JNI pasaba los textos en «UTF-8 modificado»: con un emoji en el nombre de un proyecto o pista el motor rechazaba la petición | Reproducido en la JVM con el puente real (3 de 3 pruebas fallan con el puente de la 0.10). En Android (ART) **no está comprobado** que fallara | Textos por UTF-16 con conversión propia (`cs/Utf.h`); lo ilegible pasa a U+FFFD | `audit_utf16_bridge…`, `JniBridgeEndToEndTest` |
+| La CI se ejecutaba dos veces por commit (push y pull_request), unas dos horas de máquina | 116 ejecuciones en GitHub Actions | Una por PR, cancelación de la anterior, token de solo lectura, tiempo máximo | Se verá en la primera ejecución del PR |
+
+Lo que la auditoría encontró y **no** se ha tocado (decisiones del propietario o trabajo mayor) está en el informe de
+auditoría entregado en el proyecto y resumido en NEXT_SESSION.md.
+
 # Misión 0.10 «Sound Engine & Music Quality» (2026-11-14, rama `claude/mission-010-sound-engine`, basada en la 0.9.2 / PR #8)
 
 Detalle, mediciones y tabla de pruebas en MISSION_0.10.md. **Nada probado en teléfono y nadie ha escuchado los sonidos.**

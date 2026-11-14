@@ -22,6 +22,10 @@ struct WavInfo
 
 bool readWav (const std::string& path, AudioData& out, std::string& error, WavInfo* info = nullptr);
 bool readWavFromMemory (const uint8_t* data, size_t size, AudioData& out, std::string& error, WavInfo* info = nullptr);
+// Formato y duración leyendo solo la cabecera (como mucho 1 MiB del archivo), sin cargar el audio. Sirve para rechazar
+// un archivo demasiado largo ANTES de reservar su memoria. Devuelve false si la cabecera no es un WAV que readWav
+// aceptaría o si el chunk «data» no empieza dentro de ese primer tramo (entonces hay que leerlo entero para saberlo).
+bool probeWav (const std::string& path, WavInfo& info, std::string& error);
 
 struct WriteStats { long clippedSamples = 0; };
 // Escribe en path + ".tmp" y lo renombra al final: un fallo nunca deja un WAV a medias con el nombre final.

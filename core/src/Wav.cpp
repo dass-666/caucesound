@@ -170,6 +170,52 @@ bool readWav (const std::string& path, AudioData& out, std::string& error, WavIn
     return readWavFromMemory (bytes.data(), bytes.size(), out, error, info);
 }
 
+bool probeWav (const std::string& path, WavInfo& info, std::string& error)
+{
+    FilePtr f (std::fopen (path.c_str(), "rb"));
+    if (! f) { error = "no se pudo leer el archivo"; return false; }
+    if (std::fseek (f.get(), 0, SEEK_END) != 0) { error = "no se pudo leer el archivo"; return false; }
+    const long fileSize = std::ftell (f.get());
+    if (fileSize < 12) { error = "no es un archivo WAV (RIFF/WAVE)"; return false; }
+    std::fseek (f.get(), 0, SEEK_SET);
+    std::vector<uint8_t> head ((size_t) std::min<long> (fileSize, 1L << 20));
+    if (std::fread (head.data(), 1, head.size(), f.get()) != head.size()) { error = "no se pudo leer el archivo"; return false; }
+    const uint8_t* d = head.data();
+    const size_t size = head.size();
+    if (std::memcmp (d, "RIFF", 4) != 0 || std::memcmp (d + 8, "WAVE", 4) != 0) { error = "no es un archivo WAV (RIFF/WAVE)"; return false; }
+    WavInfo wi;
+    int blockAlign = 0;
+    bool haveFmt = false;
+    size_t p = 12;
+    while (p + 8 <= size)
+    {
+        const uint8_t* c = d + p;
+        const uint32_t len = rd32 (c + 4);
+        const size_t body = p + 8;
+        if (std::memcmp (c, "fmt ", 4) == 0)
+        {
+            if (len < 16 || body + 16 > size) { error = "chunk fmt incompleto"; return false; }
+            wi.channels = rd16 (d + body + 2);
+            wi.sampleRate = (int) rd32 (d + body + 4);
+            blockAlign = rd16 (d + body + 12);
+            wi.bitsPerSample = rd16 (d + body + 14);
+            haveFmt = true;
+        }
+        else if (std::memcmp (c, "data", 4) == 0)
+        {
+            if (! haveFmt || blockAlign <= 0 || wi.sampleRate <= 0) { error = "falta el chunk fmt"; return false; }
+            const uint64_t remaining = (uint64_t) fileSize - (uint64_t) body;
+            const uint64_t dataLen = (len == 0 || len == 0xFFFFFFFFu || (uint64_t) len > remaining) ? remaining : (uint64_t) len;
+            wi.frames = (Frame) (dataLen / (uint64_t) blockAlign);
+            info = wi;
+            return true;
+        }
+        p = body + (size_t) len + (len & 1u);
+    }
+    error = "falta el chunk data";
+    return false;
+}
+
 bool writeWav (const std::string& path, const AudioData& data, WavFormat fmt, std::string& error, WriteStats* stats)
 {
     const int ch = data.numChannels();
