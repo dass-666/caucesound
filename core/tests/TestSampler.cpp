@@ -753,6 +753,57 @@ TEST (sampler_performance_offline_voices)
     CHECK (sec / audioSec < 0.5);
 }
 
+// Paquetes de fábrica reales (no están en git): con CS_FACTORY_PACKS=<carpeta con packs/<id>/> se comprueba que el motor
+// verifica cada paquete del bloqueo, carga cada instrumento sin muestras ausentes y que una nota suena, sin valores no
+// finitos ni recortes. Sin la variable la prueba se omite (y lo dice).
+TEST (factory_packs_verify_load_and_sound_when_available)
+{
+    const char* dir = std::getenv ("CS_FACTORY_PACKS");
+    if (! dir || ! fs::is_directory (std::string (dir) + "/packs")) { MEASURE ("CS_FACTORY_PACKS no definido: prueba omitida"); return; }
+    const std::string user = cstest::tempDir ("smp_factory_user");
+    packLibrary().configure (std::string (dir) + "/packs", user);
+    const auto packs = packLibrary().list();
+    CHECK (! packs.empty());
+    int instruments = 0;
+    size_t bytes = 0;
+    for (const auto& p : packs)
+    {
+        std::vector<std::string> bad;
+        std::string err;
+        CHECK_MSG (p.complete, p.manifest.id + " incompleto");
+        CHECK_MSG (packLibrary().verify (p.manifest.id, bad, err), p.manifest.id + ": " + err + (bad.empty() ? "" : " " + bad.front()));
+        for (const auto& ins : p.manifest.instruments)
+        {
+            const std::string key = p.manifest.id + ":" + ins.id;
+            std::string e2;
+            auto prog = packLibrary().loadInstrument (key, kSr, e2);
+            CHECK_MSG (prog && prog->missingSamples.empty() && ! prog->regions.empty(), key + ": " + e2);
+            if (! prog) continue;
+            CHECK_MSG (prog->warnings.empty(), key + ": " + (prog->warnings.empty() ? "" : prog->warnings.front()));
+            bytes += prog->bytes();
+            ++instruments;
+            const std::vector<int> keys = ins.kind == "drumkit" ? std::vector<int> { 36, 37, 38, 39, 40, 41, 42, 43 } : std::vector<int> { ins.previewKey - 12, ins.previewKey, ins.previewKey + 7 };
+            for (int vel : { 40, 90, 127 })
+                for (int k : keys)
+                {
+                    SamplerEngine e; // un motor por nota: se mide cada golpe solo, no la suma con la cola del anterior
+                    e.prepare (prog, kSr);
+                    e.noteOn (k, vel);
+                    std::vector<float> L (4800, 0.0f), R (4800, 0.0f);
+                    for (int off = 0; off < 4800; off += 240) e.process (L.data() + off, R.data() + off, 240);
+                    float peak = 0;
+                    bool finite = true;
+                    for (size_t i = 0; i < L.size(); ++i) { finite = finite && std::isfinite (L[i]) && std::isfinite (R[i]); peak = std::max (peak, std::max (std::fabs (L[i]), std::fabs (R[i]))); }
+                    CHECK_MSG (finite, key + " no finito");
+                    CHECK_MSG (peak > 0.004f, key + " nota " + std::to_string (k) + " vel " + std::to_string (vel) + " en silencio");
+                    CHECK_MSG (peak <= 1.0f, key + " nota " + std::to_string (k) + " recorta: " + std::to_string (peak));
+                }
+        }
+    }
+    MEASURE ("paquetes de fábrica: %zu paquetes, %d instrumentos, %.1f MB de PCM en RAM si se cargan todos", packs.size(), instruments, bytes / 1048576.0);
+    packLibrary().configure ("", "");
+}
+
 // La interfaz Android usa solo la API JSON: listado, escucha, carga, uso en proyectos, borrado protegido.
 TEST (sampler_json_api_packs_browser_flow)
 {

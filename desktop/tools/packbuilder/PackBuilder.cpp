@@ -1,6 +1,6 @@
 // cauce_packs: construye los paquetes Cauce Signature Sounds de forma REPRODUCIBLE (misión 0.9).
 //
-//   cauce_packs <carpeta VCSL> <carpeta salida> [solo: drums|bass|piano|ebass] [carpeta Black And Blue Basses]
+//   cauce_packs <carpeta VCSL> <carpeta salida> [solo: drums|bass|piano|ebass|drums2|bass2|keys2|two] [carpeta Black And Blue Basses]
 //
 // - Sonidos originales: síntesis propia con parámetros y semillas fijas (mismo resultado en cada ejecución).
 // - Sonidos de terceros: solo de bibliotecas CC0 verificadas (VCSL de Versilian Studios; Black And Blue Basses de
@@ -316,10 +316,40 @@ struct Piece
     std::vector<std::vector<std::string>> origins;
     float ampVeltrack = 35.0f;
     int group = 0, offBy = 0;
+    double spreadDb = 0; // > 0: cada capa se normaliza y queda este número de dB por debajo de la siguiente (kits 2.0)
 };
+
+bool gTwo = false; // generación de los kits 2.0: tomas reales con el ataque en su sitio y capas escalonadas
+// Ataque en su sitio: las tomas reales tardaban 8-17 ms en llegar a su pico (medido), y eso se oye como una caja
+// «tarde». Se empieza justo antes de que la señal supere el 6 % del pico, con 0,3 ms de fundido.
+Buf tight (Buf b, double thr = 0.06)
+{
+    const float p = peakOf (b);
+    size_t i = 0;
+    while (i < b.size() && std::fabs (b[i]) < p * (float) thr) ++i;
+    i = i > 24 ? i - 24 : 0;
+    Buf out (b.begin() + (long) i, b.end());
+    for (size_t k = 0; k < std::min<size_t> (14, out.size()); ++k) out[k] *= (float) k / 14.0f;
+    return out;
+}
+// Capas reales con dinámica útil: en VCSL la capa suave está ~24 dB por debajo de la fuerte, de modo que una nota
+// fantasma no se oía. Aquí cada capa se normaliza y se escalona 'stepDb' por debajo de la siguiente.
+void spreadLayers (Piece& p, double stepDb)
+{
+    const size_t n = p.takes.size();
+    for (size_t l = 0; l < n; ++l)
+    {
+        float m = 0;
+        for (auto& t : p.takes[l]) m = std::max (m, peakOf (t));
+        if (m <= 0) continue;
+        const float g = (float) std::pow (10.0, -stepDb * (double) (n - 1 - l) / 20.0) / m;
+        for (auto& t : p.takes[l]) gain (t, g);
+    }
+}
 
 std::string writePiece (PackWriter& w, const std::string& kit, Piece& p)
 {
+    if (p.spreadDb > 0) spreadLayers (p, p.spreadDb);
     float m = 0;
     for (auto& l : p.takes) for (auto& t : l) m = std::max (m, peakOf (t));
     if (m <= 0) die ("pieza en silencio: " + p.name);
@@ -368,7 +398,8 @@ void addVcslLayer (Piece& p, const std::string& folder, const std::vector<std::s
 {
     std::vector<Buf> takes;
     std::vector<std::string> origins;
-    for (const auto& f : files) { takes.push_back (proc (loadMono (folder + f))); origins.push_back (vcsl (folder + f, procText)); }
+    for (const auto& f : files) { Buf b = proc (loadMono (folder + f)); takes.push_back (gTwo ? tight (b) : b); origins.push_back (vcsl (folder + f, procText)); }
+    if (gTwo) p.spreadDb = 5.0;
     p.takes.push_back (takes);
     p.origins.push_back (origins);
 }
@@ -899,11 +930,13 @@ void buildElectricBass (const std::string& out)
                  "El mapa SFZ y la edición (recortes, fundidos) son de CAUCESOUND y se publican también bajo CC0.\n",
              "# Procedencia — Cauce Electric Bass 1.0.0\n\nBlack And Blue Basses en el commit " + std::string (kBbbCommit) + " (consultado " + kRetrieved + ").\n");
 }
+
+#include "Signature2.inc"
 } // namespace
 
 int main (int argc, char** argv)
 {
-    if (argc < 3) { std::fprintf (stderr, "uso: cauce_packs <carpeta VCSL> <salida> [solo: drums|bass|piano|ebass] [carpeta Black And Blue Basses]\n"); return 2; }
+    if (argc < 3) { std::fprintf (stderr, "uso: cauce_packs <carpeta VCSL> <salida> [solo: drums|bass|piano|ebass|drums2|bass2|keys2|two] [carpeta Black And Blue Basses]\n"); return 2; }
     gVcsl = argv[1];
     const std::string out = argv[2];
     const std::string only = argc > 3 ? argv[3] : "";
@@ -913,5 +946,8 @@ int main (int argc, char** argv)
     if (only.empty() || only == "bass") buildBass (out);
     if (only.empty() || only == "piano") buildPiano (out);
     if (only.empty() || only == "ebass") buildElectricBass (out);
+    if (only.empty() || only == "two" || only == "drums2") buildDrums2 (out);
+    if (only.empty() || only == "two" || only == "bass2") buildBass2 (out);
+    if (only.empty() || only == "two" || only == "keys2") buildKeys2 (out);
     return 0;
 }

@@ -5,6 +5,8 @@
                                                               descomprime en <salida>/packs/<id>/ (CAUCE_PACKS=<salida>).
   tools/factory_packs.py lock <salida>                        Regenera packs/factory-packs.lock.json a partir de una
                                                               carpeta ya preparada (solo al publicar paquetes nuevos).
+  tools/factory_packs.py zip <carpeta de un paquete> <carpeta de salida>
+                                                              ZIP reproducible (orden y fechas fijos) <id>-<versión>.zip.
 La verificación de la compilación la hace Gradle (android/app/build.gradle.kts), sin depender de Python.
 """
 import hashlib, json, os, sys, zipfile
@@ -45,6 +47,20 @@ def prepare(zips, out):
     print(f"Listo. Compila con CAUCE_PACKS={os.path.abspath(out)}")
 
 
+def make_zip(pack, outdir):
+    m = json.load(open(os.path.join(pack, "cauce-pack.json"), encoding="utf-8"))
+    os.makedirs(outdir, exist_ok=True)
+    name = os.path.join(outdir, f'{m["id"]}-{m["version"]}.zip')
+    files = sorted(os.path.relpath(os.path.join(d, f), pack).replace(os.sep, "/") for d, _, fs in os.walk(pack) for f in fs)
+    with zipfile.ZipFile(name, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for rel in files:
+            info = zipfile.ZipInfo(f'{m["id"]}/{rel}', date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            z.writestr(info, open(os.path.join(pack, rel), "rb").read())
+    print(f"{name}  {sha(name)}")
+
+
 def lock(out, zips=None):
     dest = os.path.join(out, "packs")
     old = {}
@@ -79,6 +95,8 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if len(a) == 3 and a[0] == "prepare":
         prepare(a[1], a[2])
+    elif len(a) == 3 and a[0] == "zip":
+        make_zip(a[1], a[2])
     elif len(a) in (2, 3) and a[0] == "lock":
         lock(a[1], a[2] if len(a) == 3 else None)
     else:
