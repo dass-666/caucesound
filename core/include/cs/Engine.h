@@ -101,7 +101,9 @@ public:
     // Modo bocinas (0.8): mientras se graba, la salida EN VIVO (beat + metrónomo) baja 'db' decibelios para que el
     // micrófono capte menos música. No toca faders, master, proyecto ni exportación; al parar vuelve sola con una
     // rampa (sin chasquidos). 0 = desactivado. Rango -30..0.
-    void setRecordDuck (float db) { recordDuckGain.store (db >= 0.0f ? 1.0f : std::pow (10.0f, std::max (-30.0f, db) / 20.0f)); }
+    // 0.9.2: db <= -100 = «grabar sin acompañamiento»: silencio total del beat y del metrónomo SOLO mientras se graba
+    // (la cuenta previa sigue sonando; la mezcla, los faders y el proyecto no cambian). Entre -30 y 0: modo bocinas.
+    void setRecordDuck (float db) { recordDuckGain.store (db >= 0.0f ? 1.0f : db <= -100.0f ? 0.0f : std::pow (10.0f, std::max (-30.0f, db) / 20.0f)); }
     float recordDuck() const { return recordDuckGain.load(); }
     // Región de bucle [start, end) en frames. Se ignora mientras se graba (la toma es lineal).
     void setLoop (bool on, Frame start, Frame end);

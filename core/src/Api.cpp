@@ -381,12 +381,24 @@ std::string handleCommand (Session& s, Engine& e, const std::string& request)
         if (cmd == "setInstrumentParam") return result (s.setInstrumentParam (str ("trackId"), str ("param"), (float) num ("value"))).dump();
         if (cmd == "loadPreset") return result (s.loadSynthPreset (str ("trackId"), str ("preset"))).dump();
         if (cmd == "addPattern") return result (s.addPattern (str ("trackId"), str ("copyFrom"))).dump();
-        if (cmd == "mutatePart") return result (s.mutatePart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 1))).dump();
-        if (cmd == "regenerateBeat") return result (s.regenerateBeat ((uint32_t) q.value ("seed", (int64_t) 1))).dump();
-        if (cmd == "varyPart")
+        // 0.9.2: las tres devuelven además "variation" (informe: versión, partes cambiadas y cuánto, candados).
+        if (cmd == "mutatePart" || cmd == "regenerateBeat" || cmd == "varyPart")
         {
-            const bool setE = q.contains ("energy");
-            return result (s.varyPart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 0), setE ? (float) num ("energy") : 0.0f, setE)).dump();
+            OpResult r;
+            if (cmd == "mutatePart") r = s.mutatePart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 1));
+            else if (cmd == "regenerateBeat") r = s.regenerateBeat ((uint32_t) q.value ("seed", (int64_t) 1));
+            else
+            {
+                const bool setE = q.contains ("energy");
+                r = s.varyPart (q.value ("part", std::string ("all")), (uint32_t) q.value ("seed", (int64_t) 0), setE ? (float) num ("energy") : 0.0f, setE);
+            }
+            json j = result (r);
+            if (r.ok)
+            {
+                const json rep = json::parse (s.lastVariationReport(), nullptr, false);
+                if (! rep.is_discarded()) j["variation"] = rep;
+            }
+            return j.dump();
         }
         if (cmd == "soloMelody" || cmd == "soloProposals")
         {

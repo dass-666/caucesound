@@ -53,6 +53,8 @@ fun MixerPanel(state: ProjectState, meters: State<FloatArray>, selectedTrack: St
     val selIndex = state.tracks.indexOfFirst { it.id == sel?.id }
     // 0.8: en vertical los efectos empiezan CERRADOS y los faders ocupan toda la altura. Se abren con el botón «FX» de
     // cualquier tira o con la barra inferior, que siempre está a la vista y dice qué canal se está editando.
+    // 0.9.2: tocar una tira (no solo su botón FX) selecciona el canal Y abre su cadena de efectos, como en los DAW de
+    // escritorio: elegir canal → ver sus plugins → «+ Agregar plugin».
     var fxOpen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val openFx: (String) -> Unit = { id -> actions.selectTrack(id); fxOpen = true }
     if (short) Row(Modifier.fillMaxSize()) {
@@ -83,12 +85,13 @@ private fun FxBar(sel: TrackState, open: Boolean, toggle: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(sel.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (sel.inserts.isEmpty()) tr("Sin efectos", "No effects") else tr("$active de ${sel.inserts.size} efectos activos", "$active of ${sel.inserts.size} effects on"),
+            Text(if (sel.inserts.isEmpty()) tr("Sin efectos · toca para agregar un plugin", "No effects · tap to add a plugin")
+                else tr("$active de ${sel.inserts.size} efectos activos", "$active of ${sel.inserts.size} effects on"),
                 fontSize = 11.sp, color = Palette.TextDim)
         }
         Row(Modifier.clip(RoundedCornerShape(12.dp)).background(if (open) Palette.Surface else Palette.Violet).padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Text(if (open) tr("Ocultar efectos", "Hide effects") else tr("Ver efectos", "Show effects"), fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            Text(if (open) tr("Ocultar efectos", "Hide effects") else tr("Efectos / plugins", "Effects / plugins"), fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 color = if (open) Palette.Text else Color.White)
             androidx.compose.material3.Icon(if (open) androidx.compose.material.icons.Icons.Default.KeyboardArrowDown else androidx.compose.material.icons.Icons.Default.KeyboardArrowUp, null,
                 tint = if (open) Palette.Text else Color.White)
@@ -184,7 +187,7 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: Tra
         Column(
             Modifier.width(176.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
                 .border(if (selected) 2.dp else 1.dp, if (selected) color else Palette.Grid, RoundedCornerShape(16.dp))
-                .clickable { actions.selectTrack(t.id) }.padding(8.dp),
+                .clickable { openFx(t.id) }.padding(8.dp).testTag("strip_${t.id}"),
         ) {
             Box(Modifier.fillMaxWidth().height(4.dp).background(color, RoundedCornerShape(2.dp)))
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -209,7 +212,7 @@ private fun Strip(t: TrackState, meter: () -> Float, selected: Boolean, bus: Tra
     Column(
         Modifier.width(92.dp).fillMaxHeight().clip(RoundedCornerShape(16.dp)).background(Palette.Surface)
             .border(if (selected) 2.dp else 1.dp, if (selected) color else Palette.Grid, RoundedCornerShape(16.dp))
-            .clickable { actions.selectTrack(t.id) }.padding(8.dp),
+            .clickable { openFx(t.id) }.padding(8.dp).testTag("strip_${t.id}"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.fillMaxWidth().height(4.dp).background(color, RoundedCornerShape(2.dp)))

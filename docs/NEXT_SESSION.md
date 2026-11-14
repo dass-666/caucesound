@@ -1,4 +1,15 @@
-# Para retomar el trabajo (actualizado 2026-11-13, fin de la misión 0.9 «Signature Sounds»)
+# Para retomar el trabajo (actualizado 2026-11-14, hotfix 0.9.2)
+
+## Hotfix 0.9.2 (lo más reciente)
+
+- **Rama**: `claude/project-thread-sol38i`, basada en la 0.9.1 (`claude/project-thread-d4hr9u`, PR #7). PR borrador nuevo contra la rama de la 0.9.1. **Nada fusionado.**
+- **APK**: `/mnt/project-files/caucesound/caucesound-0.9.2-hotfix-preview.apk`, versionCode 14, misma firma, con paquetes (`CAUCE_PACKS`: descomprimir los 3 ZIP de `paquetes-0.9/`, sin el piano, en `<dir>/packs/<id>/` sin el sufijo de versión).
+- **Guía física**: SAMSUNG_ACCEPTANCE_0.9.2.md (14 pruebas). Nada probado en teléfono.
+- **Pruebas de extremo a extremo en la JVM** con el `JniBridge.cpp` real: `cmake -S . -B build-hostjni -DCS_BUILD_HOST_JNI=ON -DCS_BUILD_TESTS=OFF && cmake --build build-hostjni --target caucesound`, luego `CS_HOST_JNI_DIR=$PWD/build-hostjni ./gradlew testDebugUnitTest`. Sin la variable se omiten.
+- `cs.vocalshift.live` existe en `createProcessor` pero **no** en `effectTypes()`: no exponerlo sin medir CPU en el teléfono (VOCALSHIFT_LIVE_STUDY.md).
+- Siguiente paso: que Diego haga las pruebas 2-4 y 8 de la guía (el arreglo principal) en el altavoz del Samsung.
+
+## Estado anterior (0.9)
 
 ## Estado
 

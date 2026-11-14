@@ -4,6 +4,29 @@
 pruebas automáticas en Linux x86-64 (y ARM64 emulado donde se indica). «Render JVM» significa que la pantalla se
 dibujó de verdad con Robolectric (gráficos nativos) y se revisó la imagen; **no** es una captura de un teléfono.
 
+# Hotfix 0.9.2 (2026-11-14, rama `claude/project-thread-sol38i`, basada en la 0.9.1 / PR #7)
+
+Detalle, causa real y mediciones en HOTFIX_0.9.2.md. Estudio de VocalShift en vivo en VOCALSHIFT_LIVE_STUDY.md.
+
+| Entrega | Implementado | Probado (nube) | Físico |
+|---|---|---|---|
+| Variar todo / Regenerar beat / botones por parte con cambio garantizado (8 intentos, umbrales 15/25/40 %), versión, informe por parte, errores claros | Sí | `TestVariations.cpp` (8 estilos, audio >300 Hz durante Play, candados, persistencia) y `EndToEndVariationsTest` desde el botón con JNI real | Pendiente |
+| Pad y Rehacer Bajo (Pop, Dark) que no hacían nada; acordes Dark | Corregido en el compositor; semillas por defecto = sonido anterior | Mismas pruebas | Pendiente (**oído**) |
+| Tarjeta de versión: Generando…, Versión N, cambios, candados, Escuchar | Sí | `Hotfix092UiTest` | Pendiente |
+| Navegador de plugins en el Mixer por categorías, controles al agregar, VocalShift (no en vivo) y Solo AI en secciones propias | Sí | `Hotfix092UiTest`, `ChannelRackMixerTest` | Pendiente |
+| VocalShift como inserción en vivo | **Prueba de concepto oculta** (no en el catálogo) | Latencia 150 ms compensada a 0 muestras, 0 reservas, ~3 % de un núcleo x86 | No medido en ARM |
+| Grabación de un toque y «Grabar sin acompañamiento» | Sí | Motor (`record_without_backing…`) y JVM (master en silencio durante la toma) | Pendiente (micrófono) |
+
+| Conjunto | Resultado |
+|---|---|
+| Motor x86-64 Release | **169/169** (suite completa) |
+| ASan + UBSan | Pruebas nuevas y afectadas (variaciones, VocalShift en vivo, grabación, PDC, efectos, Mixer, inserciones, sampler concurrente): **23/23**, sin informes. La suite completa la ejecuta la CI |
+| TSan | Variaciones, VocalShift en vivo, grabación y PDC: **13/13**, sin avisos de carrera. `sampler_concurrent…` (prueba de la 0.9, no tocada) falló 1 de 4 veces por el recuento de instancias, sin aviso de TSan; es inestable con carga (también falló una vez en Release con otra suite en paralelo) |
+| Android JVM y Robolectric (`testDebugUnitTest` con `CS_HOST_JNI_DIR`) | **123/123**, 0 omitidas (incluye las 3 de extremo a extremo con el JNI real) |
+| Lint | 0 errores, 38 avisos |
+| CI | CI_RESULT |
+| APK `caucesound-0.9.2-hotfix-preview.apk` | versionCode 14, `0.9.2-hotfix-preview`, `com.caucesound.app.preview`, certificado `56b4de46…61ab2e` (el mismo), 37,3 MB, paquetes idénticos a la 0.9.1 (191 archivos), SHA-256 `724fb1ac0be0e465b352be6fe1f5514f55fb0e77911588c0bb26ca2bf6e599b1` |
+
 # Misión 0.9 «Signature Sounds» (2026-11-13, rama `claude/project-thread-y494z5`, PR #6 borrador)
 
 Mismas categorías que en la 0.8. «Render JVM» son las capturas de `capturas-0.9.0/` (90-95).

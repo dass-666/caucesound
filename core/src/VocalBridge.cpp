@@ -58,6 +58,7 @@ bool Params::fromJson (const std::string& text, Params& out)
 }
 
 #ifndef CS_WITH_VOCALSHIFT
+std::shared_ptr<AudioProcessor> createLiveInsertPoC() { return nullptr; }
 bool available() { return false; }
 std::vector<PresetInfo> presets() { return {}; }
 std::string process (const AudioData&, Frame, Frame, const Params&, const Sink&, std::atomic<float>*, const std::atomic<bool>*, Stats*, double)
@@ -214,5 +215,64 @@ std::string process (const AudioData& in, Frame from, Frame length, const Params
     if (stats) *stats = st;
     return {};
 }
+
+// --- 0.9.2: prueba de concepto de inserción en vivo ----------------------------------------------------------------
+namespace
+{
+class VocalShiftLivePoC final : public AudioProcessor
+{
+public:
+    std::string typeId() const override { return "cs.vocalshift.live"; }
+    void prepare (double sr, int maxBlock) override
+    {
+        // Puede reservar memoria: el motor lo llama en el hilo de control al construir el grafo, nunca en el de audio.
+        rate = sr;
+        chain.prepare (sr, 2, std::max (64, maxBlock));
+        applyParams();
+        chain.prepare (sr, 2, std::max (64, maxBlock)); // «clava» los suavizados en el valor inicial (como offline)
+        applyParams();
+        chain.reset();
+        latency = chain.latencySamples();
+    }
+    void reset() override { chain.reset(); }
+    int latencySamples() const override { return latency; }
+    int tailSamples() const override { return (int) (1.5 * rate); }
+    void process (float* const* io, int numChannels, int numFrames) override
+    {
+        if (dirty.exchange (false, std::memory_order_acq_rel)) applyParams(); // tiempo real: solo copia ajustes
+        if (numChannels >= 2) chain.process (io, 2, numFrames);
+        else if (numChannels == 1) { float* two[2] = { io[0], io[0] }; chain.process (two, 1, numFrames); }
+    }
+    std::vector<ParameterInfo> parameters() const override
+    {
+        return { { "semitones", "Tono (semitonos)", -12, 12, 7 }, { "character", "Carácter (%)", 0, 100, 65 }, { "magic", "Magia (%)", 0, 100, 70 },
+                 { "secondVoice", "Segunda voz", 0, 1, 1 }, { "secondGainDb", "Nivel 2.ª voz (dB)", -60, 6, -12 } };
+    }
+    void setParameter (int index, float v) override
+    {
+        if (index < 0 || index >= 5 || ! std::isfinite (v)) return;
+        const auto info = parameters()[(size_t) index];
+        values[index].store (std::clamp (v, info.minValue, info.maxValue));
+        dirty.store (true, std::memory_order_release);
+    }
+    float getParameter (int index) const override { return index >= 0 && index < 5 ? values[index].load() : 0.0f; }
+
+private:
+    void applyParams()
+    {
+        Params p;
+        p.semitones = values[0].load(); p.character = values[1].load(); p.magic = values[2].load();
+        p.secondVoice = values[3].load() >= 0.5f; p.secondGainDb = values[4].load();
+        chain.setParams (toVs (p), false);
+    }
+    ::vs::VocalChain chain;
+    double rate = 48000;
+    int latency = 0;
+    std::atomic<float> values[5] { { 7.0f }, { 65.0f }, { 70.0f }, { 1.0f }, { -12.0f } };
+    std::atomic<bool> dirty { false };
+};
+} // namespace
+
+std::shared_ptr<AudioProcessor> createLiveInsertPoC() { return std::make_shared<VocalShiftLivePoC>(); }
 #endif
 } // namespace cs::vocal

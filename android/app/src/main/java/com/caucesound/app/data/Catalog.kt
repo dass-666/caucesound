@@ -16,6 +16,12 @@ data class EffectInfo(
 /** Cadena de efectos completa (preset de cadena). steps: tipos en orden de procesamiento. */
 data class FxChainInfo(val id: String, val name: String, val nameEn: String, val description: String, val descriptionEn: String, val suits: String, val steps: List<String>)
 data class TemplateInfo(val id: String, val bpm: Double, val kit: String, val tracks: List<String>)
+/**
+ * Ficha de un plugin integrado tal como la publica el motor (0.9.2). kind: "offline" (procesa una grabación o genera
+ * notas fuera del hilo de audio) o "realtime" (inserción en vivo; ninguno todavía). appliesTo: "audioClip" o "song".
+ * category: "effect" o "generator". La interfaz usa estos datos para decidir en qué sección del explorador va.
+ */
+data class PluginMeta(val id: String, val name: String, val kind: String, val category: String, val appliesTo: String, val realtime: Boolean, val latencyMs: Int, val version: String)
 
 /** Catálogo que publica el motor (presets, kits, parámetros): Android e iOS muestran exactamente lo mismo. */
 data class Catalog(
@@ -30,7 +36,10 @@ data class Catalog(
     val fxChains: List<FxChainInfo> = emptyList(),
     /** Parámetros de Cauce Sampler (0.9). */
     val samplerParams: List<ParamInfo> = emptyList(),
+    /** 0.9.2: fichas de los plugins (mismo orden que [plugins]). */
+    val pluginMeta: List<PluginMeta> = emptyList(),
 ) {
+    fun plugin(id: String) = pluginMeta.firstOrNull { it.id == id }
     fun samplerParam(id: String) = samplerParams.firstOrNull { it.id == id }
     fun hasPlugin(id: String) = id in plugins
     fun synthParam(id: String) = synthParams.firstOrNull { it.id == id }
@@ -63,7 +72,11 @@ data class Catalog(
                 (0 until a.length()).map { a.getJSONObject(it).let { t -> TemplateInfo(t.getString("id"), t.getDouble("bpm"), t.getString("kit"), t.getJSONArray("tracks").let { l -> (0 until l.length()).map { l.getString(it) } }) } }
             } ?: emptyList()
             val plugins = o.optJSONArray("plugins")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("id") } } ?: emptyList()
-            return Catalog(presets, kits, params("synthParams"), params("drumParams"), fx, tpl, plugins, chains, params("samplerParams"))
+            val meta = o.optJSONArray("plugins")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { p ->
+                PluginMeta(p.getString("id"), p.optString("name"), p.optString("kind"), p.optString("category"), p.optString("appliesTo"), p.optBoolean("realtime", false),
+                    p.optInt("latencyMs", 0), p.optString("version"))
+            } } } ?: emptyList()
+            return Catalog(presets, kits, params("synthParams"), params("drumParams"), fx, tpl, plugins, chains, params("samplerParams"), meta)
         }
     }
 }

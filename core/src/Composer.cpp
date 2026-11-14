@@ -26,6 +26,7 @@ std::string MusicPlan::toJson() const
     j["patternIds"] = patternIds;
     j["locked"] = locked;
     if (! variants.empty()) j["variants"] = variants;
+    if (revision > 1) j["revision"] = revision;
     json s = json::array();
     for (const auto& x : sections) s.push_back ({ { "name", x.name }, { "startBar", x.startBar }, { "bars", x.bars }, { "energy", x.energy } });
     j["sections"] = s;
@@ -51,6 +52,7 @@ bool MusicPlan::fromJson (const std::string& text, MusicPlan& out)
         if (j.contains ("patternIds")) p.patternIds = j.at ("patternIds").get<std::map<std::string, std::string>>();
         if (j.contains ("locked")) p.locked = j.at ("locked").get<std::vector<std::string>>();
         if (j.contains ("variants")) p.variants = j.at ("variants").get<std::map<std::string, uint32_t>>();
+        p.revision = std::max (1, j.value ("revision", 1));
         if (j.contains ("sections"))
             for (const auto& s : j.at ("sections"))
                 p.sections.push_back ({ s.value ("name", std::string ("A")), std::max (0, s.value ("startBar", 0)), std::clamp (s.value ("bars", 4), 1, 64),
@@ -602,9 +604,12 @@ void note (std::vector<MidiNote>& v, int key, double vel, Tick start, Tick len)
     v.push_back (n);
 }
 
-std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& r, int bpb)
+std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& r, int bpb, uint32_t seed)
 {
     std::vector<MidiNote> v;
+    // 0.9.2: en Pop, Dark Hip-hop y Electrónica el bajo apenas dependía de la semilla (Rehacer «Bajo» no hacía nada en
+    // Pop ni en Dark). La semilla elige ahora un patrón; la semilla por defecto (23) da el de siempre.
+    const int bassGroove = grooveIndex (seed, 23u, 3);
     const double e = sectionEnergy (p, s);
     const Tick bar = (Tick) bpb * kPpq;
     const std::string& g = p.genre;
@@ -675,6 +680,8 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         {
             // Sub largo en la raíz durante medio compás, silencio y una caída de octava o aproximación al final.
             if (s.name == "Intro") { note (v, nearestPc (p.keyRoot, 36), 96, t0, bar - S); continue; }
+            if (bassGroove == 1 && ! sparse) { note (v, root, 114, t0, 11 * S); note (v, root + 12, 96, t0 + 12 * S, 3 * S); continue; }
+            if (bassGroove == 2 && ! sparse) { note (v, root, 114, t0, 6 * S); note (v, fifth, 100, t0 + 7 * S, 3 * S); note (v, root, 104, t0 + 12 * S, 3 * S); continue; }
             note (v, root, 114, t0, 9 * S);
             if (! sparse) note (v, root, 104, t0 + 10 * S, 3 * S);
             if (! sparse && (r.chance (0.5) || nextRoot != root)) note (v, nextRoot != root ? nextRoot : root + 12, 96, t0 + 14 * S, 2 * S - S / 4);
@@ -683,6 +690,16 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         {
             // Bajo «rodante» a contratiempo (deja el golpe del bombo libre).
             if (sparse) { note (v, root, 96, t0, bar - S); continue; }
+            if (bassGroove == 1) // corcheas con octava en el contratiempo
+            {
+                for (int st = 0; st < 16; st += 2) note (v, st % 4 == 2 ? root + 12 : root, st % 4 == 2 ? 100 : 88, t0 + st * S, S + S / 2);
+                continue;
+            }
+            if (bassGroove == 2) // contratiempo con anticipación de semicorchea y quinta en la segunda mitad
+            {
+                for (int st : { 2, 3, 6, 7, 10, 11, 14 }) note (v, st >= 10 && st <= 11 ? fifth : root, st % 4 == 2 ? 106 : 82, t0 + st * S, S);
+                continue;
+            }
             for (int st = 0; st < 16; ++st)
             {
                 const bool off = st % 4 == 2;
@@ -693,6 +710,17 @@ std::vector<MidiNote> bassPart (const MusicPlan& p, const SongSection& s, Rand& 
         else // pop
         {
             if (sparse) { note (v, root, 96, t0, bar / 2); note (v, fifth, 88, t0 + bar / 2, bar / 2 - S); continue; }
+            if (bassGroove == 1) // sincopado: 1, «y» del 2, 3 y anticipación
+            {
+                for (int st : { 0, 3, 6, 8, 11, 14 }) note (v, st == 11 ? fifth : st == 6 ? root + 12 : root, st % 8 == 0 ? 106 : 92, t0 + st * S, 2 * S - S / 3);
+                continue;
+            }
+            if (bassGroove == 2) // negras con paso de quinta
+            {
+                for (int st : { 0, 4, 8, 12 }) note (v, st == 8 ? fifth : root, st == 0 ? 108 : 94, t0 + st * S, 3 * S);
+                if (nextRoot != root) note (v, nextRoot, 86, t0 + 15 * S, S - S / 4);
+                continue;
+            }
             for (int st = 0; st < 16; st += 2)
             {
                 int k = root;
@@ -717,12 +745,21 @@ std::vector<MidiNote> chordPart (const MusicPlan& p, const SongSection& s, Rand&
     for (int b = 0; b < s.bars; ++b)
     {
         const auto pcs = chordPcs (p, s.startBar + b, sevenths);
-        const auto vc = pad ? voiceLead (pcs, prev, 60, 52, 70) : voiceLead (pcs, prev, 64, 57, 74);
+        // 0.9.2: el Pad no dependía de la semilla (Variar/Rehacer «Pad» no hacían nada). Ahora la semilla elige una de
+        // tres texturas; la semilla por defecto (53) da exactamente el Pad de siempre.
+        const int padStyle = pad ? grooveIndex (seed, 53u, 3) : 0;
+        const auto vc = pad ? (padStyle == 2 ? voiceLead (pcs, prev, 67, 59, 76) : voiceLead (pcs, prev, 60, 52, 70)) : voiceLead (pcs, prev, 64, 57, 74);
         prev = vc;
         const Tick t0 = b * bar;
         if (pad)
         {
-            for (int k : vc) note (v, k, s.name == "Break" || s.name == "Intro" || s.name == "Cierre" ? 78 : 66, t0, bar - S / 2);
+            const int vel = s.name == "Break" || s.name == "Intro" || s.name == "Cierre" ? 78 : 66;
+            if (padStyle == 1 && s.name != "Cierre") // dos ataques por compás: pulso lento que respira
+            {
+                for (int k : vc) note (v, k, vel, t0, bar / 2 - S / 2);
+                for (int k : vc) note (v, k, vel - 8, t0 + bar / 2, bar / 2 - S / 2);
+            }
+            else for (int k : vc) note (v, k, vel, t0, bar - S / 2); // 0: colchón de siempre; 2: registro más agudo
             continue;
         }
         auto hitAll = [&] (int step, int len, double vel) { for (int k : vc) note (v, k, vel + r.range (-4, 4), t0 + step * S, len * S - S / 4); };
@@ -764,8 +801,10 @@ std::vector<MidiNote> chordPart (const MusicPlan& p, const SongSection& s, Rand&
         }
         else if (g == "darkhiphop") // acordes largos con espacio
         {
-            if (comp == 1) hitAll (0, 6, 78);
-            else if (comp == 2) hitAll (0, 15, 66);
+            // 0.9.2: las variantes 1 y 2 solo cambiaban la duración (Rehacer «Acordes» casi no se notaba): ahora tienen
+            // otro ritmo. La 0 (semilla por defecto) es la de siempre.
+            if (comp == 1) { hitAll (0, 6, 78); hitAll (8, 6, 70); }
+            else if (comp == 2) { hitAll (0, 5, 70); hitAll (6, 9, 62); }
             else if (b % 2 == 0 || e > 0.2) hitAll (0, 15, 70);
         }
         else if (g == "electronic")
@@ -905,9 +944,9 @@ std::vector<MidiNote> partNotes (const MusicPlan& p, const std::string& part, co
 {
     Rand r (seed ^ hashStr (part) ^ (hashStr (s.name) * 31u) ^ (uint32_t) s.startBar);
     std::vector<MidiNote> v;
-    if (part == "bass") v = bassPart (p, s, r, bpb);
+    if (part == "bass") v = bassPart (p, s, r, bpb, seed);
     else if (part == "chords") v = chordPart (p, s, r, bpb, false, seed);
-    else if (part == "pad") v = chordPart (p, s, r, bpb, true, 37u);
+    else if (part == "pad") v = chordPart (p, s, r, bpb, true, seed);
     else if (part == "melody") v = melodyPart (p, s, seed, bpb);
     const auto var = p.variants.find (part);
     if (var != p.variants.end() && var->second != 0) mutateNotes (p, part, v, var->second ^ (hashStr (s.name) * 97u) ^ (uint32_t) s.startBar, bpb);
@@ -934,6 +973,9 @@ void mutateNotes (const MusicPlan& p, const std::string& part, std::vector<MidiN
         {
             // Mismo ritmo y mismo contorno general: algunas notas débiles se mueven un grado; alguna larga se parte.
             if (! downbeat && r.chance (0.35)) n.key = std::clamp (stepScale (n.key, r.chance (0.5) ? 1 : -1), 0, 127);
+            // 0.9.2: en Electrónica la melodía es un arpegio; saltar de octava algunas notas débiles es lo que más se
+            // oye en el altavoz del teléfono (Variar casi solo tocaba bombo y bajo).
+            else if (p.genre == "electronic" && ! downbeat && r.chance (0.3)) n.key = n.key + 12 <= 96 ? n.key + 12 : n.key - 12;
             if (n.length >= 4 * S && r.chance (0.18))
             {
                 MidiNote a = n, b = n;
@@ -960,8 +1002,11 @@ void mutateNotes (const MusicPlan& p, const std::string& part, std::vector<MidiN
         {
             const Tick slot = n.start / S;
             Rand cr (variant ^ (uint32_t) slot * 2654435761u);
-            const bool reVoice = cr.chance (0.22), push = part == "chords" && ! downbeat && cr.chance (0.18);
+            const bool reVoice = cr.chance (part == "pad" ? 0.4 : 0.22), push = part == "chords" && ! downbeat && cr.chance (0.18);
             if (reVoice && n.key >= 67) n.key -= 12;
+            else if (reVoice && part == "pad" && n.key < 60) n.key += 12; // 0.9.2: el Pad (52..70) casi nunca llegaba a 67
+            // 0.9.2: en el Pad, alguna nota del acorde entra una corchea tarde (se nota sin cambiar la armonía).
+            if (part == "pad" && downbeat && cr.chance (0.3) && n.length > 2 * S) { n.start += 2 * S; n.length -= 2 * S; }
             if (push) n.start = std::max<Tick> (0, n.start - S);
             n.velocity = (uint8_t) clampVel (n.velocity + r.range (-6, 6));
         }

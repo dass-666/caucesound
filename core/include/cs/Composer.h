@@ -36,6 +36,9 @@ struct MusicPlan
     // La identidad (ritmo base, acordes, motivo) sale de seeds; variants solo cambia detalles.
     std::map<std::string, uint32_t> variants;
     std::vector<SongSection> sections;
+    // 0.9.2 — número de versión de la composición: sube con cada Variar/Regenerar aceptado (la interfaz lo muestra
+    // como «Versión N»). Deshacer devuelve el plan anterior y, con él, el número anterior. Opcional en el JSON.
+    int revision = 1;
 
     std::string toJson() const;
     static bool fromJson (const std::string& text, MusicPlan& out);

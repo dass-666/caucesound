@@ -181,7 +181,8 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
         onDialog = { dialog = it },
         onSettings = { vm.refreshAudioStatus(); dialog = "settings" },
         onImport = { id -> importTrack = id; importer.launch(arrayOf("audio/*")) },
-        onRecord = { requestMic { vm.record() } },
+        // 0.9.2: sin pista de audio armada, el botón rojo ofrece crearla (grabación con un toque) en vez de pedir armarla.
+        onRecord = { if (vm.hasArmedTrack()) requestMic { vm.record() } else dialog = "record" },
         favorites = vm.favoritePresets.collectAsState().value, countIn = countIn, plugins = vm.plugins.collectAsState().value,
         sounds = sounds, onImportPack = { packImporter.launch(arrayOf("application/zip", "application/octet-stream")) },
         autoMixRevertable = vm.autoMixRevertable.collectAsState().value,
@@ -216,6 +217,14 @@ fun StudioScreen(vm: DawViewModel, state: ProjectState, requestMic: (() -> Unit)
             )
         }
         "settings" -> SettingsDialog(vm, state, requestMic, onDismiss = { dialog = null })
+        "record" -> {
+            val solo by vm.recordSolo.collectAsState()
+            val voiceName = androidx.compose.ui.res.stringResource(R.string.quick_idea_track)
+            QuickRecordDialog(state.tracks.filter { it.isAudio }, solo, onDismiss = { dialog = null }) { trackId, s ->
+                dialog = null
+                requestMic { vm.recordQuick(trackId, s, voiceName) }
+            }
+        }
         null -> {}
         else -> if (d.startsWith("rename:")) {
             val id = d.removePrefix("rename:")
@@ -321,7 +330,7 @@ fun StudioLayout(
                     Panel.SOUNDS -> SoundBrowserPanel(state, track?.takeIf { it.isDrums || it.isSynth }, sounds, actions, onImportPack)
                     Panel.MIXER -> MixerPanel(state, meters, selectedTrack, actions, catalog)
                     Panel.RACK -> ChannelRackPanel(state, catalog, position, playing, actions)
-                    Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"))
+                    Panel.VARY -> VariationsPanel(state, actions, catalog.hasPlugin("solo.ai"), plugins, playing)
                     // Los plugins solo tienen pantalla si están compilados en el motor.
                     Panel.VOCAL -> if (catalog.hasPlugin("vocalshift")) VocalShiftPanel(state, selected, plugins, waveforms, actions,
                         trackPeak = { id -> state.tracks.indexOfFirst { it.id == id }.let { i -> if (i < 0) 0f else meters.value.getOrElse(i + 1) { 0f } } }, playing = playing)
