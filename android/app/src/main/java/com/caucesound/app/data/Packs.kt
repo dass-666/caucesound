@@ -139,10 +139,19 @@ data class SoundUi(
     val removeAsk: Pair<PackInfo, List<String>>? = null,
     /** Importación en curso. */
     val importing: Boolean = false,
+    /** Paquetes de fábrica que esta compilación promete y que no están instalados completos (0.10). */
+    val missingFactory: List<String> = emptyList(),
 ) {
     val instruments: List<PackInstrumentInfo> get() = packs.flatMap { it.instruments }
     fun instrument(key: String): PackInstrumentInfo? = instruments.firstOrNull { it.key == key }
     fun packOf(key: String): PackInfo? = packs.firstOrNull { key.startsWith(it.id + ":") }
+}
+
+/** Qué paquetes de fábrica prometidos por la compilación (BuildConfig.FACTORY_PACKS) faltan o están incompletos. */
+object FactoryPackCheck {
+    fun missing(expected: String, installed: List<PackInfo>): List<String> =
+        expected.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            .filter { id -> installed.none { it.id == id && it.factory && it.complete } }
 }
 
 /** Sonidos instalados, accesibles desde cualquier panel (nombres de kits de muestras en el Rack, etc.). */

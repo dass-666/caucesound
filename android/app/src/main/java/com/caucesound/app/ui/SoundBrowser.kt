@@ -107,6 +107,10 @@ fun SoundBrowserPanel(state: ProjectState, track: TrackState?, sounds: SoundUi, 
             if (sounds.previewing != null) ToolButton(Icons.Default.Stop, tr("Parar la escucha", "Stop preview"), { actions.stopSoundPreview() }, active = true, activeColor = Palette.Cyan)
         }
         if (state.missingInstruments.isNotEmpty()) MissingSoundsBanner(state.missingInstruments)
+        if (sounds.missingFactory.isNotEmpty())
+            Text(tr("Esta versión debería traer sonidos de fábrica que no se encuentran: ${sounds.missingFactory.joinToString()}. Reinstala la app; si sigue igual, avisa: el APK está incompleto.",
+                "This version should include factory sounds that were not found: ${sounds.missingFactory.joinToString()}. Reinstall the app; if it persists, report it: the APK is incomplete."),
+                color = Palette.Warn, fontSize = 13.sp, modifier = Modifier.testTag("factory_missing"))
         Segmented(listOf(tr("Instrumentos", "Instruments"), tr("Paquetes", "Packs")), tab, { tab = it }, Modifier.testTag("sounds_tabs"), height = 38.dp)
         if (tab == 1) { PackList(sounds, actions, onImportPack); return@Column }
 

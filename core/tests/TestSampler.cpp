@@ -635,11 +635,103 @@ TEST (sampler_concurrent_kit_switching_and_project_changes_are_safe)
         s.close();
         engine.collectGarbage();
     }
+    // Causa del fallo intermitente (0.10): con el hilo de audio sin CPU, la prueba lo paraba antes de que adoptara el
+    // grafo vacío de close(), y el grafo anterior (con sus 3 instrumentos) seguía siendo el activo. No era una carrera:
+    // la prueba no esperaba a la adopción. settle() espera de forma acotada y es lo que usa close() en la app.
+    bool adopted = false;
+    for (int i = 0; i < 200 && ! adopted; ++i) adopted = engine.settle (100); // hasta 20 s si la máquina está saturada
+    CHECK (adopted);
     stop = true;
     audio.join();
     engine.collectGarbage();
     MEASURE ("instancias vivas tras cerrar: %d (antes %d)", Instrument::liveInstances(), baseline);
     CHECK (Instrument::liveInstances() == baseline);
+}
+
+TEST (closing_a_project_releases_its_instruments_once_audio_adopts_the_empty_graph)
+{
+    // Determinista, sin hilos: demuestra el mecanismo que causaba el fallo intermitente de la prueba anterior.
+    const std::string base = cstest::tempDir ("smp_release");
+    setupLibrary (base);
+    Engine engine;
+    engine.prepare (kSr, 256);
+    Session s (engine);
+    const int baseline = Instrument::liveInstances();
+    std::vector<float> out (512);
+    CHECK (s.createProject (base + "/p", "P", kSr).ok);
+    const auto d = s.addTrack ("Drums", "drums");
+    const auto k = s.addTrack ("Keys", "synth");
+    CHECK (s.setDrumSampleKit (d.id, "test.pack:kit").ok);
+    CHECK (s.setSamplerInstrument (k.id, "test.pack:keys").ok);
+    engine.process (nullptr, 0, out.data(), 2, 256); // el audio adopta el grafo del proyecto
+    CHECK (Instrument::liveInstances() > baseline);
+    s.close();
+    // El audio no ha procesado desde close(): el grafo del proyecto sigue activo y settle() lo dice sin bloquear.
+    CHECK (! engine.settle (200));
+    CHECK (Instrument::liveInstances() > baseline);
+    engine.process (nullptr, 0, out.data(), 2, 256); // un bloque: adopta el grafo vacío
+    CHECK (engine.settle (200));
+    MEASURE ("instancias tras cerrar y un bloque de audio: %d (antes %d)", Instrument::liveInstances(), baseline);
+    CHECK (Instrument::liveInstances() == baseline);
+}
+
+TEST (switching_projects_with_sampler_instruments_and_plugins_is_stable_and_releases_memory)
+{
+    // Tres proyectos guardados con kit de muestras, instrumento de muestras, inserciones y un bus con reverb. Con el
+    // audio en marcha se abren, se reproducen y se cierran 60 veces: tras cada cierre no queda ningún instrumento vivo
+    // y la salida nunca contiene valores no finitos.
+    const std::string base = cstest::tempDir ("smp_switch");
+    setupLibrary (base);
+    Engine engine;
+    engine.prepare (kSr, 256);
+    Session s (engine);
+    const int baseline = Instrument::liveInstances();
+    std::vector<std::string> folders;
+    for (int p = 0; p < 3; ++p)
+    {
+        const std::string f = base + "/sw" + std::to_string (p);
+        CHECK (s.createProject (f, "S", kSr, p == 0 ? "trap" : p == 1 ? "boombap" : "pop").ok);
+        const auto d = s.addTrack ("Drums2", "drums");
+        const auto k = s.addTrack ("Keys", "synth");
+        CHECK (s.setDrumSampleKit (d.id, "test.pack:kit").ok);
+        CHECK (s.setSamplerInstrument (k.id, "test.pack:keys").ok);
+        CHECK (s.addInsert (k.id, "cs.delay").ok);
+        CHECK (s.addInsert (k.id, p == 1 ? "cs.saturation" : "cs.compressor").ok);
+        const auto bus = s.addTrack ("Rev", "bus");
+        CHECK (s.addInsert (bus.id, "cs.reverb").ok);
+        CHECK (s.save().ok);
+        s.close();
+        folders.push_back (f);
+    }
+    std::atomic<bool> stop { false };
+    std::atomic<int> nonFinite { 0 };
+    std::thread audio ([&]
+    {
+        std::vector<float> out (512);
+        while (! stop.load())
+        {
+            engine.process (nullptr, 0, out.data(), 2, 256);
+            for (float v : out) if (! std::isfinite (v)) nonFinite.fetch_add (1);
+            std::this_thread::sleep_for (std::chrono::microseconds (300));
+        }
+    });
+    int notReleased = 0;
+    for (int i = 0; i < 60; ++i)
+    {
+        CHECK (s.openProject (folders[(size_t) i % folders.size()]).ok);
+        engine.play();
+        engine.sendLive (1, 0x90, 60, 100);
+        if (i % 3 == 0) std::this_thread::sleep_for (std::chrono::milliseconds (15));
+        s.close();
+        bool adopted = false;
+        for (int w = 0; w < 100 && ! adopted; ++w) adopted = engine.settle (100);
+        if (! adopted || Instrument::liveInstances() != baseline) ++notReleased;
+    }
+    stop = true;
+    audio.join();
+    MEASURE ("60 cambios de proyecto con sampler y plugins: %d cierres sin liberar, %d muestras no finitas", notReleased, nonFinite.load());
+    CHECK (notReleased == 0);
+    CHECK (nonFinite.load() == 0);
 }
 
 TEST (sampler_performance_offline_voices)

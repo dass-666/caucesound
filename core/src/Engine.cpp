@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <thread>
 #if defined(__SSE__) || defined(_M_X64)
 #include <xmmintrin.h>
 #endif
@@ -83,8 +84,27 @@ void Engine::collectGarbage()
     while (trash.pop (&g, 1) == 1) delete g;
 }
 
+bool Engine::settle (int timeoutMs)
+{
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + std::chrono::milliseconds (std::max (0, timeoutMs));
+    const uint32_t beat = blocksSeen.load (std::memory_order_relaxed);
+    while (pending.load (std::memory_order_acquire) != nullptr)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        // Sin latido en 20 ms el audio está parado (o no hay hilo de audio, como en las herramientas offline): no
+        // tiene sentido retener al hilo de control; el grafo anterior se liberará cuando el audio vuelva a procesar.
+        const bool silent = blocksSeen.load (std::memory_order_relaxed) == beat && now - start >= std::chrono::milliseconds (20);
+        if (now >= deadline || silent) { collectGarbage(); return false; }
+        std::this_thread::sleep_for (std::chrono::milliseconds (1));
+    }
+    collectGarbage();
+    return true;
+}
+
 void Engine::adoptPendingGraph()
 {
+    blocksSeen.fetch_add (1, std::memory_order_relaxed);
     RenderGraph* g = pending.exchange (nullptr, std::memory_order_acq_rel);
     if (! g) return;
     // Con el transporte en marcha, si el plan de eventos de un instrumento cambió, puede faltar el Note Off de una

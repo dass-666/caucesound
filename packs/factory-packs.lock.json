@@ -1,0 +1,46 @@
+{
+  "lockVersion": 1,
+  "comment": "Paquetes de fábrica que DEBE contener un APK preview/release. Lo comprueba Gradle (verifyFactoryPacks).",
+  "maxTotalBytes": 20503988,
+  "packs": [
+    {
+      "id": "cauce.bass.electric",
+      "version": "1.0.0",
+      "license": "CC0-1.0",
+      "manifestSha256": "5d1873a563aa2bd34ebf6b811cc785ebfae7090dcea5326679e7d9a4b7b1e08b",
+      "files": 45,
+      "bytes": 8664825,
+      "instruments": [
+        "electric-bass"
+      ],
+      "zipSha256": "9b255a6116c4d8a8e57b59c6a30e3d4d54b358a612c6c53afee673ca286d3120"
+    },
+    {
+      "id": "cauce.bass.lab",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content",
+      "manifestSha256": "f7b18978b0991226c05b1da2c8a7364d7307fb46dc591ec905394f7ad9d5de48",
+      "files": 13,
+      "bytes": 1651631,
+      "instruments": [
+        "808-lab",
+        "deep-sub"
+      ],
+      "zipSha256": "fe443508782e9bc3357cf008ba505165d044e81a322720c2ebff76433ec2a102"
+    },
+    {
+      "id": "cauce.signature.drums",
+      "version": "1.0.0",
+      "license": "LicenseRef-CauceSound-Content AND CC0-1.0",
+      "manifestSha256": "5e1b4848ec1336a57080e4bbf7f789be93da4390c2fde430742e441e5af2ecae",
+      "files": 130,
+      "bytes": 6086735,
+      "instruments": [
+        "raw-boombap",
+        "dark-trap",
+        "latin-pulse"
+      ],
+      "zipSha256": "93b54e641822ff56a6bc4f0be343b47800341b11f8f67520d49b9a5888466cd1"
+    }
+  ]
+}

@@ -659,7 +659,12 @@ class DawViewModel(app: Application) : AndroidViewModel(app), StudioActions {
         val user = File(packsDir, "user").apply { mkdirs() }
         withContext(Dispatchers.IO) { runCatching { com.caucesound.app.audio.FactoryPacks.install(app.assets, factory) } }
         val json = withContext(control) { NativeEngine.command(Cmd.configurePacks(factory.absolutePath, user.absolutePath)) }
-        _sounds.value = _sounds.value.copy(packs = com.caucesound.app.data.PackParser.packs(json))
+        val packs = com.caucesound.app.data.PackParser.packs(json)
+        // La compilación declara qué sonidos trae: si no están (APK mal construido, copia interrumpida, poco espacio)
+        // se dice con claridad en vez de dejar al usuario con una biblioteca vacía sin explicación.
+        val missing = com.caucesound.app.data.FactoryPackCheck.missing(com.caucesound.app.BuildConfig.FACTORY_PACKS, packs)
+        _sounds.value = _sounds.value.copy(packs = packs, missingFactory = missing)
+        if (missing.isNotEmpty()) toast(tr("Faltan sonidos de fábrica (${missing.size}). Reinstala la app o libera espacio.", "Factory sounds are missing (${missing.size}). Reinstall the app or free up space."))
     }
 
     private suspend fun refreshPacks() {

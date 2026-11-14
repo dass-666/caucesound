@@ -90,6 +90,11 @@ public:
     void prepare (int sampleRate, int maxBlock);
     void publish (std::unique_ptr<RenderGraph> graph);
     void collectGarbage();
+    // Espera (acotada) a que el hilo de audio adopte el último grafo publicado y libera los anteriores. Devuelve false
+    // si el audio no llegó a procesar en ese tiempo (flujo parado o hilo sin CPU): entonces el grafo anterior sigue
+    // vivo y se liberará en el siguiente publish()/settle(). Sin esto, cerrar un proyecto dejaba sus instrumentos y
+    // muestras en memoria hasta abrir el siguiente (0.10; ver TestSampler.cpp).
+    bool settle (int timeoutMs);
     int sampleRate() const { return rate; }
 
     TrackParams& trackParams (int slot) { return params[(size_t) slot]; }
@@ -176,6 +181,7 @@ private:
     int rate = 48000, maxBlock = 0;
     std::vector<TrackParams> params;
     std::atomic<RenderGraph*> pending { nullptr };
+    std::atomic<uint32_t> blocksSeen { 0 }; // latido del hilo de audio: settle() no espera si el audio está parado
     RenderGraph* active = nullptr;
     SpscRing<RenderGraph*> trash { 256 };
 
