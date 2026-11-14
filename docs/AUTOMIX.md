@@ -49,3 +49,27 @@ dB respecto a la batería (RMS). Proyectos sin estilo: medianas (bajo -6,9, acor
 | EQ de «hueco» (paso alto en lo que no es bajo/bombo) | Medio | Bajo; ya hay EQ en Cauce FX | Siguiente versión, como sugerencia |
 | Detección de enmascaramiento por bandas | Medio | Medio | Después |
 | Modelo entrenado (IA real) | Incierto | Alto: datos de mezclas con licencia, evaluación con oyentes | No antes de tener usuarios reales y datos |
+
+## AutoMix 2 (0.10)
+
+Sigue sin ser inteligencia artificial: son filtros, medias y reglas fijas que se ejecutan en el teléfono, sin servicios
+de pago. Además de los faders por papel:
+
+| Regla | Qué mide | Qué propone | Límite |
+|---|---|---|---|
+| Bombo y caja | El carril de caja y el de bombo, cada uno a solas | Volumen del carril de caja para recuperar la relación del estilo | ±4 dB; nada si la diferencia es menor de 2 dB; solo con el kit con el que se calibró (sintetizado en las plantillas de siempre, Drums II en «Signature 2») |
+| Sitio para la voz | Mientras la voz suena, cuánto ocupan acordes, colchón y melodía la banda de 300 a 3400 Hz | Bajar hasta 3 dB la pista que más ocupa si queda a menos de 6 dB de la voz | Nunca toca batería ni bajo. El umbral de 6 dB es una convención, **sin calibrar con voces reales** |
+| Choque de graves | Pistas que no son bajo ni batería con más de un tercio de su energía por debajo de 150 Hz y cerca de los graves del bajo | Solo un aviso: «prueba el paso alto de su EQ» | AutoMix no toca ecualizadores |
+| Recortes | El pico de la mezcla completa **con los cambios propuestos** | Bajar el máster para que el pico quede en −1 dBFS | Pico de muestra, no pico real entre muestras |
+
+- **Respeta el género**: las relaciones objetivo salen de cada plantilla tal cual (tabla de arriba para las plantillas
+  de siempre y otra equivalente para «Signature 2», medida con los paquetes 2.0). No iguala volúmenes: en Boom Bap la
+  melodía queda 28 dB por debajo de la batería y en Jazz Rap los teclados casi a su altura, y eso se conserva.
+- **Reversible y con A/B**: en el Mixer, después de aplicar, aparece «Comparar» (alterna entre la mezcla anterior y la
+  de AutoMix sin perder ninguna) y «Revertir» (deja exactamente la anterior).
+- **Comprobado por pruebas** (`core/tests/TestAutoMix2.cpp`): las 8 plantillas sin tocar no reciben ningún cambio;
+  la caja 8 dB más baja recibe +4 dB; el máster a +9 dB (pico de +5,8 dBFS, 2957 muestras recortadas) baja a +2 dB y
+  la exportación queda en −1,2 dBFS sin recortes; con una voz tapada se bajan 3 dB los teclados, y con la voz clara no
+  se propone nada.
+- **Lo que no hace**: no ecualiza, no comprime, no mueve panoramas y no mide sonoridad percibida (sigue usando RMS).
+  Las reglas dicen que la mezcla cumple unas relaciones, no que suene bien: eso se decide escuchando.

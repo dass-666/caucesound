@@ -138,8 +138,8 @@ android {
         applicationId = "com.caucesound.app"
         minSdk = 26          // Android 8.0: AAudio disponible; Oboe elige AAudio u OpenSL ES según el dispositivo
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.9.2-hotfix"
+        versionCode = 15
+        versionName = "0.10.0-sound-engine"
         manifestPlaceholders["appLabel"] = "CAUCESOUND"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // teléfonos actuales + emulador
@@ -191,7 +191,8 @@ android {
         // La app sabe qué sonidos promete esta compilación y avisa con claridad si al arrancar no los encuentra.
         buildConfigField("String", "FACTORY_PACKS", "\"" + (if (factoryPacksDir() != null) lockedPacks().joinToString(",") { it["id"] as String } else "") + "\"")
     }
-    androidResources { noCompress += listOf("wav") } // el motor copia los WAV tal cual; comprimirlos apenas ahorra
+    // 0.10: los WAV de los paquetes van comprimidos dentro del APK (deflate, sin pérdida): la app los copia a su
+    // almacenamiento al instalar los paquetes, así que no necesitan estar sin comprimir, y el APK pesa menos.
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
