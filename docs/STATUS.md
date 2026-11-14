@@ -17,6 +17,11 @@ y demostrados con pruebas. **Nada probado en teléfono** (lo último que se prob
 | El puente JNI pasaba los textos en «UTF-8 modificado»: con un emoji en el nombre de un proyecto o pista el motor rechazaba la petición | Reproducido en la JVM con el puente real (3 de 3 pruebas fallan con el puente de la 0.10). En Android (ART) **no está comprobado** que fallara | Textos por UTF-16 con conversión propia (`cs/Utf.h`); lo ilegible pasa a U+FFFD | `audit_utf16_bridge…`, `JniBridgeEndToEndTest` |
 | La CI se ejecutaba dos veces por commit (push y pull_request), unas dos horas de máquina | 116 ejecuciones en GitHub Actions | Una por PR, cancelación de la anterior, token de solo lectura, tiempo máximo | Se verá en la primera ejecución del PR |
 
+Resultados en la nube (Linux x86-64): motor Release **192/192**; Android JVM **133/133**; lint 0 errores; ASan + UBSan
+sobre las pruebas nuevas (4/4) y de WAV (6/6) sin informes, la suite completa la ejecuta la CI del PR #10. Una prueba
+existente (`quick_record_creates…`) descarta ahora la primera lectura de medidores (pico retenido de la cuenta previa).
+APK `caucesound-0.10.1-audit-preview.apk`, versionCode 16, SHA-256 `10bbbc1b…f20d3d`, mismo certificado que la 0.10.
+
 Lo que la auditoría encontró y **no** se ha tocado (decisiones del propietario o trabajo mayor) está en el informe de
 auditoría entregado en el proyecto y resumido en NEXT_SESSION.md.
 
